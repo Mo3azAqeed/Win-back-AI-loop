@@ -62,6 +62,16 @@ A send time picked for a holdout merchant exactly as it would be for a real emai
 **Variant**:
 One candidate for a single part of an email (subject, body or timing) that the loop can choose between. Claude writes subject and body variants; the loop decides which one each merchant gets.
 
+**Lesson**:
+A written finding about what works for a segment, stored with the evidence behind it. Lessons from one segment can seed the others.
+_Avoid_: Insight, learning, memory
+
+**Writer**:
+The LLM that writes subject and body variants, reading the current lessons.
+
+**Judge**:
+The LLM that rates how appealing a variant is to a segment during a simulation. It stands in for real merchants and is a different model from the writer.
+
 ## Milestones
 
 **Simulation**:
