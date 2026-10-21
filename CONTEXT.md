@@ -5,7 +5,7 @@ An email loop that wins back users of our store-cloning Shopify app who stalled 
 ## Lifecycle
 
 **Trial**:
-The free period that starts when a user publishes their cloned store, not when they sign up or start cloning.
+The 7-day free period that starts when a user publishes their cloned store, not when they sign up or start cloning.
 _Avoid_: Trial at signup
 
 **Paid conversion**:
@@ -18,6 +18,13 @@ _Avoid_: Control group (fine in conversation, but use one word)
 
 **Baseline**:
 The rate at which a segment reaches its goal action without win-back emails, measured on the holdout.
+
+**Segment**:
+The stage a stalled user is in, set by the last lifecycle step they reached. A user is in at most one segment at a time.
+_Avoid_: Group, cohort
+
+**Trigger event**:
+The lifecycle event that starts the clock for a segment's email: signup, the most recent draft save, or publish.
 
 ## Emails
 
