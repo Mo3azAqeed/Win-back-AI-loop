@@ -12,8 +12,12 @@ _Avoid_: Trial at signup
 A user moving from trial to a paid plan. Tracked for every email, whatever its goal action.
 _Avoid_: Conversion (on its own, ambiguous)
 
+**Holdout**:
+A random 8% of each segment that never receives a win-back email, kept so lift can be measured.
+_Avoid_: Control group (fine in conversation, but use one word)
+
 **Baseline**:
-The rate at which a segment reaches its goal action without win-back emails.
+The rate at which a segment reaches its goal action without win-back emails, measured on the holdout.
 
 ## Emails
 
