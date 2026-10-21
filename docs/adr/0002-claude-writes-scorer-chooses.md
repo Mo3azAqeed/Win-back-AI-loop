@@ -1,3 +1,0 @@
-# Claude writes variants, a statistical scorer chooses between them
-
-Claude does not decide which email a merchant gets. It writes a small set of subject and body variants, informed by the lessons logged so far, and a statistical scorer (Thompson sampling over at most a few active variants per segment) picks which variant each merchant receives and keeps its record. We rejected letting Claude choose directly from a log of wins and fails because email outcomes are noisy and sparse: an LLM reads patterns into a handful of results, and there would be no way to tell real improvement from chance. With a scorer, every variant has a measured record and every lesson carries the evidence behind it.

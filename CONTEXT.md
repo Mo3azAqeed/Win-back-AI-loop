@@ -1,6 +1,6 @@
 # Win-back AI loop
 
-An email loop that wins back merchants using our store-cloning Shopify app who stalled before paying. Claude writes email variants, the loop picks which ones to send, and every outcome feeds back so the next choices get better.
+An email loop that wins back merchants using our store-cloning Shopify app who stalled before paying. An LLM writes email variants, the loop picks which ones to send, and every outcome feeds back so the next choices get better.
 
 ## Lifecycle
 
@@ -60,7 +60,7 @@ How long after an email the loop waits for the goal action before scoring the em
 A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.
 
 **Variant**:
-One candidate for a single part of an email (subject, body or timing) that the loop can choose between. Claude writes subject and body variants; the loop decides which one each merchant gets.
+One candidate for a single part of an email (subject, body or timing) that the loop can choose between. The writer writes subject and body variants; the loop decides which one each merchant gets.
 
 **Lesson**:
 A written finding about what works for a segment, stored with the evidence behind it. Lessons from one segment can seed the others.
