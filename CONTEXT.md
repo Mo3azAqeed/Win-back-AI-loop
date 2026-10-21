@@ -1,15 +1,23 @@
 # Win-back AI loop
 
-An email loop that wins back users of our store-cloning Shopify app who stalled before paying. Claude writes email variants, the loop picks which ones to send, and every outcome feeds back so the next choices get better.
+An email loop that wins back merchants using our store-cloning Shopify app who stalled before paying. Claude writes email variants, the loop picks which ones to send, and every outcome feeds back so the next choices get better.
 
 ## Lifecycle
 
+**Merchant**:
+A person who has signed up to our app with their email address.
+_Avoid_: User, customer, shop owner
+
+**Publish**:
+The step in our app where a merchant makes their cloned store live. Publishing always starts the trial.
+_Avoid_: Launch, go live
+
 **Trial**:
-The 7-day free period that starts when a user publishes their cloned store, not when they sign up or start cloning.
+The 7-day free period that starts when a merchant publishes their cloned store, not when they sign up or start cloning.
 _Avoid_: Trial at signup
 
 **Paid conversion**:
-A user moving from trial to a paid plan. Tracked for every email, whatever its goal action.
+A merchant moving from trial to a paid plan. Tracked for every email, whatever its goal action.
 _Avoid_: Conversion (on its own, ambiguous)
 
 **Holdout**:
@@ -20,8 +28,17 @@ _Avoid_: Control group (fine in conversation, but use one word)
 The rate at which a segment reaches its goal action without win-back emails, measured on the holdout.
 
 **Segment**:
-The stage a stalled user is in, set by the last lifecycle step they reached. A user is in at most one segment at a time.
+The stage a stalled merchant is in, set by the last lifecycle step they reached. A merchant is in at most one segment at a time.
 _Avoid_: Group, cohort
+
+**Idle**:
+The segment of merchants who signed up but never started a draft. Goal action: start a draft.
+
+**Drafter**:
+The segment of merchants who saved a draft but never published. Goal action: publish.
+
+**Trialist**:
+The segment of merchants who published, so are in their trial, but have not paid. Goal action: paid conversion.
 
 **Trigger event**:
 The lifecycle event that starts the clock for a segment's email: signup, the most recent draft save, or publish.
@@ -29,17 +46,23 @@ The lifecycle event that starts the clock for a segment's email: signup, the mos
 ## Emails
 
 **Goal action**:
-The next lifecycle step an email aims to get a user to take; each segment has its own. It is what the loop rewards.
+The next lifecycle step an email aims to get a merchant to take; each segment has its own. It is what the loop rewards.
 _Avoid_: Conversion, success
 
 **Timing**:
 How long after the trigger event an email is sent. Chosen per email by the loop from a fixed set of options, not hard-coded per segment.
 _Avoid_: Trigger (when meaning the delay)
 
+**Miss window**:
+How long after an email the loop waits for the goal action before scoring the email a miss: 3 days for Idle, 7 days for Drafter, and until the trial ends for Trialist.
+
+**Ghost send**:
+A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.
+
 **Variant**:
-One candidate for a single part of an email (subject, body or timing) that the loop can choose between. Claude writes subject and body variants; the loop decides which one each user gets.
+One candidate for a single part of an email (subject, body or timing) that the loop can choose between. Claude writes subject and body variants; the loop decides which one each merchant gets.
 
 ## Milestones
 
 **Simulation**:
-A run of the loop against made-up users and made-up email outcomes, using placeholder baselines. No real email is sent.
+A run of the loop against made-up merchants and made-up email outcomes, using placeholder baselines. No real email is sent.
