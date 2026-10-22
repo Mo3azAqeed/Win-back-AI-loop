@@ -60,7 +60,11 @@ How long after an email the loop waits for the goal action before scoring the em
 A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.
 
 **Variant**:
-One candidate for a single part of an email (subject, body or timing) that the loop can choose between. The writer writes subject and body variants; the loop decides which one each merchant gets.
+One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The writer writes subject and body variants; the loop decides which one each merchant gets.
+
+**Offer**:
+An incentive in a Trialist's email: none, a 7-day trial extension, or the first month at 50% off. Only Trialists receive offers.
+_Avoid_: Promo, deal
 
 **Lesson**:
 A written finding about what works for a segment, stored with the evidence behind it. Lessons from one segment can seed the others.
@@ -76,3 +80,7 @@ The LLM that rates how appealing a variant is to a segment during a simulation. 
 
 **Simulation**:
 A run of the loop against made-up merchants and made-up email outcomes, using placeholder baselines. No real email is sent.
+
+**True lift**:
+How much the loop really raised a segment's goal-action rate over the holdout, known exactly because the simulation made up every merchant. Only exists in a simulation.
+_Avoid_: Measured lift (what real data could show; not reported)
