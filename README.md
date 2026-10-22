@@ -20,4 +20,16 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 
 ![Build order of tickets #2 to #14](docs/diagrams/build-order.drawio.svg)
 
+## Running on AWS
+
+How the simulation runs itself on AWS, and how real emails go out later: [`docs/aws.md`](docs/aws.md) (what changes in the code, and what the free account covers). Built in ticket #17.
+
+### Milestone 1: the simulation runs itself
+
+![Milestone 1 on AWS](docs/diagrams/aws-poc.drawio.svg)
+
+### Milestone 2: real emails to real merchants
+
+![Milestone 2 on AWS](docs/diagrams/aws-production.drawio.svg)
+
 The diagrams are `.drawio.svg` files: GitHub shows them as images, and you can open and edit them directly in [draw.io](https://app.diagrams.net).
