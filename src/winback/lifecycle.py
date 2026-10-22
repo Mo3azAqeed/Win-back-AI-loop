@@ -111,7 +111,7 @@ class StayResult:
     known_on: float
     goal_day: float | None
     reached: bool
-    revenue: float  # first-month revenue the goal action brought (a payment); 0 otherwise
+    first_month_revenue: float  # what the goal action brought, if it was a payment; 0 otherwise
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,7 @@ class _OpenStay:
     counted: bool
     left: float | None = None
     goal_day: float | None = None
-    revenue: float = 0.0
+    first_month_revenue: float = 0.0
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
 
@@ -256,14 +256,13 @@ class _Calendar:
         stay.left = day
         following = NEXT_SEGMENT[stay.segment]
         if following is None:
-            state.paid_at, stay.revenue = day, self.settings.monthly_price
+            state.paid_at, stay.first_month_revenue = day, self.settings.monthly_price
         else:
             self._enter(state, following, day)
 
     def _close_horizon(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         reached = stay.left is not None  # events run in date order, so any goal so far is inside the horizon
-        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, stay.revenue))
-
+        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, stay.first_month_revenue))
 
     def _close_miss_window(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         assert stay.email_sent_at is not None
@@ -302,7 +301,7 @@ class SegmentOutcome:
     emails: EmailTally
     true_lift: float
     paid_in_window: int  # merchants who paid within the paid window of entering this segment
-    revenue: float  # first-month revenue from goal actions within the horizon (Trialists paying)
+    first_month_revenue: float  # from payments within the horizon (Trialists paying)
 
     @property
     def reached_share(self) -> float:
@@ -323,9 +322,9 @@ def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float)
         reached = sum(r.reached for r in results)
         stays = [(j, s) for j in run.journeys for s in j.stays if s.segment is segment and s.counted]
         emails = _emails([s for _, s in stays], [e for e in run.email_results if e.segment is segment])
-        paid = sum(j.paid_at is not None and j.paid_at <= s.entered + paid_window_days for j, s in stays)
+        paid = sum(j.paid_at is not None and s.entered <= j.paid_at <= s.entered + paid_window_days for j, s in stays)
         lift = _rate(reached, len(results)) - no_email_share
-        return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.revenue for r in results))
+        return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.first_month_revenue for r in results))
 
     out: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:

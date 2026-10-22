@@ -1,6 +1,6 @@
 """The report a non-technical reader can follow."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from winback.lifecycle import Approach, SegmentOutcome
 from winback.settings import Settings
@@ -9,11 +9,19 @@ from winback.segments import Segment
 if TYPE_CHECKING:
     from winback.run import StartResult
 
-# How each segment is named in the report, what starts its clock, and its goal action (to do, and done).
+class SegmentText(NamedTuple):
+    """How a segment is named in the report, what starts its clock, and its goal action (to do, and done)."""
+
+    label: str
+    trigger: str
+    goal: str
+    done: str
+
+
 SEGMENT_TEXT = {
-    Segment.IDLE: ("Idle", "entering Idle (signup, for new merchants)", "start a draft", "started a draft"),
-    Segment.DRAFTER: ("Drafter", "saving the draft", "publish", "published"),
-    Segment.TRIALIST: ("Trialist", "publishing", "pay", "paid"),
+    Segment.IDLE: SegmentText("Idle", "entering Idle (signup, for new merchants)", "start a draft", "started a draft"),
+    Segment.DRAFTER: SegmentText("Drafter", "saving the draft", "publish", "published"),
+    Segment.TRIALIST: SegmentText("Trialist", "publishing", "pay", "paid"),
 }
 APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
 # Where each segment's miss window starts.
@@ -31,12 +39,12 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         "Hidden quality 100: the reference every later email is measured against. {braces} are filled in for each merchant.",
         "",
     ]
-    for segment, (label, trigger, _, _) in SEGMENT_TEXT.items():
+    for segment, text in SEGMENT_TEXT.items():
         draft = settings.first_drafts[segment.value]
         lines += [
-            f"### {label}",
+            f"### {text.label}",
             "",
-            f"Sent {settings.segments[segment].hand_written_after_days:g} days after {trigger}.",
+            f"Sent {settings.segments[segment].hand_written_after_days:g} days after {text.trigger}.",
             "",
             f"> **Subject:** {draft.subject}",
             ">",
@@ -85,14 +93,14 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         f"Paid means it paid within {settings.paid_window_days:g} days of {trigger}"
         + (f"; each payment is ${settings.monthly_price:,.0f} of first-month revenue." if paying else "."),
         "",
-        "| Approach | Merchants counted | Reached the goal | True lift (pts) | Paid within "
+        "| Approach | Merchants judged | Reached the goal | True lift (pts) | Paid within "
         f"{settings.paid_window_days:g} days |" + (" First-month revenue |" if paying else ""),
         "|---|---|---|---|---|" + ("---|" if paying else ""),
     ]
     for approach, o in outcomes.items():
         lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
         row = f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.paid_share:.1%} |"
-        lines.append(row + (f" ${o.revenue:,.0f} |" if paying else ""))
+        lines.append(row + (f" ${o.first_month_revenue:,.0f} |" if paying else ""))
     lines += [
         "",
         f"An email is a hit if the merchant {done} within {behaviour.miss_window_days:g} days of {MISS_WINDOW_FROM[segment]}, "

@@ -435,7 +435,7 @@ def test_an_email_is_scored_on_the_day_its_miss_window_closes_and_never_before(r
     for r in results:
         closes = {Segment.IDLE: r.sent_on + 3, Segment.DRAFTER: r.sent_on + 7, Segment.TRIALIST: r.entered + 14}[r.segment]
         assert r.known_on == closes
-        assert r.hit == (r.goal_day is not None and r.sent_on < r.goal_day <= r.known_on)
+        assert r.hit == (r.goal_day is not None and r.sent_on <= r.goal_day <= r.known_on)
     assert start.email_results[Approach.NO_EMAIL] == []
 
 
@@ -456,8 +456,8 @@ def test_every_trialist_who_pays_brings_40_dollars_of_first_month_revenue(run: R
 
     for approach in Approach:
         assert trialists[approach].reached > 0
-        assert trialists[approach].revenue == 40 * trialists[approach].reached
-    assert run.by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].revenue == 0
+        assert trialists[approach].first_month_revenue == 40 * trialists[approach].reached
+    assert run.by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].first_month_revenue == 0
 
 
 def test_the_report_shows_hits_misses_paid_conversion_and_trialist_revenue() -> None:
@@ -473,4 +473,21 @@ def test_the_report_shows_hits_misses_paid_conversion_and_trialist_revenue() -> 
     assert "| Hand-written email (your first draft) | 2,565 | 0 | 2,565 | 0 |" in idle_part
     assert "within 3 days of the email" in idle_part
     assert "within 14 days of publishing" in trialist_part
-    assert f"| ${trialists.revenue:,.0f} |" in trialist_part and trialists.revenue > 0
+    assert f"| ${trialists.first_month_revenue:,.0f} |" in trialist_part and trialists.first_month_revenue > 0
+
+
+def test_a_trialist_who_would_pay_on_day_8_does_not_pay_in_a_7_day_trial() -> None:
+    # The same merchants with the same luck, once with a 9-day trial and once with the real 7 days.
+    # With no email, every Trialist would pay on its own about 8 days after publishing.
+    slow = with_segments(trialist={"organic_share": 1.0, "organic_mean_days": 8})
+
+    def paid_after_publishing(trial_days: float) -> dict[str, float | None]:
+        journeys = run_simulation(dataclasses.replace(slow, trial_days=trial_days), seed=1).by_start[1000].journeys[Approach.NO_EMAIL]
+        trialists = [j for j in journeys if j.merchant.start_segment is Segment.TRIALIST]
+        return {j.merchant.key: None if j.stays[0].left is None else j.stays[0].left - j.stays[0].entered for j in trialists}
+
+    longer, real = paid_after_publishing(9), paid_after_publishing(7)
+    on_day_8_or_9 = [key for key, day in longer.items() if day is not None and 7 < day <= 9]
+
+    assert len(on_day_8_or_9) > 5
+    assert all(real[key] is None for key in on_day_8_or_9)
