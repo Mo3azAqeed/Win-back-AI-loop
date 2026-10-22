@@ -2,33 +2,46 @@
 
 from typing import TYPE_CHECKING
 
-from winback.idle import Approach
+from winback.lifecycle import Approach
 from winback.settings import Settings
+from winback.world import Segment
 
 if TYPE_CHECKING:
     from winback.run import StartResult
 
+SEGMENT_LABEL = {Segment.IDLE: "Idle", Segment.DRAFTER: "Drafter", Segment.TRIALIST: "Trialist"}
 APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
 
 
 def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") -> str:
-    idle_draft = settings.first_drafts["idle"]
     lines = [
         "# Win-back simulation report",
         "",
         f"Seed: {seed}. Every number marked as a placeholder below is made up.",
         "",
-        "## Your first draft for Idle merchants",
+        "## Your first drafts",
         "",
-        f"Sent {settings.idle.hand_written_after_days:g} days after signup. Hidden quality 100: the reference every later email is measured against. {{braces}} are filled in for each merchant.",
-        "",
-        f"> **Subject:** {idle_draft.subject}",
-        ">",
-        f"> {idle_draft.body}",
-        ">",
-        f"> **[{idle_draft.cta}]**",
+        "Hidden quality 100: the reference every later email is measured against. {braces} are filled in for each merchant.",
         "",
     ]
+    for segment, behaviour, trigger in (
+        (Segment.IDLE, settings.idle, "signup"),
+        (Segment.DRAFTER, settings.drafter, "the draft is started"),
+        (Segment.TRIALIST, settings.trialist, "publishing"),
+    ):
+        draft = settings.first_drafts[segment.value]
+        lines += [
+            f"### {SEGMENT_LABEL[segment]}",
+            "",
+            f"Sent {behaviour.hand_written_after_days:g} days after {trigger}.",
+            "",
+            f"> **Subject:** {draft.subject}",
+            ">",
+            f"> {draft.body}",
+            ">",
+            f"> **[{draft.cta}]**",
+            "",
+        ]
     for start, result in by_start.items():
         lines += [
             f"## Starting from {start:,} merchants",
@@ -43,7 +56,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "",
             "### Idle: start a draft",
             "",
-            f"Each new signup counts as reached if it starts a store draft within {settings.idle.horizon_days:g} days of signing up.",
+            f"Each new signup counts as reached if it starts a store draft within {settings.idle_horizon_days:g} days of signing up.",
             "",
             "| Approach | Merchants counted | Started a draft | True lift (pts) | Emails sent | Skipped (drafted first) |",
             "|---|---|---|---|---|---|",
@@ -51,7 +64,20 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         for approach, o in result.idle.items():
             lift = "baseline" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
             lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.sent:,} | {o.skipped:,} |")
-        lines.append("")
+        lines += [
+            "",
+            "### Segments with your first drafts",
+            "",
+            f"Emails are at least {settings.min_gap_days:g} days apart; an email is skipped if the merchant moved on before it was due.",
+            "",
+            "| Segment | Merchants entered | Emails sent | Skipped (moved on first) |",
+            "|---|---|---|---|",
+            *(
+                f"| {SEGMENT_LABEL[s]} | {t.entered:,} | {t.sent:,} | {t.skipped:,} |"
+                for s, t in result.traffic[Approach.HAND_WRITTEN].items()
+            ),
+            "",
+        ]
     lines += [
         "## Placeholders",
         "",

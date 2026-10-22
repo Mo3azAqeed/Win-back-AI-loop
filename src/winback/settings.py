@@ -22,10 +22,10 @@ class Email:
 
 
 @dataclass(frozen=True)
-class IdleSettings:
-    """How Idle merchants behave. The read and click rates are your first draft's (hidden quality 100)."""
+class SegmentSettings:
+    """How merchants in one segment behave. The read and click rates are your first draft's
+    for that segment (hidden quality 100)."""
 
-    horizon_days: float
     hand_written_after_days: float
     organic_share: float
     organic_mean_days: float
@@ -39,11 +39,18 @@ class IdleSettings:
 class Settings:
     start_sizes: tuple[int, ...]
     already_paying_share: float
+    existing_shares: tuple[float, float, float]
+    existing_spread_days: float
     weeks: int
     growth_first_week: float
     growth_last_week: float
     run_out_days: int
-    idle: IdleSettings
+    min_gap_days: float
+    trial_days: float
+    idle_horizon_days: float
+    idle: SegmentSettings
+    drafter: SegmentSettings
+    trialist: SegmentSettings
     first_drafts: dict[str, Email]
     entries: tuple[Setting, ...]
 
@@ -59,14 +66,28 @@ def load_settings(path: Path) -> Settings:
     def value(key: str) -> float:
         return entries[key].value
 
+    def segment(name: str) -> SegmentSettings:
+        return SegmentSettings(**{field: value(f"{name}.{field}") for field in SegmentSettings.__dataclass_fields__})
+
     return Settings(
         start_sizes=(int(value("merchants.start")), int(value("merchants.start_alternative"))),
         already_paying_share=value("merchants.already_paying_share"),
+        existing_shares=(
+            value("merchants.existing_idle_share"),
+            value("merchants.existing_drafter_share"),
+            value("merchants.existing_trialist_share"),
+        ),
+        existing_spread_days=value("merchants.existing_spread_days"),
         weeks=int(value("growth.weeks")),
         growth_first_week=value("growth.first_week"),
         growth_last_week=value("growth.last_week"),
         run_out_days=int(value("simulation.run_out_days")),
-        idle=IdleSettings(**{name: value(f"idle.{name}") for name in IdleSettings.__dataclass_fields__}),
+        min_gap_days=value("sending.min_gap_days"),
+        trial_days=value("trial.days"),
+        idle_horizon_days=value("idle.horizon_days"),
+        idle=segment("idle"),
+        drafter=segment("drafter"),
+        trialist=segment("trialist"),
         first_drafts=drafts,
         entries=tuple(entries.values()),
     )

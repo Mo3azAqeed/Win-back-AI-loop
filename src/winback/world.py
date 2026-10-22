@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 
 from winback.draws import draw
 from winback.settings import Settings
@@ -9,11 +10,19 @@ from winback.settings import Settings
 DAYS_PER_WEEK = 7
 
 
+class Segment(Enum):
+    IDLE = "idle"
+    DRAFTER = "drafter"
+    TRIALIST = "trialist"
+    PAID = "paid"
+
+
 @dataclass(frozen=True)
 class Merchant:
     key: str
     arrival_day: float
     existing: bool
+    start_segment: Segment
 
 
 def _whole(x: float) -> int:
@@ -46,13 +55,24 @@ def weekly_signups(settings: Settings, start: int) -> list[int]:
     return out
 
 
-def merchants(existing_simulated: int, signups: list[int], seed: int) -> list[Merchant]:
-    """Every simulated merchant: existing merchants who don't pay yet, then each week's new signups,
-    each arriving at a seeded moment inside their week. A merchant's key (and so every draw made for
-    it) depends on its week and its place in that week, not on how many existing merchants there are."""
-    out = [Merchant(f"existing-{i}", 0.0, True) for i in range(existing_simulated)]
+def existing_by_segment(settings: Settings, start: int) -> dict[Segment, int]:
+    """How many existing merchants sit in each segment today (those already paying aren't simulated)."""
+    segments = (Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST)
+    return {s: _whole(start * share) for s, share in zip(segments, settings.existing_shares)}
+
+
+def merchants(settings: Settings, existing: dict[Segment, int], signups: list[int], seed: int) -> list[Merchant]:
+    """Every simulated merchant. Existing merchants enter their segment at seeded moments spread over
+    the first days of the run; new signups arrive at a seeded moment inside their week and start in
+    Idle. A merchant's key (and so every draw made for it) depends only on its own group and place in
+    that group, so it doesn't shift when other counts change."""
+    out: list[Merchant] = []
+    for segment, count in existing.items():
+        for k in range(count):
+            key = f"existing-{segment.value}-{k}"
+            out.append(Merchant(key, settings.existing_spread_days * draw(seed, key, "arrival"), True, segment))
     for week, count in enumerate(signups):
         for k in range(count):
             arrival = DAYS_PER_WEEK * (week + draw(seed, "signup", week, k, "arrival"))
-            out.append(Merchant(f"signup-w{week}-{k}", arrival, False))
+            out.append(Merchant(f"signup-w{week}-{k}", arrival, False, Segment.IDLE))
     return out

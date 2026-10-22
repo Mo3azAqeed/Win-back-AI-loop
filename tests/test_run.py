@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from winback import Approach, RunResult, Settings, load_settings, run_simulation
+from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
 
 SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 
@@ -12,9 +12,22 @@ SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 WEEKLY_SIGNUPS_FROM_1000 = [100, 108, 117, 126, 135, 145, 156, 167, 178, 190, 202, 214, 227]
 
 
-def with_idle(**changes: float) -> Settings:
+def with_segments(
+    idle: dict[str, float] | None = None,
+    drafter: dict[str, float] | None = None,
+    trialist: dict[str, float] | None = None,
+) -> Settings:
     settings = load_settings(SETTINGS)
-    return dataclasses.replace(settings, idle=dataclasses.replace(settings.idle, **changes))
+    return dataclasses.replace(
+        settings,
+        idle=dataclasses.replace(settings.idle, **(idle or {})),
+        drafter=dataclasses.replace(settings.drafter, **(drafter or {})),
+        trialist=dataclasses.replace(settings.trialist, **(trialist or {})),
+    )
+
+
+def with_idle(**changes: float) -> Settings:
+    return with_segments(idle=changes)
 
 
 @pytest.fixture
@@ -99,10 +112,14 @@ def test_one_command_writes_the_report(tmp_path: Path) -> None:
     assert "## Starting from 1,000 merchants" in report and "## Starting from 1,500 merchants" in report
 
 
-def test_every_new_signup_is_counted_in_idle(run: RunResult) -> None:
+# Idle holds every new signup plus the existing merchants who are Idle today (50% of 1,000).
+IDLE_FROM_1000 = sum(WEEKLY_SIGNUPS_FROM_1000) + 500
+
+
+def test_every_merchant_starting_in_idle_is_counted(run: RunResult) -> None:
     idle = run.by_start[1000].idle
 
-    assert idle[Approach.NO_EMAIL].counted == idle[Approach.HAND_WRITTEN].counted == sum(WEEKLY_SIGNUPS_FROM_1000)
+    assert idle[Approach.NO_EMAIL].counted == idle[Approach.HAND_WRITTEN].counted == IDLE_FROM_1000
 
 
 def test_an_email_that_does_nothing_has_exactly_zero_true_lift() -> None:
@@ -133,8 +150,8 @@ def test_the_report_shows_idle_results_and_the_first_draft_that_was_sent(run: Ru
     from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
 
     assert "### Idle: start a draft" in from_1000
-    assert "| No email | 2,065 |" in from_1000
-    assert "| Hand-written email (your first draft) | 2,065 |" in from_1000
+    assert "| No email | 2,565 |" in from_1000
+    assert "| Hand-written email (your first draft) | 2,565 |" in from_1000
     assert "Your new store is one clone away" in run.report
     assert "Clone a store to start from, then make every page yours with the section builder." in run.report
     assert "[Start my first draft]" in run.report
@@ -180,16 +197,16 @@ def test_an_email_never_makes_a_merchant_draft_later_than_they_would_have() -> N
 def test_only_merchants_whose_horizon_fits_in_the_run_are_counted() -> None:
     run = run_simulation(dataclasses.replace(load_settings(SETTINGS), run_out_days=0), seed=1).by_start[1000]
     last_day = 13 * 7
-    fits = [m for m in run.merchants if not m.existing and m.arrival_day + 8 <= last_day]
+    fits = [m for m in run.merchants if m.start_segment is Segment.IDLE and m.arrival_day + 8 <= last_day]
 
-    assert run.idle[Approach.NO_EMAIL].counted == len(fits) < sum(WEEKLY_SIGNUPS_FROM_1000)
+    assert run.idle[Approach.NO_EMAIL].counted == len(fits) < IDLE_FROM_1000
 
 
 def test_the_report_states_idle_results_in_percentage_points() -> None:
     report = run_simulation(with_idle(**CERTAIN_EMAIL), seed=1).report
 
-    assert "| No email | 2,065 | 0.0% | baseline | 0 | 0 |" in report
-    assert "| Hand-written email (your first draft) | 2,065 | 100.0% | +100.0 | 2,065 | 0 |" in report
+    assert "| No email | 2,565 | 0.0% | baseline | 0 | 0 |" in report
+    assert "| Hand-written email (your first draft) | 2,565 | 100.0% | +100.0 | 2,565 | 0 |" in report
 
 
 def test_the_report_shows_the_send_day_from_settings() -> None:
@@ -218,3 +235,100 @@ def test_a_number_written_without_its_placeholder_flag_is_refused(tmp_path: Path
 
     with pytest.raises(ValueError, match="growth.weeks"):
         load_settings(tmp_path / "settings.toml")
+
+
+def test_existing_merchants_start_in_their_segment_spread_over_two_weeks(run: RunResult) -> None:
+    existing = [m for m in run.by_start[1000].merchants if m.existing]
+
+    assert [sum(m.start_segment is s for m in existing) for s in (Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST)] == [500, 250, 100]
+    assert all(0 <= m.arrival_day < 14 for m in existing)
+    assert max(m.arrival_day for m in existing) > 10
+
+
+LIFECYCLE = [Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST, Segment.PAID]
+
+
+def test_merchants_move_through_the_lifecycle_in_order_one_segment_at_a_time(run: RunResult) -> None:
+    journeys = run.by_start[1000].journeys[Approach.HAND_WRITTEN]
+    reached_paid = 0
+    for journey in journeys:
+        order = [LIFECYCLE.index(stay.segment) for stay in journey.stays]
+        assert order == list(range(order[0], order[0] + len(order)))
+        for before, after in zip(journey.stays, journey.stays[1:]):
+            assert before.left is not None and before.left == after.entered
+        reached_paid += journey.stays[-1].segment is Segment.PAID
+    assert reached_paid > 0
+
+
+def test_no_merchant_gets_more_than_one_email_per_segment(run: RunResult) -> None:
+    for journey in run.by_start[1000].journeys[Approach.HAND_WRITTEN]:
+        segments_emailed = [stay.segment for stay in journey.stays if stay.email_sent_at is not None]
+        assert len(segments_emailed) == len(set(segments_emailed))
+
+
+def test_no_merchant_gets_two_emails_less_than_48_hours_apart() -> None:
+    # Every Idle merchant drafts right after the Idle email, and the Drafter email would be
+    # due only 6 hours later, so the 48-hour gap has to hold it back.
+    settings = with_segments(idle=CERTAIN_EMAIL, drafter={"hand_written_after_days": 0.25})
+    journeys = run_simulation(settings, seed=1).by_start[1000].journeys[Approach.HAND_WRITTEN]
+
+    held_back = 0
+    for journey in journeys:
+        sent = [stay.email_sent_at for stay in journey.stays if stay.email_sent_at is not None]
+        assert all(later - earlier >= 2 - 1e-9 for earlier, later in zip(sent, sent[1:]))  # allow float rounding
+        held_back += any(s.segment is Segment.DRAFTER and s.email_sent_at is not None and s.email_sent_at > s.entered + 0.25 for s in journey.stays)
+    assert held_back > 0
+
+
+def test_drafters_who_publish_before_their_email_is_due_are_skipped() -> None:
+    settings = with_segments(drafter={"organic_share": 1.0, "organic_mean_days": 0.01})
+    drafters = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.DRAFTER]
+
+    assert drafters.entered > 250
+    assert drafters.sent == 0
+    assert drafters.skipped == drafters.entered
+
+
+def test_the_report_shows_each_segments_traffic_and_every_first_draft() -> None:
+    settings = with_segments(drafter={"organic_share": 1.0, "organic_mean_days": 0.01})
+    run = run_simulation(settings, seed=1)
+    drafters = run.by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.DRAFTER]
+
+    assert "### Segments with your first drafts" in run.report
+    assert f"| Drafter | {drafters.entered:,} | 0 | {drafters.entered:,} |" in run.report
+    assert "{store_name} is ready to go live" in run.report
+    assert "You won't pay anything until the trial ends." in run.report
+    assert "[Publish my store]" in run.report
+    assert "Keep {store_name} live after your trial" in run.report
+    assert "[Keep my store live]" in run.report
+
+
+def test_trialists_only_pay_inside_their_seven_day_trial() -> None:
+    # Slow payers and slow responders: many would pay after day 7 if the trial allowed it.
+    settings = with_segments(trialist={**CERTAIN_EMAIL, "organic_share": 0.5, "organic_mean_days": 20, "response_mean_days": 20})
+    for approach in Approach:
+        trialist_stays = [
+            stay for j in run_simulation(settings, seed=1).by_start[1000].journeys[approach]
+            for stay in j.stays if stay.segment is Segment.TRIALIST and stay.left is not None
+        ]
+        assert trialist_stays
+        assert all(stay.left - stay.entered <= 7 for stay in trialist_stays if stay.left is not None)
+
+
+def test_a_trialist_email_due_after_the_trial_has_ended_is_skipped() -> None:
+    settings = with_segments(trialist={"hand_written_after_days": 8})
+    trialists = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.TRIALIST]
+
+    assert trialists.sent == 0
+    assert trialists.skipped == trialists.entered > 100
+
+
+def test_a_merchants_luck_in_one_segment_does_not_decide_the_next() -> None:
+    # 30% draft on their own and 30% of Drafters publish on their own, both within hours.
+    # Worked by hand: with independent luck, about 30% of organic drafters also publish.
+    fast = {"organic_share": 0.3, "organic_mean_days": 0.01}
+    journeys = run_simulation(with_segments(idle=fast, drafter=fast), seed=1).by_start[1000].journeys[Approach.NO_EMAIL]
+    drafted = [j for j in journeys if j.stays[0].segment is Segment.IDLE and len(j.stays) > 1]
+    published = [j for j in drafted if len(j.stays) > 2]
+
+    assert 0.25 < len(published) / len(drafted) < 0.35

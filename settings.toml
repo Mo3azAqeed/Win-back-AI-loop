@@ -8,6 +8,10 @@
 start = { value = 1000, placeholder = false, note = "Merchants today (founder's figure)." }
 start_alternative = { value = 1500, placeholder = false, note = "Second starting size the simulation also runs (founder's figure)." }
 already_paying_share = { value = 0.15, placeholder = true, note = "Share of existing merchants who already pay; counted but not simulated." }
+existing_idle_share = { value = 0.50, placeholder = true, note = "Share of existing merchants who are Idle today." }
+existing_drafter_share = { value = 0.25, placeholder = true, note = "Share of existing merchants who are Drafters today." }
+existing_trialist_share = { value = 0.10, placeholder = true, note = "Share of existing merchants who are Trialists today." }
+existing_spread_days = { value = 14, placeholder = false, note = "Existing merchants enter their segment spread over this many days, so their emails don't go out in a burst." }
 
 [growth]
 weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }
@@ -15,14 +19,38 @@ first_week = { value = 0.10, placeholder = false, note = "Weekly growth in week 
 last_week = { value = 0.08, placeholder = false, note = "Weekly growth in the last week (founder's forecast)." }
 
 [simulation]
-run_out_days = { value = 14, placeholder = false, note = "Extra days after the last week so the last merchants can still be judged." }
+run_out_days = { value = 14, placeholder = false, note = "Extra days after the last week so the last merchants can still be counted." }
+
+[sending]
+min_gap_days = { value = 2, placeholder = false, note = "At least this many days between any two emails to the same merchant." }
+
+[trial]
+days = { value = 7, placeholder = false, note = "The free trial starts at publish and lasts this many days." }
 
 [idle]
 horizon_days = { value = 8, placeholder = false, note = "Idle merchants are counted as starting a draft if they do so within this many days of signing up." }
-hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written email (your first draft) goes out this many days after signup." }
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Idle email (your first draft) goes out this many days after signup." }
 organic_share = { value = 0.12, placeholder = true, note = "Share of Idle merchants who would start a draft one day with no email." }
 organic_mean_days = { value = 2.5, placeholder = true, note = "Average days until those merchants start a draft on their own." }
 read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant reads your first draft (hidden quality 100)." }
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your first draft's button (hidden quality 100)." }
 act_rate = { value = 0.25, placeholder = true, note = "Chance a merchant who clicks then starts a draft." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and starting the draft." }
+
+[drafter]
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Drafter email goes out this many days after the draft is started." }
+organic_share = { value = 0.30, placeholder = true, note = "Share of Drafters who would publish one day with no email." }
+organic_mean_days = { value = 3, placeholder = true, note = "Average days until those Drafters publish on their own." }
+read_rate = { value = 0.43, placeholder = true, note = "Chance a Drafter reads your Drafter first draft (hidden quality 100)." }
+click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Drafter first draft's button (hidden quality 100)." }
+act_rate = { value = 0.30, placeholder = true, note = "Chance a Drafter who clicks then publishes." }
+response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and publishing." }
+
+[trialist]
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Trialist email goes out this many days after publishing." }
+organic_share = { value = 0.20, placeholder = true, note = "Share of Trialists who would pay with no email, if the trial lasted long enough." }
+organic_mean_days = { value = 4, placeholder = true, note = "Average days after publishing until those Trialists pay; only payments inside the trial count." }
+read_rate = { value = 0.50, placeholder = true, note = "Chance a Trialist reads your Trialist first draft (hidden quality 100)." }
+click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Trialist first draft's button (hidden quality 100)." }
+act_rate = { value = 0.25, placeholder = true, note = "Chance a Trialist who clicks then pays." }
+response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and paying." }
