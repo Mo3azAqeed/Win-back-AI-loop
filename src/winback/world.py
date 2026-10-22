@@ -11,7 +11,6 @@ DAYS_PER_WEEK = 7
 
 @dataclass(frozen=True)
 class Merchant:
-    id: int
     key: str
     arrival_day: float
     existing: bool
@@ -20,6 +19,11 @@ class Merchant:
 def _whole(x: float) -> int:
     """Round to whole merchants, halves up."""
     return math.floor(x + 0.5)
+
+
+def simulation_end(settings: Settings) -> float:
+    """The last simulated day: the weeks of signups plus the run-out that lets late merchants be counted."""
+    return settings.weeks * DAYS_PER_WEEK + settings.run_out_days
 
 
 def already_paying(settings: Settings, start: int) -> int:
@@ -46,9 +50,9 @@ def merchants(existing_simulated: int, signups: list[int], seed: int) -> list[Me
     """Every simulated merchant: existing merchants who don't pay yet, then each week's new signups,
     each arriving at a seeded moment inside their week. A merchant's key (and so every draw made for
     it) depends on its week and its place in that week, not on how many existing merchants there are."""
-    out = [Merchant(i, f"existing-{i}", 0.0, True) for i in range(existing_simulated)]
+    out = [Merchant(f"existing-{i}", 0.0, True) for i in range(existing_simulated)]
     for week, count in enumerate(signups):
         for k in range(count):
             arrival = DAYS_PER_WEEK * (week + draw(seed, "signup", week, k, "arrival"))
-            out.append(Merchant(len(out), f"signup-w{week}-{k}", arrival, False))
+            out.append(Merchant(f"signup-w{week}-{k}", arrival, False))
     return out

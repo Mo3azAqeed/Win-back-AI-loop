@@ -18,11 +18,11 @@ last_week = { value = 0.08, placeholder = false, note = "Weekly growth in the la
 run_out_days = { value = 14, placeholder = false, note = "Extra days after the last week so the last merchants can still be judged." }
 
 [idle]
-judge_days = { value = 8, placeholder = false, note = "Idle merchants are judged on whether they start a draft within this many days of signing up." }
-first_draft_after_days = { value = 2, placeholder = false, note = "The hand-written email goes out this many days after signup." }
+horizon_days = { value = 8, placeholder = false, note = "Idle merchants are counted as starting a draft if they do so within this many days of signing up." }
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written email (your first draft) goes out this many days after signup." }
 organic_share = { value = 0.12, placeholder = true, note = "Share of Idle merchants who would start a draft one day with no email." }
 organic_mean_days = { value = 2.5, placeholder = true, note = "Average days until those merchants start a draft on their own." }
-read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant reads the first-draft email." }
-click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks the first draft's button." }
+read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant reads your first draft (hidden quality 100)." }
+click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your first draft's button (hidden quality 100)." }
 act_rate = { value = 0.25, placeholder = true, note = "Chance a merchant who clicks then starts a draft." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and starting the draft." }

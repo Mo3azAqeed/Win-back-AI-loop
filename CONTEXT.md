@@ -67,6 +67,10 @@ How long after an email the loop waits for the goal action before scoring the em
 **Ghost send**:
 A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.
 
+**First draft**:
+The founder's approved hand-written email for a segment. It is what the hand-written approach sends and where the AI loop starts, and it is the reference for hidden quality (100). Not a merchant's store draft.
+_Avoid_: Template, baseline email
+
 **Variant**:
 One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; the loop decides which one each merchant gets.
 

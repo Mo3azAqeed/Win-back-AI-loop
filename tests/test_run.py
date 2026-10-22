@@ -3,13 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from winback import RunResult, load_settings, run_simulation
+from winback import Approach, RunResult, Settings, load_settings, run_simulation
 
 SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 
 # Worked by hand: 1,000 merchants, growth falling linearly from 10% (week 1)
 # to 8% (week 13), each week's growth applied to the base as it stands.
 WEEKLY_SIGNUPS_FROM_1000 = [100, 108, 117, 126, 135, 145, 156, 167, 178, 190, 202, 214, 227]
+
+
+def with_idle(**changes: float) -> Settings:
+    settings = load_settings(SETTINGS)
+    return dataclasses.replace(settings, idle=dataclasses.replace(settings.idle, **changes))
 
 
 @pytest.fixture
@@ -94,36 +99,34 @@ def test_one_command_writes_the_report(tmp_path: Path) -> None:
     assert "## Starting from 1,000 merchants" in report and "## Starting from 1,500 merchants" in report
 
 
-def test_every_new_signup_is_judged_in_idle(run: RunResult) -> None:
+def test_every_new_signup_is_counted_in_idle(run: RunResult) -> None:
     idle = run.by_start[1000].idle
 
-    assert idle["no_email"].judged == idle["hand_written"].judged == sum(WEEKLY_SIGNUPS_FROM_1000)
+    assert idle[Approach.NO_EMAIL].counted == idle[Approach.HAND_WRITTEN].counted == sum(WEEKLY_SIGNUPS_FROM_1000)
 
 
 def test_an_email_that_does_nothing_has_exactly_zero_true_lift() -> None:
-    no_effect = dataclasses.replace(load_settings(SETTINGS), idle_act_rate=0.0)
-    idle = run_simulation(no_effect, seed=1).by_start[1000].idle
+    idle = run_simulation(with_idle(act_rate=0.0), seed=1).by_start[1000].idle
 
-    assert idle["hand_written"].reached == idle["no_email"].reached
-    assert idle["hand_written"].true_lift == 0.0
+    assert idle[Approach.HAND_WRITTEN].reached == idle[Approach.NO_EMAIL].reached
+    assert idle[Approach.HAND_WRITTEN].true_lift == 0.0
 
 
 def test_merchants_who_start_a_draft_before_the_email_is_due_are_skipped() -> None:
-    everyone_drafts_fast = dataclasses.replace(load_settings(SETTINGS), idle_organic_share=1.0, idle_organic_mean_days=0.01)
-    email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].idle["hand_written"]
+    everyone_drafts_fast = with_idle(organic_share=1.0, organic_mean_days=0.01)
+    email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
 
     assert email.sent == 0
-    assert email.skipped == email.judged
+    assert email.skipped == email.counted
 
 
 def test_when_nobody_drafts_alone_everyone_gets_the_email_and_it_lifts_drafts() -> None:
-    nobody_drafts_alone = dataclasses.replace(load_settings(SETTINGS), idle_organic_share=0.0)
-    idle = run_simulation(nobody_drafts_alone, seed=1).by_start[1000].idle
+    idle = run_simulation(with_idle(organic_share=0.0), seed=1).by_start[1000].idle
 
-    assert idle["hand_written"].skipped == 0
-    assert idle["hand_written"].sent == idle["hand_written"].judged
-    assert idle["no_email"].reached == 0
-    assert idle["hand_written"].true_lift > 0
+    assert idle[Approach.HAND_WRITTEN].skipped == 0
+    assert idle[Approach.HAND_WRITTEN].sent == idle[Approach.HAND_WRITTEN].counted
+    assert idle[Approach.NO_EMAIL].reached == 0
+    assert idle[Approach.HAND_WRITTEN].true_lift > 0
 
 
 def test_the_report_shows_idle_results_and_the_first_draft_that_was_sent(run: RunResult) -> None:

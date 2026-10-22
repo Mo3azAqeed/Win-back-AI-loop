@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.idle import SegmentOutcome, idle_outcomes
+from winback.idle import Approach, SegmentOutcome, idle_outcomes
 from winback.settings import Settings
 from winback.world import Merchant, already_paying, merchants, weekly_signups
 
@@ -17,7 +17,7 @@ class StartResult:
     existing_simulated: int
     weekly_signups: list[int]
     merchants: list[Merchant]
-    idle: dict[str, SegmentOutcome]
+    idle: dict[Approach, SegmentOutcome]
 
 
 @dataclass(frozen=True)

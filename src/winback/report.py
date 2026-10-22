@@ -2,11 +2,13 @@
 
 from typing import TYPE_CHECKING
 
-from winback.idle import APPROACH_LABEL
+from winback.idle import Approach
 from winback.settings import Settings
 
 if TYPE_CHECKING:
     from winback.run import StartResult
+
+APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
 
 
 def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") -> str:
@@ -18,7 +20,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         "",
         "## Your first draft for Idle merchants",
         "",
-        f"Sent {settings.idle_first_draft_after_days:g} days after signup.",
+        f"Sent {settings.idle.hand_written_after_days:g} days after signup. Hidden quality 100: the reference every later email is measured against. {{braces}} are filled in for each merchant.",
         "",
         f"> **Subject:** {idle_draft.subject}",
         ">",
@@ -41,14 +43,14 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "",
             "### Idle: start a draft",
             "",
-            f"Judged on whether each new signup starts a draft within {settings.idle_judge_days:g} days.",
+            f"Each new signup counts as reached if it starts a store draft within {settings.idle.horizon_days:g} days of signing up.",
             "",
-            "| Approach | Merchants judged | Started a draft | True lift (pts) | Emails sent | Skipped (drafted first) |",
+            "| Approach | Merchants counted | Started a draft | True lift (pts) | Emails sent | Skipped (drafted first) |",
             "|---|---|---|---|---|---|",
         ]
         for approach, o in result.idle.items():
-            lift = "baseline" if approach == "no_email" else f"{o.true_lift * 100:+.1f}"
-            lines.append(f"| {APPROACH_LABEL[approach]} | {o.judged:,} | {o.share:.1%} | {lift} | {o.sent:,} | {o.skipped:,} |")
+            lift = "baseline" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
+            lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.sent:,} | {o.skipped:,} |")
         lines.append("")
     lines += [
         "## Placeholders",

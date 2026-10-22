@@ -22,6 +22,20 @@ class Email:
 
 
 @dataclass(frozen=True)
+class IdleSettings:
+    """How Idle merchants behave. The read and click rates are your first draft's (hidden quality 100)."""
+
+    horizon_days: float
+    hand_written_after_days: float
+    organic_share: float
+    organic_mean_days: float
+    read_rate: float
+    click_rate: float
+    act_rate: float
+    response_mean_days: float
+
+
+@dataclass(frozen=True)
 class Settings:
     start_sizes: tuple[int, ...]
     already_paying_share: float
@@ -29,14 +43,7 @@ class Settings:
     growth_first_week: float
     growth_last_week: float
     run_out_days: int
-    idle_judge_days: float
-    idle_first_draft_after_days: float
-    idle_organic_share: float
-    idle_organic_mean_days: float
-    idle_read_rate: float
-    idle_click_rate: float
-    idle_act_rate: float
-    idle_response_mean_days: float
+    idle: IdleSettings
     first_drafts: dict[str, Email]
     entries: tuple[Setting, ...]
 
@@ -48,21 +55,18 @@ def load_settings(path: Path) -> Settings:
     with (path.parent / "first_drafts.toml").open("rb") as f:
         drafts = {segment: Email(d["subject"], d["body"], d["cta"]) for segment, d in tomllib.load(f).items()}
     entries = {s.key: s for s in _entries(raw)}
+
+    def value(key: str) -> float:
+        return entries[key].value
+
     return Settings(
-        start_sizes=(int(entries["merchants.start"].value), int(entries["merchants.start_alternative"].value)),
-        already_paying_share=entries["merchants.already_paying_share"].value,
-        weeks=int(entries["growth.weeks"].value),
-        growth_first_week=entries["growth.first_week"].value,
-        growth_last_week=entries["growth.last_week"].value,
-        run_out_days=int(entries["simulation.run_out_days"].value),
-        idle_judge_days=entries["idle.judge_days"].value,
-        idle_first_draft_after_days=entries["idle.first_draft_after_days"].value,
-        idle_organic_share=entries["idle.organic_share"].value,
-        idle_organic_mean_days=entries["idle.organic_mean_days"].value,
-        idle_read_rate=entries["idle.read_rate"].value,
-        idle_click_rate=entries["idle.click_rate"].value,
-        idle_act_rate=entries["idle.act_rate"].value,
-        idle_response_mean_days=entries["idle.response_mean_days"].value,
+        start_sizes=(int(value("merchants.start")), int(value("merchants.start_alternative"))),
+        already_paying_share=value("merchants.already_paying_share"),
+        weeks=int(value("growth.weeks")),
+        growth_first_week=value("growth.first_week"),
+        growth_last_week=value("growth.last_week"),
+        run_out_days=int(value("simulation.run_out_days")),
+        idle=IdleSettings(**{name: value(f"idle.{name}") for name in IdleSettings.__dataclass_fields__}),
         first_drafts=drafts,
         entries=tuple(entries.values()),
     )

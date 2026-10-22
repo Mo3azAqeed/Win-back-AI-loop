@@ -1,20 +1,8 @@
-# The founder's approved first drafts. The hand-written email is the first draft,
-# and the AI loop starts from the same words. {braces} are filled in per merchant.
+# The founder's approved first drafts: the hand-written email for each segment, and the
+# words the AI loop starts from. {braces} are filled in for each merchant.
+# Drafter and Trialist drafts join when those segments are built (#4).
 
 [idle]
-goal = "start a draft"
 subject = "Your new store is one clone away"
 body = "Hi {first_name}, you signed up but haven't started a store yet. Clone a store to start from, then make every page yours with the section builder. Your first draft takes a few minutes."
 cta = "Start my first draft"
-
-[drafter]
-goal = "publish"
-subject = "{store_name} is ready to go live"
-body = "Hi {first_name}, your draft of {store_name} is saved and waiting. Publishing takes one click and starts your 7-day free trial. You won't pay anything until the trial ends."
-cta = "Publish my store"
-
-[trialist]
-goal = "pay"
-subject = "Keep {store_name} live after your trial"
-body = "Hi {first_name}, {store_name} is live. Your free trial ends on {trial_end_date}. Keep your store and the section builder for $40/month."
-cta = "Keep my store live"
