@@ -54,7 +54,7 @@ How long after the trigger event an email is sent. Chosen per email by the loop 
 _Avoid_: Trigger (when meaning the delay)
 
 **Miss window**:
-How long after an email the loop waits for the goal action before scoring the email a miss: 3 days for Idle, 7 days for Drafter, and until the trial ends for Trialist.
+How long after an email the loop waits for the goal action before scoring the email a miss: 3 days for Idle and 7 days for Drafter, counted from the email; for Trialist, 14 days after publishing for everyone, so a trial extension is judged on the same terms as no offer.
 
 **Ghost send**:
 A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.
