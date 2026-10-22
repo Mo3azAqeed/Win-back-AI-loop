@@ -4,7 +4,7 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 
 **Milestone 1** is a simulation: made-up merchants, no real email. It answers whether the loop beats one good hand-written email at our real volume, and whether the lessons it learns are true.
 
-- Spec: [#1](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/1), built in tickets #2–#14
+- Spec: [#1](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/1), built in tickets #2–#14 and #16
 - Glossary: [`CONTEXT.md`](CONTEXT.md) · Decisions: [`docs/adr/`](docs/adr) · Research: [`docs/research/win-back-ai-loop.md`](docs/research/win-back-ai-loop.md)
 - Throwaway prototype: [`prototypes/win-back-sim.prototype.html`](prototypes/win-back-sim.prototype.html) (open it in a browser)
 
