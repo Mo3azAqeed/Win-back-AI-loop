@@ -114,13 +114,13 @@ IDLE_FROM_1000 = sum(WEEKLY_SIGNUPS_FROM_1000) + 500
 
 
 def test_every_merchant_starting_in_idle_is_counted(run: RunResult) -> None:
-    idle = run.by_start[1000].idle
+    idle = run.by_start[1000].outcomes[Segment.IDLE]
 
     assert idle[Approach.NO_EMAIL].counted == idle[Approach.HAND_WRITTEN].counted == IDLE_FROM_1000
 
 
 def test_an_email_that_does_nothing_has_exactly_zero_true_lift() -> None:
-    idle = run_simulation(with_idle(act_rate=0.0), seed=1).by_start[1000].idle
+    idle = run_simulation(with_idle(act_rate=0.0), seed=1).by_start[1000].outcomes[Segment.IDLE]
 
     assert idle[Approach.HAND_WRITTEN].reached == idle[Approach.NO_EMAIL].reached
     assert idle[Approach.HAND_WRITTEN].true_lift == 0.0
@@ -128,14 +128,14 @@ def test_an_email_that_does_nothing_has_exactly_zero_true_lift() -> None:
 
 def test_merchants_who_start_a_draft_before_the_email_is_due_are_skipped() -> None:
     everyone_drafts_fast = with_idle(organic_share=1.0, organic_mean_days=0.01)
-    email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
+    email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
 
     assert email.emails.sent == 0
     assert email.emails.skipped == email.counted
 
 
 def test_when_nobody_drafts_alone_everyone_gets_the_email_and_it_lifts_drafts() -> None:
-    idle = run_simulation(with_idle(organic_share=0.0), seed=1).by_start[1000].idle
+    idle = run_simulation(with_idle(organic_share=0.0), seed=1).by_start[1000].outcomes[Segment.IDLE]
 
     assert idle[Approach.HAND_WRITTEN].emails.skipped == 0
     assert idle[Approach.HAND_WRITTEN].emails.sent == idle[Approach.HAND_WRITTEN].counted
@@ -160,7 +160,7 @@ CERTAIN_EMAIL = dict(organic_share=0.0, read_rate=1.0, click_rate=1.0, act_rate=
 
 
 def test_an_email_that_arrives_after_the_horizon_cannot_lift_drafts() -> None:
-    idle = run_simulation(with_idle(**CERTAIN_EMAIL, hand_written_after_days=9), seed=1).by_start[1000].idle
+    idle = run_simulation(with_idle(**CERTAIN_EMAIL, hand_written_after_days=9), seed=1).by_start[1000].outcomes[Segment.IDLE]
 
     assert idle[Approach.HAND_WRITTEN].true_lift == 0.0
 
@@ -169,7 +169,7 @@ def test_reading_and_clicking_are_separate_chances_set_in_settings() -> None:
     # Worked by hand: 35% read x 60% click x 100% start a draft = 21% of 2,065 merchants.
     # Chance alone moves this by under 3 points (three standard deviations).
     settings = with_idle(**{**CERTAIN_EMAIL, "read_rate": 0.35, "click_rate": 0.6})
-    lift = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN].true_lift
+    lift = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].true_lift
 
     assert 0.18 < lift < 0.24
 
@@ -178,7 +178,7 @@ def test_a_slow_response_lands_after_the_horizon() -> None:
     # Worked by hand: with 1,000 days on average between click and draft, only
     # 1 - e^(-6/1000) = 0.6% start a draft within the 6 days left before the horizon.
     settings = with_idle(**{**CERTAIN_EMAIL, "response_mean_days": 1000})
-    lift = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN].true_lift
+    lift = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].true_lift
 
     assert lift < 0.02
 
@@ -186,7 +186,7 @@ def test_a_slow_response_lands_after_the_horizon() -> None:
 def test_an_email_never_makes_a_merchant_draft_later_than_they_would_have() -> None:
     # Half would draft on their own (often after the email); the email prompts drafts far too late to count.
     settings = with_idle(**{**CERTAIN_EMAIL, "organic_share": 0.5, "organic_mean_days": 3, "response_mean_days": 1000})
-    idle = run_simulation(settings, seed=1).by_start[1000].idle
+    idle = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE]
 
     assert idle[Approach.HAND_WRITTEN].reached >= idle[Approach.NO_EMAIL].reached
 
@@ -196,7 +196,7 @@ def test_a_merchant_signing_up_at_the_end_of_week_13_still_gets_its_full_horizon
     # makes everyone draft at once. Only if the run lasts until the last horizon closes do merchants
     # who sign up at the end of week 13 get their day-15 email, so every Idle merchant drafts in time.
     settings = with_idle(**CERTAIN_EMAIL, horizon_days=20, hand_written_after_days=15)
-    email = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
+    email = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
 
     assert email.counted == IDLE_FROM_1000
     assert email.reached == email.counted
@@ -291,20 +291,21 @@ def test_no_merchant_gets_two_emails_less_than_48_hours_apart() -> None:
 
 def test_drafters_who_publish_before_their_email_is_due_are_skipped() -> None:
     settings = with_segments(drafter={"organic_share": 1.0, "organic_mean_days": 0.01})
-    drafters = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.DRAFTER]
+    drafters = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.DRAFTER][Approach.HAND_WRITTEN]
 
-    assert drafters.entered > 250
+    assert drafters.counted > 250
     assert drafters.emails.sent == 0
-    assert drafters.emails.skipped == drafters.entered
+    assert drafters.emails.skipped == drafters.counted
 
 
-def test_the_report_shows_each_segments_traffic_and_every_first_draft() -> None:
+def test_the_report_shows_each_segments_results_and_every_first_draft() -> None:
     settings = with_segments(drafter={"organic_share": 1.0, "organic_mean_days": 0.01})
     run = run_simulation(settings, seed=1)
-    drafters = run.by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.DRAFTER]
+    drafters = run.by_start[1000].outcomes[Segment.DRAFTER][Approach.HAND_WRITTEN]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
 
-    assert "### Segments with your first drafts" in run.report
-    assert f"| Drafter | {drafters.entered:,} | 0 | {drafters.entered:,} |" in run.report
+    assert "### Drafter: publish" in from_1000 and "### Trialist: pay" in from_1000
+    assert f"| Hand-written email (your first draft) | {drafters.counted:,} | 100.0% | +0.0 | 0 | {drafters.counted:,} |" in from_1000
     assert "{store_name} is ready to go live" in run.report
     assert "You won't pay anything until the trial ends." in run.report
     assert "[Publish my store]" in run.report
@@ -326,10 +327,10 @@ def test_trialists_only_pay_inside_their_seven_day_trial() -> None:
 
 def test_a_trialist_email_due_after_the_trial_has_ended_is_skipped() -> None:
     settings = with_segments(trialist={"hand_written_after_days": 8})
-    trialists = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.TRIALIST]
+    trialists = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.TRIALIST][Approach.HAND_WRITTEN]
 
     assert trialists.emails.sent == 0
-    assert trialists.emails.skipped == trialists.entered > 100
+    assert trialists.emails.skipped == trialists.counted > 100
 
 
 def test_a_merchants_luck_in_one_segment_does_not_decide_the_next() -> None:

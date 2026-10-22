@@ -266,28 +266,20 @@ class SegmentOutcome:
         return _rate(self.reached, self.counted)
 
 
-@dataclass(frozen=True)
-class SegmentTraffic:
-    entered: int
-    emails: EmailTally
-
-
-def idle_outcomes(results: dict[Approach, list[StayResult]], journeys: dict[Approach, list[Journey]]) -> dict[Approach, SegmentOutcome]:
-    """Idle merchants and whether they started a draft within the Idle horizon, for each approach.
-    Every Idle stay's horizon closes inside the run, so every Idle merchant is counted."""
-    idle = {a: [r for r in rs if r.segment is Segment.IDLE] for a, rs in results.items()}
-    emails = {a: _emails([j.stays[0] for j in js if j.stays and j.stays[0].segment is Segment.IDLE]) for a, js in journeys.items()}
-    no_email_share = _rate(sum(r.reached for r in idle[Approach.NO_EMAIL]), len(idle[Approach.NO_EMAIL]))
-    return {
-        a: SegmentOutcome(len(rs), sum(r.reached for r in rs), emails[a], _rate(sum(r.reached for r in rs), len(rs)) - no_email_share)
-        for a, rs in idle.items()
-    }
-
-
-def traffic(journeys: list[Journey]) -> dict[Segment, SegmentTraffic]:
-    """Per segment: merchants who entered it, and the emails sent and skipped there."""
-    out = {}
+def segment_outcomes(results: dict[Approach, list[StayResult]], journeys: dict[Approach, list[Journey]]) -> dict[Segment, dict[Approach, SegmentOutcome]]:
+    """Per segment and approach: the stays counted, how many reached the goal action within the
+    horizon, the emails, and true lift against no email."""
+    out: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:
-        stays = [s for j in journeys for s in j.stays if s.segment is segment]
-        out[segment] = SegmentTraffic(len(stays), _emails(stays))
+        reached = {a: [r.reached for r in rs if r.segment is segment] for a, rs in results.items()}
+        no_email_share = _rate(sum(reached[Approach.NO_EMAIL]), len(reached[Approach.NO_EMAIL]))
+        out[segment] = {
+            a: SegmentOutcome(
+                len(r),
+                sum(r),
+                _emails([s for j in journeys[a] for s in j.stays if s.segment is segment]),
+                _rate(sum(r), len(r)) - no_email_share,
+            )
+            for a, r in reached.items()
+        }
     return out

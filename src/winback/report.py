@@ -9,11 +9,11 @@ from winback.segments import Segment
 if TYPE_CHECKING:
     from winback.run import StartResult
 
-# How each segment is named in the report, and what starts its clock.
+# How each segment is named in the report, what starts its clock, and its goal action (to do, and done).
 SEGMENT_TEXT = {
-    Segment.IDLE: ("Idle", "entering Idle (signup, for new merchants)"),
-    Segment.DRAFTER: ("Drafter", "the draft is saved"),
-    Segment.TRIALIST: ("Trialist", "publishing"),
+    Segment.IDLE: ("Idle", "entering Idle (signup, for new merchants)", "start a draft", "started a draft"),
+    Segment.DRAFTER: ("Drafter", "saving the draft", "publish", "published"),
+    Segment.TRIALIST: ("Trialist", "publishing", "pay", "paid"),
 }
 APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
 
@@ -29,7 +29,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         "Hidden quality 100: the reference every later email is measured against. {braces} are filled in for each merchant.",
         "",
     ]
-    for segment, (label, trigger) in SEGMENT_TEXT.items():
+    for segment, (label, trigger, _, _) in SEGMENT_TEXT.items():
         draft = settings.first_drafts[segment.value]
         lines += [
             f"### {label}",
@@ -55,30 +55,22 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             *(f"| {week} | {count:,} |" for week, count in enumerate(result.weekly_signups, start=1)),
             f"| Total | {sum(result.weekly_signups):,} |",
             "",
-            "### Idle: start a draft",
-            "",
-            f"Each Idle merchant counts as reached if it starts a store draft within {settings.segments[Segment.IDLE].horizon_days:g} days of entering Idle.",
-            "",
-            "| Approach | Merchants counted | Started a draft | True lift (pts) | Emails sent | Skipped (drafted first) |",
-            "|---|---|---|---|---|---|",
-        ]
-        for approach, o in result.idle.items():
-            lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
-            lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.emails.sent:,} | {o.emails.skipped:,} |")
-        lines += [
-            "",
-            "### Segments with your first drafts",
-            "",
             f"Emails are at least {settings.min_gap_days:g} days apart; an email is skipped if the merchant moved on, or the trial ended, before it was due.",
             "",
-            "| Segment | Merchants entered | Emails sent | Skipped (moved on or trial over) |",
-            "|---|---|---|---|",
-            *(
-                f"| {SEGMENT_TEXT[s][0]} | {t.entered:,} | {t.emails.sent:,} | {t.emails.skipped:,} |"
-                for s, t in result.traffic[Approach.HAND_WRITTEN].items()
-            ),
-            "",
         ]
+        for segment, (label, trigger, goal, done) in SEGMENT_TEXT.items():
+            lines += [
+                f"### {label}: {goal}",
+                "",
+                f"Reached means the merchant {done} within {settings.segments[segment].horizon_days:g} days of {trigger}.",
+                "",
+                "| Approach | Merchants counted | Reached the goal | True lift (pts) | Emails sent | Skipped (moved on or trial over) |",
+                "|---|---|---|---|---|---|",
+            ]
+            for approach, o in result.outcomes[segment].items():
+                lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
+                lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.emails.sent:,} | {o.emails.skipped:,} |")
+            lines.append("")
     lines += [
         "## Placeholders",
         "",

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, Journey, SegmentOutcome, SegmentTraffic, StayResult, idle_outcomes, run_calendar, traffic
+from winback.lifecycle import Approach, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -21,8 +21,7 @@ class StartResult:
     journeys: dict[Approach, list[Journey]]
     results: dict[Approach, list[StayResult]]
     event_days: dict[Approach, list[float]]
-    idle: dict[Approach, SegmentOutcome]
-    traffic: dict[Approach, dict[Segment, SegmentTraffic]]
+    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]
 
 
 @dataclass(frozen=True)
@@ -54,6 +53,5 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         journeys=journeys,
         results=results,
         event_days={a: c.event_days for a, c in calendars.items()},
-        idle=idle_outcomes(results, journeys),
-        traffic={a: traffic(js) for a, js in journeys.items()},
+        outcomes=segment_outcomes(results, journeys),
     )
