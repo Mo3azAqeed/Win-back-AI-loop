@@ -13,3 +13,16 @@ already_paying_share = { value = 0.15, placeholder = true, note = "Share of exis
 weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }
 first_week = { value = 0.10, placeholder = false, note = "Weekly growth in week 1 (founder's forecast)." }
 last_week = { value = 0.08, placeholder = false, note = "Weekly growth in the last week (founder's forecast)." }
+
+[simulation]
+run_out_days = { value = 14, placeholder = false, note = "Extra days after the last week so the last merchants can still be judged." }
+
+[idle]
+judge_days = { value = 8, placeholder = false, note = "Idle merchants are judged on whether they start a draft within this many days of signing up." }
+first_draft_after_days = { value = 2, placeholder = false, note = "The hand-written email goes out this many days after signup." }
+organic_share = { value = 0.12, placeholder = true, note = "Share of Idle merchants who would start a draft one day with no email." }
+organic_mean_days = { value = 2.5, placeholder = true, note = "Average days until those merchants start a draft on their own." }
+read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant reads the first-draft email." }
+click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks the first draft's button." }
+act_rate = { value = 0.25, placeholder = true, note = "Chance a merchant who clicks then starts a draft." }
+response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and starting the draft." }

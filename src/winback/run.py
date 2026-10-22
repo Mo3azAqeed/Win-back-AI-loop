@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
+from winback.idle import SegmentOutcome, idle_outcomes
 from winback.settings import Settings
 from winback.world import Merchant, already_paying, merchants, weekly_signups
 
@@ -16,6 +17,7 @@ class StartResult:
     existing_simulated: int
     weekly_signups: list[int]
     merchants: list[Merchant]
+    idle: dict[str, SegmentOutcome]
 
 
 @dataclass(frozen=True)
@@ -33,10 +35,12 @@ def run_simulation(settings: Settings, seed: int) -> RunResult:
 def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
     paying = already_paying(settings, start)
     signups = weekly_signups(settings, start)
+    simulated = merchants(start - paying, signups, seed)
     return StartResult(
         existing_merchants=start,
         already_paying=paying,
         existing_simulated=start - paying,
         weekly_signups=signups,
-        merchants=merchants(start - paying, signups, seed),
+        merchants=simulated,
+        idle=idle_outcomes(settings, simulated, seed),
     )

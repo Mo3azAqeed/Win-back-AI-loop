@@ -12,6 +12,7 @@ DAYS_PER_WEEK = 7
 @dataclass(frozen=True)
 class Merchant:
     id: int
+    key: str
     arrival_day: float
     existing: bool
 
@@ -43,11 +44,11 @@ def weekly_signups(settings: Settings, start: int) -> list[int]:
 
 def merchants(existing_simulated: int, signups: list[int], seed: int) -> list[Merchant]:
     """Every simulated merchant: existing merchants who don't pay yet, then each week's new signups,
-    each arriving at a seeded moment inside their week. A signup's draw is keyed by its week and its
-    place in that week, so it doesn't shift when the number of existing merchants changes."""
-    out = [Merchant(i, 0.0, True) for i in range(existing_simulated)]
+    each arriving at a seeded moment inside their week. A merchant's key (and so every draw made for
+    it) depends on its week and its place in that week, not on how many existing merchants there are."""
+    out = [Merchant(i, f"existing-{i}", 0.0, True) for i in range(existing_simulated)]
     for week, count in enumerate(signups):
         for k in range(count):
             arrival = DAYS_PER_WEEK * (week + draw(seed, "signup", week, k, "arrival"))
-            out.append(Merchant(len(out), arrival, False))
+            out.append(Merchant(len(out), f"signup-w{week}-{k}", arrival, False))
     return out

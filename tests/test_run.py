@@ -92,3 +92,46 @@ def test_one_command_writes_the_report(tmp_path: Path) -> None:
 
     report = out.read_text()
     assert "## Starting from 1,000 merchants" in report and "## Starting from 1,500 merchants" in report
+
+
+def test_every_new_signup_is_judged_in_idle(run: RunResult) -> None:
+    idle = run.by_start[1000].idle
+
+    assert idle["no_email"].judged == idle["hand_written"].judged == sum(WEEKLY_SIGNUPS_FROM_1000)
+
+
+def test_an_email_that_does_nothing_has_exactly_zero_true_lift() -> None:
+    no_effect = dataclasses.replace(load_settings(SETTINGS), idle_act_rate=0.0)
+    idle = run_simulation(no_effect, seed=1).by_start[1000].idle
+
+    assert idle["hand_written"].reached == idle["no_email"].reached
+    assert idle["hand_written"].true_lift == 0.0
+
+
+def test_merchants_who_start_a_draft_before_the_email_is_due_are_skipped() -> None:
+    everyone_drafts_fast = dataclasses.replace(load_settings(SETTINGS), idle_organic_share=1.0, idle_organic_mean_days=0.01)
+    email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].idle["hand_written"]
+
+    assert email.sent == 0
+    assert email.skipped == email.judged
+
+
+def test_when_nobody_drafts_alone_everyone_gets_the_email_and_it_lifts_drafts() -> None:
+    nobody_drafts_alone = dataclasses.replace(load_settings(SETTINGS), idle_organic_share=0.0)
+    idle = run_simulation(nobody_drafts_alone, seed=1).by_start[1000].idle
+
+    assert idle["hand_written"].skipped == 0
+    assert idle["hand_written"].sent == idle["hand_written"].judged
+    assert idle["no_email"].reached == 0
+    assert idle["hand_written"].true_lift > 0
+
+
+def test_the_report_shows_idle_results_and_the_first_draft_that_was_sent(run: RunResult) -> None:
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+
+    assert "### Idle: start a draft" in from_1000
+    assert "| No email | 2,065 |" in from_1000
+    assert "| Hand-written email (your first draft) | 2,065 |" in from_1000
+    assert "Your new store is one clone away" in run.report
+    assert "Clone a store to start from, then make every page yours with the section builder." in run.report
+    assert "[Start my first draft]" in run.report
