@@ -46,7 +46,7 @@ The lifecycle event that starts the clock for a segment's email: signup, the mos
 ## Emails
 
 **Goal action**:
-The next lifecycle step an email aims to get a merchant to take; each segment has its own. It is what the loop rewards.
+The next lifecycle step an email aims to get a merchant to take; each segment has its own. Results are judged on it, and timing and offers learn from it directly.
 _Avoid_: Conversion, success
 
 **Timing**:
