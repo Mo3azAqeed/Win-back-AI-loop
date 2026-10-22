@@ -1,0 +1,14 @@
+# Win-back simulation settings.
+#
+# Every number is written as { value = ..., placeholder = true | false }.
+# placeholder = true means the number is made up for the simulation and
+# should be replaced with real data when we have it.
+
+[merchants]
+start = { value = 1000, placeholder = false, note = "Merchants today (founder's figure). Also run at 1,500." }
+already_paying_share = { value = 0.15, placeholder = true, note = "Share of today's merchants who already pay; counted but not simulated." }
+
+[growth]
+weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }
+first_week = { value = 0.10, placeholder = false, note = "Weekly growth in week 1 (founder's forecast)." }
+last_week = { value = 0.08, placeholder = false, note = "Weekly growth in the last week (founder's forecast)." }
