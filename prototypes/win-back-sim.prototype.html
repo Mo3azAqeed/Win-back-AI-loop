@@ -1,0 +1,871 @@
+<title>Win-back Loop Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column. Controls and walkthroughs first, the live state under them, the 200-replay verdict last. */
+:root {
+  --bg: #F3F5F4; --surface: #FFFFFF; --sunk: #E9EEEC; --line: #D5DCD8; --fg: #16201B; --muted: #56625C;
+  --accent: #0E6E66; --accent-ink: #FFFFFF; --focus: #0E6E66;
+  --ai: #0E6E66; --fixed: #4F6286; --naive: #B4530A; --none: #9AA39E;
+  --good: #187A3F; --bad: #B42318; --note-bg: #FFF4D6; --note-fg: #6B4508;
+  --sans: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101513; --surface: #171D1A; --sunk: #1E2622; --line: #2C3632; --fg: #E4EAE7; --muted: #9AA7A1;
+    --accent: #3CC2B4; --accent-ink: #06201D; --focus: #3CC2B4;
+    --ai: #3CC2B4; --fixed: #8EA2CC; --naive: #F0973A; --none: #6E7873;
+    --good: #5BD08A; --bad: #FF7A6E; --note-bg: #3A2C0E; --note-fg: #F6D58C; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101513; --surface: #171D1A; --sunk: #1E2622; --line: #2C3632; --fg: #E4EAE7; --muted: #9AA7A1;
+  --accent: #3CC2B4; --accent-ink: #06201D; --focus: #3CC2B4;
+  --ai: #3CC2B4; --fixed: #8EA2CC; --naive: #F0973A; --none: #6E7873;
+  --good: #5BD08A; --bad: #FF7A6E; --note-bg: #3A2C0E; --note-fg: #F6D58C; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; font-weight: 700; }
+h3 { font-size: 0.95rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; background: var(--note-bg); color: var(--note-fg); }
+.muted { color: var(--muted); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+section { display: grid; gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px 22px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label, .checks legend { font-size: 0.82rem; font-weight: 600; }
+.field .hint { font-size: 0.78rem; color: var(--muted); }
+select, input[type=number] { font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); min-width: 0; }
+.checks { border: 0; padding: 0; margin: 0; display: grid; gap: 4px; }
+.checks label { display: flex; gap: 8px; align-items: flex-start; font-size: 0.88rem; }
+.checks input { margin-top: 4px; }
+button { font: inherit; font-size: 0.9rem; font-weight: 600; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.status { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: baseline; }
+.status .big { font-size: 1.35rem; font-weight: 700; }
+.changed { background: var(--sunk); border-radius: 6px; padding: 10px 12px; font-size: 0.88rem; }
+.changed ul { margin: 4px 0 0; padding-left: 18px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.tabs button { font-weight: 500; border-color: transparent; background: transparent; }
+.tabs button[aria-selected="true"] { background: var(--sunk); border-color: var(--line); font-weight: 650; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.steps .n { font-family: var(--mono); color: var(--muted); padding-top: 8px; text-align: right; }
+.steps .done-note { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+.watch { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--sunk); border-radius: 0 6px 6px 0; font-size: 0.9rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.card header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+th, td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.76rem; letter-spacing: 0.03em; }
+td.r, th.r { text-align: right; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.who { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.star { color: var(--accent); font-weight: 700; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.lessons { display: grid; gap: 6px; font-size: 0.86rem; margin: 0; padding: 0; list-style: none; }
+.lessons li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; }
+.ok { color: var(--good); font-weight: 700; } .wrong { color: var(--bad); font-weight: 700; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.bar { height: 8px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--accent); width: 0; }
+.verdict { font-size: 0.95rem; }
+.verdict li { margin-bottom: 4px; }
+@media (prefers-reduced-motion: no-preference) { .bar > div { transition: width 0.2s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="row"><span class="tag">Prototype · throwaway</span><span class="eyebrow">Win-back AI loop · milestone 1</span></div>
+    <h1>Win-back Loop Simulator</h1>
+    <p>The question: <strong>with your real volume (1,000–1,500 merchants, growing 10% → 8% a week, 13 weeks), does the AI loop actually beat one good hand-written email, and does it learn true things?</strong> Every number here is made up by the simulation, so it also knows the hidden truth: how good each email really was and who would have acted anyway.</p>
+    <div class="legend" aria-label="The four approaches, run on the same merchants">
+      <span><i class="sw" style="background:var(--ai)"></i>AI loop</span>
+      <span><i class="sw" style="background:var(--fixed)"></i>Hand-written email</span>
+      <span><i class="sw" style="background:var(--naive)"></i>Your original idea (judge by opens and clicks)</span>
+      <span><i class="sw" style="background:var(--none)"></i>No email</span>
+    </div>
+    <p class="muted" style="font-size:0.88rem">All four approaches run side by side on the exact same merchants with the exact same luck, so any difference between them comes from the emails. <strong>True lift</strong> is how many more merchants (in percentage points) reached their goal than with no email.</p>
+  </header>
+
+  <section aria-labelledby="h-settings">
+    <h2 id="h-settings">Settings</h2>
+    <form class="panel" id="settings" onsubmit="return false">
+      <div class="settings">
+        <div class="field"><label for="startMerchants">Merchants today</label>
+          <select id="startMerchants"><option value="1000">1,000</option><option value="1500">1,500</option></select>
+          <span class="hint">Then +10% a week, slowing to +8% by week 13.</span></div>
+        <div class="field"><label for="aiLearnsFrom">AI judges subjects and bodies by</label>
+          <select id="aiLearnsFrom"><option value="goal">Goal action (agreed)</option><option value="clicks">Human clicks (bot clicks removed)</option></select>
+          <span class="hint">Goal: started a draft, published, or paid.</span></div>
+        <div class="field"><label for="timingJudgedBy">AI judges timing and offers by</label>
+          <select id="timingJudgedBy"><option value="email">Window after the email (agreed)</option><option value="assignment">Everyone assigned, from the trigger</option></select>
+          <span class="hint">The second counts merchants who acted before their email went out.</span></div>
+        <div class="field"><label for="trialistReward">For Trialists, the AI aims for</label>
+          <select id="trialistReward"><option value="paid">Most merchants paying (agreed)</option><option value="revenue">Most revenue</option></select>
+          <span class="hint">A 50% discount payment counts as half.</span></div>
+        <div class="field"><label for="lessonRule">Rule for writing a lesson</label>
+          <select id="lessonRule"><option value="loose">95% sure, 120+ sends each</option><option value="strict">99% sure, 250+ sends each</option></select>
+          <span class="hint">Lessons are what the writer reads.</span></div>
+        <div class="field"><label for="seed">Luck (random seed)</label>
+          <input id="seed" type="number" min="1" step="1" value="1">
+          <span class="hint">Same seed, same run, every time.</span></div>
+        <fieldset class="checks"><legend>Real-world noise</legend>
+          <label><input type="checkbox" id="appleOpens" checked> Apple Mail fake opens</label>
+          <label><input type="checkbox" id="scannerClicks" checked> Security scanners clicking links</label>
+          <label><input type="checkbox" id="delayedResponses" checked> People acting days later</label></fieldset>
+        <fieldset class="checks"><legend>Assumptions and tests</legend>
+          <label><input type="checkbox" id="clickbait" checked> Catchy subjects tend to oversell</label>
+          <label><input type="checkbox" id="lessonsHelp" checked> Lessons make the writer better</label>
+          <label><input type="checkbox" id="identicalEmails"> Every email secretly identical (truth test)</label></fieldset>
+      </div>
+      <p class="muted" style="font-size:0.84rem">Changing a setting starts the 13 weeks over from day 0.</p>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-play">
+    <h2 id="h-play">Free play</h2>
+    <div class="row">
+      <button type="button" id="b-reset">Start over</button>
+      <button type="button" id="b-day">+1 day</button>
+      <button type="button" id="b-week">+1 week</button>
+      <button type="button" id="b-end">Run to week 13</button>
+      <button type="button" class="primary" id="b-replay">Replay 200 times</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-walk">
+    <h2 id="h-walk">Guided walkthroughs</h2>
+    <div class="panel">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div id="walk"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-state">
+    <h2 id="h-state">Current state</h2>
+    <div class="panel">
+      <div class="status" id="status"></div>
+      <div class="changed" id="changed"></div>
+    </div>
+    <div class="cards" id="segcards"></div>
+    <div class="two">
+      <div class="card" id="variants"></div>
+      <div class="card" id="timing"></div>
+    </div>
+    <div class="two">
+      <div class="card" id="offers"></div>
+      <div class="card" id="lessons"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-replay">
+    <h2 id="h-replay">200 replays</h2>
+    <div class="panel" id="replay"></div>
+  </section>
+</div>
+
+<script>
+// PROTOTYPE logic module: pure, no DOM. Throwaway; port the validated parts to Python.
+const WinbackSim = (() => {
+  'use strict';
+
+  const SEGMENTS = ['idle', 'drafter', 'trialist'];
+  const NEXT = { idle: 'drafter', drafter: 'trialist', trialist: 'paid' };
+  const SEGMENT_LABEL = { idle: 'Idle', drafter: 'Drafter', trialist: 'Trialist' };
+  const GOAL_LABEL = { idle: 'started a draft', drafter: 'published', trialist: 'paid' };
+  const TIMINGS = [
+    { id: '1h', label: '+1 hour', days: 1 / 24 },
+    { id: '2d', label: '+2 days', days: 2 },
+    { id: '5d', label: '+5 days', days: 5 },
+  ];
+  const OFFERS = [
+    { id: 'none', label: 'No offer', mult: 1 },
+    { id: 'extension', label: '7 more trial days', mult: 1.3 },
+    { id: 'discount', label: 'First month 50% off', mult: 1.7 },
+  ];
+  const WORLDS = ['none', 'fixed', 'naive', 'ai'];
+  const WORLD_LABEL = { none: 'No email', fixed: 'Hand-written email', naive: 'Your original idea', ai: 'AI loop' };
+  // How long after entering a segment we look for the goal action when measuring true lift.
+  const HORIZON = { idle: 8, drafter: 12, trialist: 14 };
+
+  const DEFAULTS = {
+    startMerchants: 1000, weeks: 13, growthStart: 0.10, growthEnd: 0.08,
+    backlogMix: { idle: 0.50, drafter: 0.25, trialist: 0.10 }, backlogSpreadDays: 14,
+    holdoutShare: 0.08, minGapDays: 2,
+    noise: { appleOpens: true, scannerClicks: true, delayedResponses: true },
+    appleShare: 0.5, imagesOffShare: 0.1, scannerShare: 0.1,
+    lessonsHelp: true, lessonShift: 0.3, identicalEmails: false, clickbait: true,
+    trialistReward: 'paid', timingJudgedBy: 'assignment', aiLearnsFrom: 'goal', fixedTiming: '2d', activePerSlot: 2,
+    minSendsToJudge: 120, retireConfidence: 0.9, lessonConfidence: 0.95,
+    price: 40, discountPrice: 20,
+  };
+
+  // Hidden truth of the made-up world. All PLACEHOLDERS.
+  const TRUTH = {
+    idle: { organicEventual: 0.12, organicMeanDays: 2.5, windowDays: 3, readBase: -0.6, timing: { '1h': 0.4, '2d': 0, '5d': -0.5 }, act: 0.25 },
+    drafter: { organicEventual: 0.30, organicMeanDays: 3, windowDays: 7, readBase: -0.3, timing: { '1h': -0.2, '2d': 0.3, '5d': 0 }, act: 0.30 },
+    trialist: { organicEventual: 0.20, payStart: 2, payEnd: 7, judgeDays: 14, readBase: 0, timing: { '1h': -0.3, '2d': 0.2, '5d': 0.3 }, act: 0.25 },
+  };
+  const CLICK_BASE = -1.4;
+  const QUALITY_SD = 0.5;
+  const FIT_WEIGHT = 0.8;     // how much a subject's honesty changes whether a clicker follows through
+  const CLICKBAIT_CORR = -0.5; // with clickbait on, catchier subjects tend to oversell
+  const DELAY_FAST = 0.3, DELAY_SLOW = 2.5;
+  const FIXED = { subject: { id: 'F', q: 0, fit: 0, label: 'Hand-written subject' }, body: { id: 'F', q: 0, label: 'Hand-written body' } };
+  // How good a variant really is for the goal, as an index where the hand-written email is 100.
+  function trueValue(v) {
+    if (v.slot === 'body' || v === FIXED.body) return 100 * sigmoid(CLICK_BASE + v.q) / sigmoid(CLICK_BASE);
+    return 100 * (sigmoid(-0.3 + v.q) * Math.exp(FIT_WEIGHT * v.fit)) / sigmoid(-0.3);
+  }
+
+  // ---------- randomness (seeded, so every run can be replayed exactly) ----------
+  function strHash(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mix(h, x) { h ^= x >>> 0; h = Math.imul(h, 0x01000193) >>> 0; h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297a2d39) >>> 0; h ^= h >>> 15; return h >>> 0; }
+  function hashOf(...xs) { let h = 0x811c9dc5; for (const x of xs) h = mix(h, typeof x === 'number' ? (x * 2654435761) >>> 0 : strHash(String(x))); return mix(h, 0x9e3779b9); }
+  // Per-merchant draws: identical across all four worlds, so they differ only by what the email did.
+  function unit(...xs) { return (hashOf(...xs) + 0.5) / 4294967296; }
+  function stream(seed) {
+    let a = seed >>> 0;
+    return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return (((t ^ (t >>> 14)) >>> 0) + 0.5) / 4294967296; };
+  }
+  function normal(u1, u2) { return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); }
+  function gamma(shape, r) {
+    if (shape < 1) return gamma(shape + 1, r) * Math.pow(r(), 1 / shape);
+    const d = shape - 1 / 3, c = 1 / Math.sqrt(9 * d);
+    for (;;) {
+      let x, v;
+      do { x = normal(r(), r()); v = 1 + c * x; } while (v <= 0);
+      v = v * v * v; const u = r();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+  function beta(a, b, r) { const x = gamma(a, r); return x / (x + gamma(b, r)); }
+  const sigmoid = (z) => 1 / (1 + Math.exp(-z));
+
+  class Heap {
+    constructor() { this.a = []; }
+    get size() { return this.a.length; }
+    peek() { return this.a[0]; }
+    less(x, y) { return x.t < y.t || (x.t === y.t && x.s < y.s); }
+    push(e) { const a = this.a; a.push(e); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (!this.less(e, a[p])) break; a[i] = a[p]; i = p; } a[i] = e; }
+    pop() {
+      const a = this.a, top = a[0], last = a.pop(), n = a.length;
+      if (n > 0) {
+        let i = 0;
+        for (;;) { const l = 2 * i + 1; if (l >= n) break; let m = l; if (l + 1 < n && this.less(a[l + 1], a[l])) m = l + 1; if (!this.less(a[m], last)) break; a[i] = a[m]; i = m; }
+        a[i] = last;
+      }
+      return top;
+    }
+  }
+
+  function settingsWith(over) {
+    const s = JSON.parse(JSON.stringify(DEFAULTS));
+    for (const [k, v] of Object.entries(over || {})) s[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? { ...s[k], ...v } : v;
+    return s;
+  }
+
+  // ---------- who shows up, and when ----------
+  function makeArrivals(s, seed) {
+    const list = []; let id = 0;
+    const N = s.startMerchants;
+    for (const seg of SEGMENTS) {
+      const count = Math.round(N * s.backlogMix[seg]);
+      for (let k = 0; k < count; k++, id++) list.push({ id, seg, t: unit(seed, id, 'arrive') * s.backlogSpreadDays, backlog: true });
+    }
+    let base = N; const weekly = [];
+    for (let w = 0; w < s.weeks; w++) {
+      const g = s.growthStart + (s.growthEnd - s.growthStart) * (s.weeks > 1 ? w / (s.weeks - 1) : 0);
+      const n = Math.round(base * g); base += n; weekly.push(n);
+      for (let k = 0; k < n; k++, id++) list.push({ id, seg: 'idle', t: 7 * w + unit(seed, id, 'arrive') * 7, backlog: false });
+    }
+    return { list, weekly, finalBase: base };
+  }
+
+  function emptyCounts() { return { idle: 0, drafter: 0, trialist: 0 }; }
+
+  // ---------- one world: the same merchants, handled by one approach ----------
+  class World {
+    constructor(kind, s, seed, arrivals) {
+      this.kind = kind; this.s = s; this.seed = seed; this.now = 0; this.seqNo = 0;
+      this.heap = new Heap(); this.merchants = new Map();
+      this.r = stream(hashOf(seed, kind, 'scorer'));
+      this.post = new Map();
+      this.active = { subject: [], body: [] }; this.poolNext = { subject: 0, body: 0 };
+      this.lessons = []; this.retired = []; this.entries = []; this.log = [];
+      this.stats = { sent: emptyCounts(), ghost: emptyCounts(), skippedReal: emptyCounts(), skippedGhost: emptyCounts(), revenue: 0, paid: 0, discountedPays: 0, offersSent: { none: 0, extension: 0, discount: 0 }, opensRecorded: 0, reads: 0, clicksRecorded: 0, clicks: 0 };
+      this.end = s.weeks * 7 + 14;
+      if (kind === 'ai' || kind === 'naive') {
+        for (let i = 0; i < s.activePerSlot; i++) { this.addVariant('subject', null); this.addVariant('body', null); }
+      }
+      for (const a of arrivals.list) this.push(a.t, 'enter', { id: a.id, seg: a.seg });
+      for (let d = 1; d <= this.end; d++) this.push(d, 'day', { d });
+    }
+
+    push(t, type, data) { this.heap.push({ t, s: this.seqNo++, type, data }); }
+    note(text) { this.log.push({ t: this.now, text }); if (this.log.length > 40) this.log.shift(); }
+
+    // The writer stand-in: draws the next subject or body from a fixed, seeded list.
+    addVariant(slot, prior) {
+      const i = this.poolNext[slot]++;
+      const helped = this.s.lessonsHelp && this.lessons.some((l) => l.slot === slot);
+      const shift = helped ? this.s.lessonShift : 0;
+      const z1 = normal(unit(this.seed, 'pool', slot, i, 'a'), unit(this.seed, 'pool', slot, i, 'b'));
+      const z2 = normal(unit(this.seed, 'pool', slot, i, 'c'), unit(this.seed, 'pool', slot, i, 'd'));
+      const rho = this.s.clickbait ? CLICKBAIT_CORR : 0;
+      const same = this.s.identicalEmails;
+      const q = same ? 0 : QUALITY_SD * z1 + shift;
+      const fit = same || slot === 'body' ? 0 : QUALITY_SD * (rho * z1 + Math.sqrt(1 - rho * rho) * z2) + shift;
+      const v = { id: (slot === 'subject' ? 'S' : 'B') + (i + 1), slot, q, fit, helped, bornDay: Math.floor(this.now) };
+      v.value = trueValue(v);
+      this.active[slot].push(v);
+      if (prior) this.post.set(this.key('idle', slot, v.id), { a: prior.a, b: prior.b, n: 0, sum: 0 });
+      return v;
+    }
+
+    key(seg, slot, id) { return seg + '|' + slot + '|' + id; }
+    getPost(seg, slot, id) { const k = this.key(seg, slot, id); let p = this.post.get(k); if (!p) { p = { a: 1, b: 1, n: 0, sum: 0 }; this.post.set(k, p); } return p; }
+    update(seg, slot, id, reward) { const p = this.getPost(seg, slot, id); p.a += reward; p.b += 1 - reward; p.n += 1; p.sum += reward; }
+    mean(p) { return p.a / (p.a + p.b); }
+
+    pick(seg, slot, ids) { let best = null, bv = -1; for (const id of ids) { const p = this.getPost(seg, slot, id); const v = beta(p.a, p.b, this.r); if (v > bv) { bv = v; best = id; } } return best; }
+    leader(slot) { let best = null, bm = -1; for (const v of this.active[slot]) { const m = this.mean(this.getPost('idle', slot, v.id)); if (m > bm) { bm = m; best = v; } } return best; }
+
+    choose(seg) {
+      if (this.kind === 'fixed') return { subject: FIXED.subject, body: FIXED.body, timing: this.s.fixedTiming, offer: seg === 'trialist' ? 'none' : null };
+      let subject, body;
+      if (seg === 'idle') {
+        const sid = this.pick('idle', 'subject', this.active.subject.map((v) => v.id));
+        const bid = this.pick('idle', 'body', this.active.body.map((v) => v.id));
+        subject = this.active.subject.find((v) => v.id === sid); body = this.active.body.find((v) => v.id === bid);
+      } else { subject = this.leader('subject'); body = this.leader('body'); }
+      const timing = this.pick(seg, 'timing', TIMINGS.map((x) => x.id));
+      const offer = seg === 'trialist' ? this.pick(seg, 'offer', OFFERS.map((o) => o.id)) : null;
+      return { subject, body, timing, offer };
+    }
+
+    advanceTo(t) {
+      const until = Math.min(t, this.end);
+      while (this.heap.size && this.heap.peek().t <= until) { const e = this.heap.pop(); this.now = e.t; this[e.type](e.data); }
+      this.now = Math.max(this.now, until);
+    }
+
+    setGoal(m, tg) { m.token += 1; m.nextGoalAt = tg; if (tg < Infinity) this.push(tg, 'goal', { id: m.id, seg: m.seg, token: m.token }); }
+
+    enter({ id, seg }) {
+      let m = this.merchants.get(id);
+      if (!m) {
+        m = { id, holdout: unit(this.seed, id, 'holdout') < this.s.holdoutShare, apple: unit(this.seed, id, 'apple') < this.s.appleShare, imagesOff: unit(this.seed, id, 'images') < this.s.imagesOffShare, lastEmail: -1e9, lastGhost: -1e9, token: 0 };
+        this.merchants.set(id, m);
+      }
+      m.seg = seg; m.offer = null;
+      if (seg === 'paid') return;
+      if (seg === 'trialist') m.publishAt = this.now;
+      m.entry = { id, seg, t: this.now, holdout: m.holdout, goalAt: null };
+      this.entries.push(m.entry);
+      const T = TRUTH[seg]; let tg = Infinity;
+      if (unit(this.seed, id, seg, 'organic') < T.organicEventual) {
+        const u = unit(this.seed, id, seg, 'organicTime');
+        tg = seg === 'trialist' ? this.now + T.payStart + u * (T.payEnd - T.payStart) : this.now - T.organicMeanDays * Math.log(u);
+      }
+      this.setGoal(m, tg);
+      if (this.kind === 'none') return;
+      const arms = this.choose(seg);
+      const ghost = m.holdout;
+      // Judge timing and offer by who was assigned them, over the same days from the trigger,
+      // whether or not the email ended up being sent.
+      if (this.kind === 'ai' && !ghost && this.s.timingJudgedBy === 'assignment') this.push(this.now + HORIZON[seg], 'matureAssignment', { seg, arms, entry: m.entry });
+      const last = ghost ? m.lastGhost : m.lastEmail;
+      const days = TIMINGS.find((x) => x.id === arms.timing).days;
+      this.push(Math.max(this.now + days, last + this.s.minGapDays), 'send', { id, seg, arms, ghost });
+    }
+
+    goal({ id, seg, token }) {
+      const m = this.merchants.get(id);
+      if (m.seg !== seg || token !== m.token) return;
+      m.entry.goalAt = this.now;
+      if (seg === 'trialist') {
+        const price = m.offer === 'discount' ? this.s.discountPrice : this.s.price;
+        this.stats.revenue += price; this.stats.paid += 1; if (m.offer === 'discount') { this.stats.discountedPays += 1; m.paidWithDiscount = true; }
+      }
+      this.enter({ id, seg: NEXT[seg] });
+    }
+
+    send({ id, seg, arms, ghost }) {
+      const m = this.merchants.get(id);
+      if (m.seg !== seg) { (ghost ? this.stats.skippedGhost : this.stats.skippedReal)[seg] += 1; return; }
+      const last = ghost ? m.lastGhost : m.lastEmail;
+      if (this.now < last + this.s.minGapDays - 1e-9) { this.push(last + this.s.minGapDays, 'send', { id, seg, arms, ghost }); return; }
+      if (ghost) { m.lastGhost = this.now; this.stats.ghost[seg] += 1; return; }
+      m.lastEmail = this.now; this.stats.sent[seg] += 1;
+      const T = TRUTH[seg];
+      const read = unit(this.seed, id, seg, 'read') < sigmoid(T.readBase + arms.subject.q + T.timing[arms.timing]);
+      const click = read && unit(this.seed, id, seg, 'click') < sigmoid(CLICK_BASE + arms.body.q);
+      const offer = arms.offer;
+      if (offer) { m.offer = offer; this.stats.offersSent[offer] += 1; }
+      const mult = offer ? OFFERS.find((o) => o.id === offer).mult : 1;
+      const act = click && unit(this.seed, id, seg, 'act') < Math.min(0.95, T.act * mult * Math.exp(FIT_WEIGHT * (arms.subject.fit || 0)));
+      if (act) {
+        const meanDelay = this.s.noise.delayedResponses ? DELAY_SLOW : DELAY_FAST;
+        let ta = this.now - meanDelay * Math.log(unit(this.seed, id, seg, 'delay'));
+        if (seg === 'trialist' && ta > m.publishAt + (offer === 'extension' ? 14 : 7)) ta = Infinity;
+        if (ta < m.nextGoalAt) this.setGoal(m, ta);
+      }
+      const recordedOpen = (this.s.noise.appleOpens && m.apple) || (read && !m.imagesOff);
+      const recordedClick = click || (this.s.noise.scannerClicks && unit(this.seed, id, seg, 'scanner') < this.s.scannerShare);
+      this.stats.reads += read ? 1 : 0; this.stats.opensRecorded += recordedOpen ? 1 : 0;
+      this.stats.clicks += click ? 1 : 0; this.stats.clicksRecorded += recordedClick ? 1 : 0;
+      const windowEnd = seg === 'trialist' ? m.publishAt + T.judgeDays : this.now + T.windowDays;
+      const rec = { id, seg, t: this.now, arms, entry: m.entry, recordedOpen, recordedClick, windowEnd };
+      if (this.kind === 'naive') this.learnNaive(rec);
+      if (this.kind === 'ai' && this.s.aiLearnsFrom === 'clicks') { if (seg === 'idle') { this.update('idle', 'subject', arms.subject.id, click ? 1 : 0); this.update('idle', 'body', arms.body.id, click ? 1 : 0); } }
+      if (this.kind === 'ai') this.push(windowEnd, 'mature', rec);
+    }
+
+    learnNaive(rec) {
+      const { seg, arms } = rec;
+      const open = rec.recordedOpen ? 1 : 0, click = rec.recordedClick ? 1 : 0;
+      if (seg === 'idle') {
+        this.update('idle', 'subject', arms.subject.id, open);
+        if (open) this.update('idle', 'body', arms.body.id, click);
+      }
+      this.update(seg, 'timing', arms.timing, open);
+      if (arms.offer) this.update(seg, 'offer', arms.offer, click);
+    }
+
+    mature(rec) {
+      const e = rec.entry;
+      const success = e.goalAt !== null && e.goalAt >= rec.t && e.goalAt <= rec.windowEnd;
+      let reward = success ? 1 : 0;
+      if (success && rec.seg === 'trialist' && this.s.trialistReward === 'revenue' && rec.arms.offer === 'discount') reward = this.s.discountPrice / this.s.price;
+      const r = this.r() < reward ? 1 : 0;
+      if (rec.seg === 'idle' && this.s.aiLearnsFrom === 'goal') { this.update('idle', 'subject', rec.arms.subject.id, r); this.update('idle', 'body', rec.arms.body.id, r); }
+      if (this.s.timingJudgedBy === 'email') {
+        this.update(rec.seg, 'timing', rec.arms.timing, r);
+        if (rec.arms.offer) this.update(rec.seg, 'offer', rec.arms.offer, r);
+      }
+    }
+
+    matureAssignment({ seg, arms, entry }) {
+      const success = entry.goalAt !== null && entry.goalAt <= entry.t + HORIZON[seg];
+      let reward = success ? 1 : 0;
+      if (success && seg === 'trialist' && this.s.trialistReward === 'revenue' && arms.offer === 'discount' && this.merchants.get(entry.id).paidWithDiscount) reward = this.s.discountPrice / this.s.price;
+      const r = this.r() < reward ? 1 : 0;
+      this.update(seg, 'timing', arms.timing, r);
+      if (arms.offer) this.update(seg, 'offer', arms.offer, r);
+    }
+
+    day() { if (this.kind === 'ai' || this.kind === 'naive') { this.review('subject'); this.review('body'); } }
+
+    probGreater(p, q, draws) { let w = 0; for (let i = 0; i < draws; i++) if (beta(p.a, p.b, this.r) > beta(q.a, q.b, this.r)) w++; return w / draws; }
+
+    // Retire a clearly worse variant and ask the writer for a new one. Write a lesson if the evidence is strong.
+    review(slot) {
+      const act = this.active[slot];
+      if (act.length < 2) return;
+      const rows = act.map((v) => ({ v, p: this.getPost('idle', slot, v.id) }));
+      const best = rows.reduce((a, b) => (this.mean(a.p) >= this.mean(b.p) ? a : b));
+      for (const x of rows) {
+        if (x === best || x.p.n < this.s.minSendsToJudge || best.p.n < this.s.minSendsToJudge) continue;
+        const prob = this.probGreater(best.p, x.p, 250);
+        if (prob < this.s.retireConfidence) continue;
+        if (prob >= this.s.lessonConfidence) {
+          this.lessons.push({ slot, day: Math.floor(this.now), winner: best.v, loser: x.v, winRate: best.p.sum / best.p.n, loseRate: x.p.sum / x.p.n, nWin: best.p.n, nLose: x.p.n, prob, isTrue: best.v.value > x.v.value });
+          this.note(`Lesson: ${slot} ${best.v.id} beats ${x.v.id}`);
+        }
+        this.retired.push({ ...x.v, retiredDay: Math.floor(this.now) });
+        this.active[slot] = act.filter((v) => v !== x.v);
+        const pooled = rows.reduce((s, y) => s + this.mean(y.p), 0) / rows.length;
+        const nv = this.addVariant(slot, { a: Math.max(0.2, pooled * 10), b: Math.max(0.2, (1 - pooled) * 10) });
+        this.note(`Retired ${slot} ${x.v.id}; writer added ${nv.id}`);
+        return;
+      }
+    }
+
+    // Share of merchants who reached the goal within the horizon, by the week they entered the segment.
+    series(seg) {
+      const weeks = Array.from({ length: this.s.weeks }, () => ({ n: 0, k: 0 }));
+      const total = { n: 0, k: 0 };
+      for (const e of this.entries) {
+        if (e.seg !== seg || (this.kind !== 'none' && e.holdout) || e.t + HORIZON[seg] > this.now) continue;
+        const ok = e.goalAt !== null && e.goalAt <= e.t + HORIZON[seg];
+        const w = Math.min(this.s.weeks - 1, Math.floor(e.t / 7));
+        weeks[w].n++; weeks[w].k += ok ? 1 : 0; total.n++; total.k += ok ? 1 : 0;
+      }
+      return { weeks, total };
+    }
+
+    entered(seg) { let n = 0; for (const e of this.entries) if (e.seg === seg && e.t <= this.now) n++; return n; }
+  }
+
+  class Run {
+    constructor(over, seed) {
+      this.s = settingsWith(over); this.seed = seed;
+      this.arrivals = makeArrivals(this.s, seed);
+      this.worlds = {}; for (const k of WORLDS) this.worlds[k] = new World(k, this.s, seed, this.arrivals);
+      this.end = this.s.weeks * 7 + 14; this.now = 0;
+    }
+    advanceTo(t) { for (const k of WORLDS) this.worlds[k].advanceTo(t); this.now = Math.min(t, this.end); }
+    advanceBy(days) { this.advanceTo(this.now + days); }
+    runToEnd() { this.advanceTo(this.end); }
+    // True lift so far, by the week merchants entered the segment (cumulative, matured merchants only).
+    liftSeries(seg) {
+      const cum = {};
+      for (const k of WORLDS) {
+        const weeks = this.worlds[k].series(seg).weeks; let n = 0, kk = 0;
+        cum[k] = weeks.map((w) => { n += w.n; kk += w.k; return n ? kk / n : null; });
+      }
+      const out = {};
+      for (const k of WORLDS) out[k] = cum[k].map((r, i) => (r === null || cum.none[i] === null ? null : r - cum.none[i]));
+      return out;
+    }
+    summary() {
+      const out = { segments: {}, revenue: {}, lessons: {} };
+      for (const seg of SEGMENTS) {
+        const rows = {}; for (const k of WORLDS) { const t = this.worlds[k].series(seg).total; rows[k] = { n: t.n, rate: t.n ? t.k / t.n : 0 }; }
+        for (const k of WORLDS) rows[k].lift = rows[k].rate - rows.none.rate;
+        out.segments[seg] = rows;
+      }
+      for (const k of WORLDS) out.revenue[k] = this.worlds[k].stats.revenue;
+      for (const k of ['ai', 'naive']) { const L = this.worlds[k].lessons; out.lessons[k] = { total: L.length, wrong: L.filter((l) => !l.isTrue).length }; }
+      return out;
+    }
+  }
+
+  function quantile(xs, q) { const a = [...xs].sort((x, y) => x - y); if (!a.length) return 0; const i = (a.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); }
+
+  // Replay the same 3 months many times with different luck.
+  function replays(over, count, baseSeed) {
+    const per = []; for (let i = 0; i < count; i++) { const run = new Run(over, baseSeed + i * 7919); run.runToEnd(); per.push(run.summary()); }
+    return aggregate(per);
+  }
+  function aggregate(per) {
+    const agg = { count: per.length, segments: {}, revenue: {}, lessons: {} };
+    for (const seg of SEGMENTS) {
+      agg.segments[seg] = {};
+      for (const k of WORLDS) {
+        const lifts = per.map((p) => p.segments[seg][k].lift), rates = per.map((p) => p.segments[seg][k].rate);
+        agg.segments[seg][k] = { rate: rates.reduce((a, b) => a + b, 0) / per.length, lift: lifts.reduce((a, b) => a + b, 0) / per.length, lo: quantile(lifts, 0.05), hi: quantile(lifts, 0.95), n: per.reduce((a, p) => a + p.segments[seg][k].n, 0) / per.length };
+      }
+      agg.segments[seg].aiBeatsFixed = per.filter((p) => p.segments[seg].ai.lift > p.segments[seg].fixed.lift).length / per.length;
+    }
+    for (const k of WORLDS) agg.revenue[k] = per.reduce((a, p) => a + p.revenue[k], 0) / per.length;
+    for (const k of ['ai', 'naive']) { const tot = per.reduce((a, p) => a + p.lessons[k].total, 0), wrong = per.reduce((a, p) => a + p.lessons[k].wrong, 0); agg.lessons[k] = { perRun: tot / per.length, wrongShare: tot ? wrong / tot : 0 }; }
+    return agg;
+  }
+
+  return { trueValue, FIXED, SEGMENTS, SEGMENT_LABEL, GOAL_LABEL, TIMINGS, OFFERS, WORLDS, WORLD_LABEL, HORIZON, DEFAULTS, TRUTH, settingsWith, Run, replays, aggregate };
+})();
+
+</script>
+<script>
+(() => {
+  const S = WinbackSim;
+  const $ = (id) => document.getElementById(id);
+  const pct = (x, d = 1) => (x * 100).toFixed(d) + '%';
+  const pp = (x, d = 1) => (x >= 0 ? '+' : '−') + Math.abs(x * 100).toFixed(d);
+  const COLOR = { ai: 'var(--ai)', fixed: 'var(--fixed)', naive: 'var(--naive)', none: 'var(--none)' };
+  // Measured once with 60 replays of the hand-written email at each timing.
+  const HIDDEN_BEST_TIMING = { idle: '1h', drafter: '2d', trialist: '2d' };
+  const AGREED = { startMerchants: 1000, aiLearnsFrom: 'goal', timingJudgedBy: 'email', trialistReward: 'paid', lessonRule: 'loose', seed: 1, appleOpens: true, scannerClicks: true, delayedResponses: true, clickbait: true, lessonsHelp: true, identicalEmails: false };
+  const SELECTS = ['startMerchants', 'aiLearnsFrom', 'timingJudgedBy', 'trialistReward', 'lessonRule'];
+  const CHECKS = ['appleOpens', 'scannerClicks', 'delayedResponses', 'clickbait', 'lessonsHelp', 'identicalEmails'];
+
+  let form = { ...AGREED };
+  let run = null, prev = null, busy = false, lastReplay = null;
+
+  function overFrom(f) {
+    const strict = f.lessonRule === 'strict';
+    return {
+      startMerchants: +f.startMerchants, aiLearnsFrom: f.aiLearnsFrom, timingJudgedBy: f.timingJudgedBy, trialistReward: f.trialistReward,
+      lessonConfidence: strict ? 0.99 : 0.95, minSendsToJudge: strict ? 250 : 120,
+      noise: { appleOpens: f.appleOpens, scannerClicks: f.scannerClicks, delayedResponses: f.delayedResponses },
+      clickbait: f.clickbait, lessonsHelp: f.lessonsHelp, identicalEmails: f.identicalEmails,
+    };
+  }
+  function readForm() {
+    for (const id of SELECTS) form[id] = $(id).value;
+    for (const id of CHECKS) form[id] = $(id).checked;
+    form.seed = Math.max(1, parseInt($('seed').value, 10) || 1);
+  }
+  function writeForm() {
+    for (const id of SELECTS) $(id).value = String(form[id]);
+    for (const id of CHECKS) $(id).checked = !!form[id];
+    $('seed').value = form.seed;
+  }
+
+  function snapshot() {
+    const ai = run.worlds.ai;
+    const sent = Object.values(ai.stats.sent).reduce((a, b) => a + b, 0);
+    const reached = ai.entries.filter((e) => e.goalAt !== null && !e.holdout).length;
+    return { day: run.now, sent, reached, lessons: ai.lessons.length, naiveLessons: run.worlds.naive.lessons.length, logLen: ai.log.length, logLast: ai.log[ai.log.length - 1] };
+  }
+  function startOver(note) {
+    run = new S.Run(overFrom(form), form.seed * 1009);
+    prev = snapshot();
+    render(note || 'Started over at day 0 with the current settings.');
+  }
+  function advance(days) {
+    const before = snapshot();
+    const ai = run.worlds.ai; const logBefore = ai.log.slice();
+    run.advanceBy(days);
+    const after = snapshot();
+    const newLog = ai.log.filter((x) => !logBefore.includes(x));
+    const items = [];
+    items.push(`${(after.day - before.day).toFixed(0)} simulated days passed.`);
+    items.push(`AI loop sent ${after.sent - before.sent} emails; ${after.reached - before.reached} more merchants reached their goal in the AI world.`);
+    if (after.lessons > before.lessons) items.push(`AI loop wrote ${after.lessons - before.lessons} new lesson(s).`);
+    if (after.naiveLessons > before.naiveLessons) items.push(`Your original idea wrote ${after.naiveLessons - before.naiveLessons} new lesson(s).`);
+    for (const l of newLog) if (/^Retired/.test(l.text)) items.push(`Day ${Math.floor(l.t)}: ${l.text}.`);
+    render(items);
+  }
+
+  // ---------- rendering ----------
+  function render(change) {
+    renderStatus(); renderChanged(change); renderSegments(); renderVariants(); renderTiming(); renderOffers(); renderLessons();
+  }
+  function renderStatus() {
+    const d = run.now, end = run.end;
+    const arrived = run.arrivals.list.filter((a) => a.t <= d).length;
+    const week = Math.min(13, Math.floor(d / 7) + 1);
+    const phase = d >= end ? 'finished (2 extra weeks let the last merchants finish their windows)' : d > 91 ? 'week 13 done, finishing the last windows' : `week ${week} of 13`;
+    $('status').innerHTML = `<div><div class="eyebrow">Simulated day</div><div class="big num">${Math.floor(d)}</div></div>
+      <div><div class="eyebrow">Where we are</div><div>${phase}</div></div>
+      <div><div class="eyebrow">Merchants so far</div><div class="num">${arrived.toLocaleString()} of ${run.arrivals.list.length.toLocaleString()} (excluding 15% already paying)</div></div>
+      <div><div class="eyebrow">No-email holdout</div><div>8% of merchants, never emailed</div></div>`;
+  }
+  function renderChanged(change) {
+    if (Array.isArray(change)) $('changed').innerHTML = `<strong>What just changed</strong><ul>${change.map((c) => `<li>${c}</li>`).join('')}</ul>`;
+    else $('changed').innerHTML = `<strong>What just changed</strong><div>${change}</div>`;
+  }
+  function chartSvg(seg) {
+    const series = run.liftSeries(seg);
+    const lastWeek = Math.min(12, Math.floor((run.now - S.HORIZON[seg]) / 7));
+    const W = 320, H = 150, L = 38, R = 8, T = 10, B = 22;
+    if (lastWeek < 0) return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="No finished weeks yet"><text x="${W / 2}" y="${H / 2}" text-anchor="middle">No merchant has finished their window yet</text></svg>`;
+    const keys = ['fixed', 'naive', 'ai'];
+    let lo = 0, hi = 0.01;
+    for (const k of keys) for (let i = 0; i <= lastWeek; i++) { const v = series[k][i]; if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+    const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+    const x = (i) => L + (W - L - R) * (i / 12), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    const ticks = [lo + (hi - lo) * 0.1, (lo + hi) / 2, hi - (hi - lo) * 0.1];
+    let g = '';
+    for (const t of ticks) g += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 4}" y="${y(t) + 3}" text-anchor="end">${pp(t)}</text>`;
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--none)" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+    for (const i of [0, 4, 8, 12]) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">wk ${i + 1}</text>`;
+    for (const k of keys) {
+      const pts = []; for (let i = 0; i <= lastWeek; i++) { const v = series[k][i]; if (v !== null) pts.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`); }
+      if (pts.length) g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${COLOR[k]}" stroke-width="${k === 'ai' ? 2.5 : 1.75}" stroke-linejoin="round"/>`;
+      const lastPt = pts[pts.length - 1]; if (lastPt) { const [px, py] = lastPt.split(','); g += `<circle cx="${px}" cy="${py}" r="3" fill="${COLOR[k]}"/>`; }
+    }
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="True lift so far by week, ${S.SEGMENT_LABEL[seg]}">${g}</svg>`;
+  }
+  function renderSegments() {
+    const sum = run.summary();
+    const goal = { idle: 'Start a draft', drafter: 'Publish', trialist: 'Pay ($40/month)' };
+    const win = { idle: '3 days after the email', drafter: '7 days after the email', trialist: '14 days after publishing' };
+    $('segcards').innerHTML = S.SEGMENTS.map((seg) => {
+      const rows = sum.segments[seg];
+      const ai = run.worlds.ai.stats;
+      const body = ['ai', 'fixed', 'naive', 'none'].map((k) => {
+        const r = rows[k]; const lift = k === 'none' ? '<span class="muted">baseline</span>' : `<span class="num ${r.lift > 0.0005 ? 'pos' : r.lift < -0.0005 ? 'neg' : ''}">${pp(r.lift)}</span>`;
+        return `<tr><td><span class="who"><i class="sw" style="background:${COLOR[k]}"></i>${S.WORLD_LABEL[k]}</span></td><td class="r num">${r.n.toLocaleString()}</td><td class="r num">${r.n ? pct(r.rate) : '–'}</td><td class="r">${r.n ? lift : '–'}</td></tr>`;
+      }).join('');
+      return `<article class="card"><header><h3>${S.SEGMENT_LABEL[seg]}</h3><span class="muted" style="font-size:0.82rem">Goal: ${goal[seg]} · Window: ${win[seg]}</span></header>
+        <div class="scroll"><table><thead><tr><th>Approach</th><th class="r">Judged</th><th class="r">Reached goal</th><th class="r">True lift (pts)</th></tr></thead><tbody>${body}</tbody></table></div>
+        <div class="chart">${chartSvg(seg)}</div>
+        <p class="muted" style="font-size:0.8rem">AI loop sent ${ai.sent[seg].toLocaleString()} emails here. ${ai.skippedReal[seg]} planned emails and ${ai.skippedGhost[seg]} holdout "ghost" sends were skipped because the merchant had already moved on.</p></article>`;
+    }).join('');
+  }
+  function variantRows(world, slot) {
+    const learn = form.aiLearnsFrom === 'clicks' ? 'human clicks' : 'goal reached';
+    const rows = world.active[slot].map((v) => { const p = world.getPost('idle', slot, v.id); return { v, p, live: true }; })
+      .concat(world.retired.filter((v) => v.slot === slot).slice(-3).map((v) => ({ v, p: world.getPost('idle', slot, v.id), live: false })));
+    const best = Math.max(...world.active[slot].map((v) => v.value));
+    return `<table><thead><tr><th>${slot === 'subject' ? 'Subject' : 'Body'}</th><th class="r">Sent</th><th class="r">Measured (${learn})</th><th class="r">Hidden quality</th></tr></thead><tbody>${rows.map(({ v, p, live }) =>
+      `<tr><td>${v.id}${live ? (v.value === best ? ' <span class="star" title="Truly best of the ones in play">★</span>' : '') : ' <span class="muted">(retired day ' + v.retiredDay + ')</span>'}${v.helped ? ' <span class="muted">· written after a lesson</span>' : ''}</td><td class="r num">${p.n.toLocaleString()}</td><td class="r num">${p.n ? pct(p.sum / p.n) : '–'}</td><td class="r num">${Math.round(v.value)}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function renderVariants() {
+    const ai = run.worlds.ai;
+    $('variants').innerHTML = `<h3>What the AI loop is testing on Idle merchants</h3>
+      <p class="muted" style="font-size:0.84rem">Drafters and Trialists get whichever Idle subject and body currently looks best. Hidden quality is only visible because this is a simulation: 100 means as good as the hand-written email, ★ marks the truly best one in play.</p>
+      <div class="scroll">${variantRows(ai, 'subject')}</div><div class="scroll">${variantRows(ai, 'body')}</div>`;
+  }
+  function renderTiming() {
+    const ai = run.worlds.ai;
+    const body = S.SEGMENTS.map((seg) => {
+      const ps = S.TIMINGS.map((t) => ({ t, p: ai.getPost(seg, 'timing', t.id) }));
+      const total = ps.reduce((a, x) => a + x.p.n, 0) || 1;
+      return ps.map(({ t, p }, i) => `<tr><td>${i === 0 ? S.SEGMENT_LABEL[seg] : ''}</td><td>${t.label}${HIDDEN_BEST_TIMING[seg] === t.id ? ' <span class="star" title="Truly best timing">★</span>' : ''}</td><td class="r num">${pct(p.n / total, 0)}</td><td class="r num">${p.n ? pct(p.sum / p.n) : '–'}</td></tr>`).join('');
+    }).join('');
+    const how = form.timingJudgedBy === 'email' ? 'merchants who reached the goal in the window after their email' : 'everyone assigned that timing, counted from the trigger';
+    $('timing').innerHTML = `<h3>Which timing the AI loop favours</h3>
+      <p class="muted" style="font-size:0.84rem">Share of judged emails per timing. It currently judges timing by ${how}. ★ is the truly best timing.</p>
+      <div class="scroll"><table><thead><tr><th>Segment</th><th>Timing</th><th class="r">Share</th><th class="r">Measured</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  function renderOffers() {
+    const ai = run.worlds.ai, none = run.worlds.none;
+    const ps = S.OFFERS.map((o) => ({ o, p: ai.getPost('trialist', 'offer', o.id), sent: ai.stats.offersSent[o.id] }));
+    let anyway = 0, discounted = 0;
+    for (const m of ai.merchants.values()) if (m.paidWithDiscount) { discounted++; const n = none.merchants.get(m.id); if (n && n.seg === 'paid') anyway++; }
+    const rev = (k) => '$' + run.worlds[k].stats.revenue.toLocaleString();
+    $('offers').innerHTML = `<h3>Trialist offers and revenue</h3>
+      <div class="scroll"><table><thead><tr><th>Offer</th><th class="r">Sent</th><th class="r">Measured</th></tr></thead><tbody>${ps.map(({ o, p, sent }) => `<tr><td>${o.label}</td><td class="r num">${sent}</td><td class="r num">${p.n ? pct(p.sum / p.n) : '–'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>First-month revenue so far</th><th class="r">Amount</th></tr></thead><tbody>${['ai', 'fixed', 'naive', 'none'].map((k) => `<tr><td><span class="who"><i class="sw" style="background:${COLOR[k]}"></i>${S.WORLD_LABEL[k]}</span></td><td class="r num">${rev(k)}</td></tr>`).join('')}</tbody></table></div>
+      <p style="font-size:0.88rem">${discounted} merchants paid with the 50% discount in the AI world. <strong>${anyway}</strong> of them would have paid the full $40 with no email at all.</p>`;
+  }
+  function lessonList(world, metric) {
+    if (!world.lessons.length) return '<p class="muted" style="font-size:0.86rem">No lessons yet.</p>';
+    return `<ul class="lessons">${world.lessons.slice(-6).reverse().map((l) => `<li><span class="${l.isTrue ? 'ok' : 'wrong'}" title="${l.isTrue ? 'True' : 'False'}">${l.isTrue ? '✓' : '✗'}</span><span>Day ${l.day}: ${l.slot} <strong>${l.winner.id}</strong> beats ${l.loser.id} <span class="num">(${pct(l.winRate)} vs ${pct(l.loseRate)} ${metric}, ${l.nWin} and ${l.nLose} sends)</span>. ${l.isTrue ? 'True.' : `False: hidden quality ${Math.round(l.winner.value)} vs ${Math.round(l.loser.value)}.`}</span></li>`).join('')}</ul>`;
+  }
+  function renderLessons() {
+    const ai = run.worlds.ai, nv = run.worlds.naive;
+    $('lessons').innerHTML = `<h3>Lessons written so far</h3>
+      <p class="muted" style="font-size:0.84rem">A lesson is what the writer reads before writing new emails. ✓ means it matches the hidden truth, ✗ means the loop "learned" something false.</p>
+      <div><div class="eyebrow" style="margin-bottom:4px">AI loop (${ai.lessons.length})</div>${lessonList(ai, form.aiLearnsFrom === 'clicks' ? 'clicks' : 'goal')}</div>
+      <div><div class="eyebrow" style="margin-bottom:4px">Your original idea (${nv.lessons.length})</div>${lessonList(nv, 'opens/clicks')}</div>`;
+  }
+
+  // ---------- 200 replays ----------
+  function renderReplay(state) {
+    if (state && state.progress !== undefined) { $('replay').innerHTML = `<p>Replaying 13 weeks with different luck… <span class="num">${state.done} / ${state.total}</span></p><div class="bar"><div style="width:${(100 * state.done / state.total).toFixed(1)}%"></div></div>`; return; }
+    if (!lastReplay) { $('replay').innerHTML = '<p class="muted">Press <strong>Replay 200 times</strong> to run the same 13 weeks 200 times with different luck. One run can win or lose by chance; 200 show what to expect.</p>'; return; }
+    const { agg, label } = lastReplay;
+    const rows = S.SEGMENTS.map((seg) => { const g = agg.segments[seg]; const cell = (k) => `<span class="num">${pp(g[k].lift)}</span> <span class="muted num" style="font-size:0.78rem">(${pp(g[k].lo)} to ${pp(g[k].hi)})</span>`;
+      return `<tr><td>${S.SEGMENT_LABEL[seg]}</td><td class="r">${cell('fixed')}</td><td class="r">${cell('naive')}</td><td class="r">${cell('ai')}</td><td class="r num"><strong>${Math.round(g.aiBeatsFixed * 100)}%</strong></td></tr>`; }).join('');
+    const L = agg.lessons, money = (k) => '$' + Math.round(agg.revenue[k]).toLocaleString();
+    const verdict = S.SEGMENTS.map((seg) => `<li><strong>${S.SEGMENT_LABEL[seg]}:</strong> the AI loop beat the hand-written email in ${Math.round(agg.segments[seg].aiBeatsFixed * 100)}% of replays.</li>`).join('');
+    $('replay').innerHTML = `<p class="muted" style="font-size:0.86rem">Settings used: ${label}</p>
+      <ul class="verdict">${verdict}<li><strong>Lessons:</strong> the AI loop wrote ${L.ai.perRun.toFixed(2)} lessons per 13 weeks; ${Math.round(L.ai.wrongShare * 100)}% of them were false. Your original idea: ${L.naive.perRun.toFixed(2)} per 13 weeks, ${Math.round(L.naive.wrongShare * 100)}% false.</li>
+      <li><strong>First-month revenue from Trialists</strong> (average): AI loop ${money('ai')}, hand-written ${money('fixed')}, your original idea ${money('naive')}, no email ${money('none')}.</li></ul>
+      <div class="scroll"><table><thead><tr><th>Segment</th><th class="r">Hand-written: true lift</th><th class="r">Your original idea</th><th class="r">AI loop</th><th class="r">AI beats hand-written</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted" style="font-size:0.8rem">True lift in percentage points over no email, average over ${agg.count} replays; brackets show the middle 90% of replays.</p>`;
+  }
+  function settingsLabel() {
+    const f = form; const bits = [`${(+f.startMerchants).toLocaleString()} merchants`, f.aiLearnsFrom === 'clicks' ? 'judges emails by human clicks' : 'judges emails by goal action', f.timingJudgedBy === 'email' ? 'timing judged by window after email' : 'timing judged by everyone assigned', f.trialistReward === 'revenue' ? 'Trialists: revenue' : 'Trialists: most paying', f.lessonRule === 'strict' ? 'strict lesson rule' : 'loose lesson rule'];
+    if (f.identicalEmails) bits.push('all emails secretly identical'); if (!f.clickbait) bits.push('no clickbait'); if (!f.lessonsHelp) bits.push("lessons don't help");
+    return bits.join(' · ');
+  }
+  function replay(count = 200) {
+    return new Promise((resolve) => {
+      busy = true; setDisabled(true);
+      const over = overFrom(form), per = []; let i = 0;
+      const step = () => {
+        const until = Math.min(count, i + 4);
+        for (; i < until; i++) { const r = new S.Run(over, form.seed * 1009 + (i + 1) * 7919); r.runToEnd(); per.push(r.summary()); }
+        renderReplay({ progress: true, done: i, total: count });
+        if (i < count) setTimeout(step, 0);
+        else { lastReplay = { agg: S.aggregate(per), label: settingsLabel() }; busy = false; setDisabled(false); renderReplay(); resolve(); }
+      };
+      step();
+    });
+  }
+  function setDisabled(on) { document.querySelectorAll('button, select, input').forEach((el) => { if (!el.closest('.tabs')) el.disabled = on; }); if (!on) renderWalk(); }
+
+  // ---------- guided walkthroughs ----------
+  const startWith = (over, note) => () => { form = { ...AGREED, ...over }; writeForm(); startOver(note); };
+  const toEnd = () => advance(run.end - run.now);
+  const WALKS = [
+    { id: 'agreed', title: 'Three months, as agreed', intro: 'The design exactly as we agreed it: 1,000 merchants, the AI judges every email by the goal action, timing judged by the window after the email, Trialists aim for most merchants paying.',
+      watch: 'In each segment card, compare the AI loop’s true lift with the hand-written email. Then check the 200-replay verdict: how often does the AI loop actually win?',
+      steps: [
+        { label: 'Start the agreed design', run: startWith({}, 'Agreed design, day 0.') },
+        { label: 'Advance 2 weeks', note: 'Your existing merchants get their emails spread over these two weeks.', run: () => advance(14) },
+        { label: 'Run to week 13', run: toEnd },
+        { label: 'Replay 200 times', run: () => replay(200) },
+      ] },
+    { id: 'timing', title: 'The timing trap', intro: 'Judging timing by "did they act in the window after the email" gives early emails credit for merchants who would have acted anyway.',
+      watch: 'In "Which timing the AI loop favours", look at Drafters. The truly best timing is +2 days (★). Which one does the AI loop send most?',
+      steps: [
+        { label: 'Start: timing judged by the window after the email', run: startWith({}, 'Timing judged by the window after the email.') },
+        { label: 'Run to week 13', note: 'Most Drafter emails go out at +1 hour: the trap.', run: toEnd },
+        { label: 'Switch: judge timing by everyone assigned', run: startWith({ timingJudgedBy: 'assignment' }, 'Timing judged by everyone assigned, counted from the trigger.') },
+        { label: 'Run to week 13', note: 'No more bias, but the split stays close to even: 13 weeks is too little data to learn timing this way.', run: toEnd },
+      ] },
+    { id: 'signal', title: 'Too few conversions to learn from', intro: 'Most merchants who reach their goal would have done it anyway, so the email’s effect is a small signal under a lot of noise. Human clicks are caused only by the email.',
+      watch: 'Compare the "AI beats hand-written" column between the two replay runs.',
+      steps: [
+        { label: 'Start the agreed design (judge by goal action)', run: startWith({}, 'AI judges subjects and bodies by the goal action.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+        { label: 'Switch: judge subjects and bodies by human clicks', run: startWith({ aiLearnsFrom: 'clicks' }, 'AI judges subjects and bodies by human clicks; bot clicks removed.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+      ] },
+    { id: 'false', title: 'False lessons', intro: 'Every email is secretly identical here, so any lesson the loop writes is false by definition. A lesson the writer believes but isn’t true pushes all future emails the wrong way.',
+      watch: 'Look at "lessons per 13 weeks" and the share that were false, before and after the stricter rule.',
+      steps: [
+        { label: 'Start: identical emails, loose lesson rule', run: startWith({ identicalEmails: true }, 'Every email is secretly identical. Loose lesson rule.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+        { label: 'Switch to the strict lesson rule', run: startWith({ identicalEmails: true, lessonRule: 'strict' }, 'Every email is secretly identical. Strict lesson rule.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+      ] },
+    { id: 'discount', title: 'The discount trap', intro: 'A 50% discount gets more Trialists to pay, but some of them would have paid the full $40 anyway.',
+      watch: 'In "Trialist offers and revenue", compare revenue across approaches and read how many discounted merchants would have paid full price.',
+      steps: [
+        { label: 'Start: Trialists aim for most merchants paying', run: startWith({}, 'Trialists: the AI aims for the most merchants paying.') },
+        { label: 'Run to week 13', run: toEnd },
+        { label: 'Switch: Trialists aim for most revenue', run: startWith({ trialistReward: 'revenue' }, 'Trialists: the AI aims for the most revenue.') },
+        { label: 'Run to week 13', run: toEnd },
+      ] },
+    { id: 'original', title: 'Your original idea', intro: 'Your first design judged subjects by opens and bodies by clicks. Opens are plentiful, so it learns fast, but it rewards catchy subjects even when they oversell.',
+      watch: 'Compare the orange "your original idea" numbers with the AI loop, with and without catchy subjects that oversell.',
+      steps: [
+        { label: 'Start: catchy subjects oversell', run: startWith({}, 'Catchy subjects tend to oversell.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+        { label: 'Switch: no clickbait in this world', run: startWith({ clickbait: false }, 'Catchy subjects are as honest as any other.') },
+        { label: 'Replay 200 times', run: () => replay(200) },
+      ] },
+  ];
+  let walkIdx = 0; const walkStep = WALKS.map(() => 0);
+  function renderTabs() {
+    $('tabs').innerHTML = WALKS.map((w, i) => `<button type="button" role="tab" aria-selected="${i === walkIdx}" data-i="${i}">${w.title}</button>`).join('');
+    $('tabs').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { walkIdx = +b.dataset.i; renderTabs(); renderWalk(); }));
+  }
+  function renderWalk() {
+    const w = WALKS[walkIdx], at = walkStep[walkIdx];
+    $('walk').innerHTML = `<div style="display:grid;gap:12px"><p>${w.intro}</p>
+      <ol class="steps">${w.steps.map((s, i) => `<li><span class="n">${i + 1}</span><div><button type="button" class="${i === at ? 'primary' : ''}" data-step="${i}" ${i !== at || busy ? 'disabled' : ''}>${i < at ? '✓ ' : ''}${s.label}</button>${i < at && s.note ? `<div class="done-note">${s.note}</div>` : ''}</div></li>`).join('')}</ol>
+      <div class="watch"><strong>What to watch for:</strong> ${w.watch}</div>
+      ${at > 0 ? '<div><button type="button" id="walk-again">Restart this walkthrough</button></div>' : ''}</div>`;
+    $('walk').querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', async () => {
+      const i = +b.dataset.step; walkStep[walkIdx] = i + 1; await w.steps[i].run(); renderWalk();
+    }));
+    const again = $('walk-again'); if (again) again.addEventListener('click', () => { walkStep[walkIdx] = 0; renderWalk(); });
+  }
+
+  // ---------- wiring ----------
+  $('settings').addEventListener('change', () => { readForm(); startOver('Settings changed: started over at day 0.'); });
+  $('b-reset').addEventListener('click', () => { readForm(); startOver(); });
+  $('b-day').addEventListener('click', () => advance(1));
+  $('b-week').addEventListener('click', () => advance(7));
+  $('b-end').addEventListener('click', toEnd);
+  $('b-replay').addEventListener('click', () => replay(200));
+
+  writeForm(); startOver('Agreed design, day 0. Press a button or start a walkthrough.');
+  advance(28);
+  renderTabs(); renderWalk(); renderReplay();
+})();
+</script>
