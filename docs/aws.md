@@ -1,6 +1,6 @@
 # Running on AWS
 
-How the simulation runs on AWS without anyone at a laptop (milestone 1), and how the same engine sends real emails later (milestone 2). Nothing here is built yet. This is the design ticket #17 follows.
+How the simulation runs on AWS without anyone at a laptop (milestone 1), and how the same engine sends real emails later (milestone 2). Milestone 1 is built (#17). To switch it on, follow the one-time setup in [`aws-setup.md`](aws-setup.md). Milestone 2 is a design only.
 
 ## Is the code ready for it?
 
@@ -11,7 +11,7 @@ Only the edges assume a laptop:
 | Edge | What it assumes today | On AWS |
 |---|---|---|
 | `load_settings(path)` | `settings.toml` and `first_drafts.toml` sit side by side on disk | Still fine. Both files are bundled into the Lambda package, which can read its own files. Settings change through git, so every run's settings are versioned. **No change needed.** |
-| `winback` command (`cli.py`) | Writes `reports/report.md` to the current folder | Lambda can only write to `/tmp`, so the command is not reused. A new Lambda handler, about 20 lines, calls `run_simulation` and puts the report in S3. The command stays for local runs. |
+| `winback` command (`cli.py`) | Writes `reports/report.md` to the current folder | Lambda can only write to `/tmp`, so the command is not reused. The Lambda handler in `src/winback/aws.py` calls `run_simulation` and puts the report in S3. The command stays for local runs. |
 | Seed | Defaults to 1, so every run is identical | Each scheduled run needs a new seed, otherwise it repeats the same report. The schedule sends `{seed, start}`, and if no seed arrives the handler uses the date. |
 | OpenRouter key (#13) | #13 says "read from the environment" | The connector takes the key as an argument and never reads the environment itself. The command passes it from an environment variable; the Lambda handler reads it from Parameter Store. This keeps the key out of the engine and out of the Lambda console. |
 | 200 replays (#11) | One process runs every replay | A Lambda run stops after 15 minutes. A full run takes under a second today, but #7 and the LLM calls in #13 will make it slower. #11 should keep each replay's result a plain value and build the report from a list of them. Then, if a run ever outgrows one Lambda, the replays can be split across several without touching the engine. |
@@ -23,7 +23,7 @@ In codebase-design terms: the seam is already in the right place. The command an
 ![Milestone 1 on AWS](diagrams/aws-poc.drawio.svg)
 
 1. You merge to `main`. GitHub Actions runs the tests and mypy, signs in to AWS through an IAM role (OIDC, so no AWS keys are stored in GitHub), and runs `sam deploy`.
-2. CloudFormation creates or updates everything inside the AWS box from one SAM template kept in the repo.
+2. CloudFormation creates or updates everything inside the AWS box from [`template.yaml`](../template.yaml). The one exception is the OpenRouter key: CloudFormation cannot create a SecureString parameter, so you add it once by hand (see the setup guide).
 3. EventBridge Scheduler starts the Lambda every week. You can also start it from the console at any time.
 4. The Lambda runs the simulation and saves `runs/<date>-seed<n>.md` and `latest.md` to S3.
 5. SNS emails you a "report ready" message with the link. It also emails you if a run fails or AWS spending passes $5 in a month.

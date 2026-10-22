@@ -19,3 +19,31 @@ jobs:
         run: uv run pytest -q
       - name: Type check
         run: uv run mypy
+      - name: Lint AWS templates
+        run: uvx cfn-lint==1.58.0 template.yaml infra/github-deploy-role.yaml
+
+  # Deploys to AWS after every merge to main, once the one-time setup in docs/aws-setup.md is done.
+  # Until the AWS_DEPLOY_ROLE_ARN variable exists, this job is skipped.
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    concurrency: deploy
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build
+        run: sam build
+      - name: Deploy
+        env:
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+        run: sam deploy --parameter-overrides "AlertEmail=$ALERT_EMAIL"
