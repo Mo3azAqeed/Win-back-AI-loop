@@ -8,6 +8,14 @@ An email loop that wins back merchants using our store-cloning Shopify app who s
 A person who has signed up to our app with their email address.
 _Avoid_: User, customer, shop owner
 
+**Existing merchant**:
+A merchant who signed up before the simulation starts. Those who already pay are counted but not simulated.
+_Avoid_: Backlog, old user
+
+**New signup**:
+A merchant who signs up during the simulation; every new signup starts in Idle.
+_Avoid_: New user, lead
+
 **Publish**:
 The step in our app where a merchant makes their cloned store live. Publishing always starts the trial.
 _Avoid_: Launch, go live

@@ -16,12 +16,12 @@ class Setting:
 
 @dataclass(frozen=True)
 class Settings:
-    start_merchants: int
+    start_sizes: tuple[int, ...]
     already_paying_share: float
     weeks: int
     growth_first_week: float
     growth_last_week: float
-    all: tuple[Setting, ...]
+    entries: tuple[Setting, ...]
 
 
 def load_settings(path: Path) -> Settings:
@@ -29,12 +29,12 @@ def load_settings(path: Path) -> Settings:
         raw = tomllib.load(f)
     entries = {s.key: s for s in _entries(raw)}
     return Settings(
-        start_merchants=int(entries["merchants.start"].value),
+        start_sizes=(int(entries["merchants.start"].value), int(entries["merchants.start_alternative"].value)),
         already_paying_share=entries["merchants.already_paying_share"].value,
         weeks=int(entries["growth.weeks"].value),
         growth_first_week=entries["growth.first_week"].value,
         growth_last_week=entries["growth.last_week"].value,
-        all=tuple(entries.values()),
+        entries=tuple(entries.values()),
     )
 
 

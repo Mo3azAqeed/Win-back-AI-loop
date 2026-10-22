@@ -1,4 +1,4 @@
-"""The single entry point for running a simulation (Seam 1)."""
+"""The single entry point for running a simulation."""
 
 from dataclasses import dataclass
 
@@ -8,23 +8,35 @@ from winback.world import Merchant, already_paying, merchants, weekly_signups
 
 
 @dataclass(frozen=True)
-class RunResult:
-    weekly_signups: list[int]
+class StartResult:
+    """One run of the simulation from one starting number of merchants."""
+
     existing_merchants: int
     already_paying: int
     existing_simulated: int
+    weekly_signups: list[int]
     merchants: list[Merchant]
+
+
+@dataclass(frozen=True)
+class RunResult:
+    by_start: dict[int, StartResult]
     report: str
 
 
 def run_simulation(settings: Settings, seed: int) -> RunResult:
-    paying = already_paying(settings)
-    signups = weekly_signups(settings)
-    return RunResult(
-        weekly_signups=signups,
-        existing_merchants=settings.start_merchants,
+    """Run the simulation once for each starting size in the settings and write one report."""
+    by_start = {start: _run_from(settings, start, seed) for start in settings.start_sizes}
+    return RunResult(by_start=by_start, report=report.render(settings, seed, by_start))
+
+
+def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
+    paying = already_paying(settings, start)
+    signups = weekly_signups(settings, start)
+    return StartResult(
+        existing_merchants=start,
         already_paying=paying,
-        existing_simulated=settings.start_merchants - paying,
-        merchants=merchants(settings, seed),
-        report=report.render(settings, seed, signups, paying),
+        existing_simulated=start - paying,
+        weekly_signups=signups,
+        merchants=merchants(start - paying, signups, seed),
     )
