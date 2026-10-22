@@ -1,6 +1,6 @@
 # Running on AWS
 
-How the simulation runs on AWS without anyone at a laptop (milestone 1), and how the same engine sends real emails later (milestone 2). Nothing here is built yet. This is the design the hosting ticket will follow.
+How the simulation runs on AWS without anyone at a laptop (milestone 1), and how the same engine sends real emails later (milestone 2). Nothing here is built yet. This is the design ticket #17 follows.
 
 ## Is the code ready for it?
 
