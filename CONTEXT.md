@@ -28,6 +28,10 @@ _Avoid_: Trial at signup
 A merchant moving from trial to a paid plan. Tracked for every merchant over 30 days, whatever segment it was in.
 _Avoid_: Conversion (on its own, ambiguous)
 
+**First-month revenue**:
+What paying Trialists bring in their first month: the plan's $40 for each payment. Reported per approach so a win that brings in less money is visible.
+_Avoid_: Sales, income
+
 **Holdout**:
 A random 8% of merchants, chosen once and kept for life, who never receive a win-back email in any segment. Kept so lift can be measured with real data.
 _Avoid_: Control group (fine in conversation, but use one word)

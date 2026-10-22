@@ -42,13 +42,16 @@ FIRST_DRAFT = EmailCopy()
 
 @dataclass(frozen=True)
 class Stay:
-    """One merchant's time in one segment. `left` is when it took the goal action (None if not by the end)."""
+    """One merchant's time in one segment. `left` is when it took the goal action (None if not by the end).
+    Only stays entered during the weeks of signups are counted; later ones exist only so that counted
+    stays can finish their paid window."""
 
     segment: Segment
     entered: float
     left: float | None
     email: EmailFate
     email_sent_at: float | None
+    counted: bool
 
 
 @dataclass(frozen=True)
@@ -80,11 +83,12 @@ class _Draws:
 
 
 class _Event(Enum):
-    # On the same day, an email falling due is handled before a goal action, then a horizon closing.
+    # On the same day, an email falling due is handled before a goal action, then a horizon or miss window closing.
     EMAIL_DUE = 0
     GOAL = 1
     ENTER = 2
     HORIZON_CLOSES = 3
+    MISS_WINDOW_CLOSES = 4
 
 
 @dataclass(order=True)
@@ -107,6 +111,21 @@ class StayResult:
     known_on: float
     goal_day: float | None
     reached: bool
+    revenue: float  # first-month revenue the goal action brought (a payment); 0 otherwise
+
+
+@dataclass(frozen=True)
+class EmailResult:
+    """Whether an email was followed by the goal action inside its miss window, known on the day the
+    window closes (and never before). Until then the email is pending, not a miss."""
+
+    merchant_key: str
+    segment: Segment
+    entered: float
+    sent_on: float
+    known_on: float
+    goal_day: float | None
+    hit: bool
 
 
 @dataclass
@@ -117,13 +136,15 @@ class _OpenStay:
     entered: float
     deadline: float
     draws: _Draws
+    counted: bool
     left: float | None = None
     goal_day: float | None = None
+    revenue: float = 0.0
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
 
     def freeze(self) -> Stay:
-        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at)
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted)
 
 
 @dataclass
@@ -143,23 +164,26 @@ class _MerchantState:
 class CalendarRun:
     journeys: list[Journey]
     results: list[StayResult]  # in the order they became known
+    email_results: list[EmailResult]  # in the order they became known
     event_days: list[float]  # the day of every event, in the order handled
 
 
 class _Calendar:
     """One approach's run: every merchant's events on one timeline, handled in date order.
 
-    Merchants enter segments during the weeks of signups; the run then keeps going until the
-    horizon of the last segment entered in those weeks has closed."""
+    Stays entered during the weeks of signups are counted. The run keeps going until every counted
+    stay's horizon and paid window have closed; until then merchants keep moving through the
+    lifecycle, so a late signup can still pay inside its window."""
 
     def __init__(self, settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> None:
         self.settings, self.seed, self.approach = settings, seed, approach
         self.last_entry_day = last_entry_day(settings)
-        self.last_horizon_close = self.last_entry_day
+        self.run_end = self.last_entry_day
         self.merchants = [_MerchantState(i, m) for i, m in enumerate(merchants)]
         self.queue: list[_Scheduled] = []
         self.sequence = itertools.count()
         self.results: list[StayResult] = []
+        self.email_results: list[EmailResult] = []
         self.event_days: list[float] = []
         for state in self.merchants:
             self._schedule(state, state.merchant.arrival_day, _Event.ENTER)
@@ -168,7 +192,7 @@ class _Calendar:
         heapq.heappush(self.queue, _Scheduled(day, event.value, next(self.sequence), event, state.index, stay))
 
     def run(self) -> CalendarRun:
-        while self.queue and self.queue[0].day <= max(self.last_entry_day, self.last_horizon_close):
+        while self.queue and self.queue[0].day <= self.run_end:
             item = heapq.heappop(self.queue)
             self.event_days.append(item.day)
             state = self.merchants[item.merchant]
@@ -181,19 +205,20 @@ class _Calendar:
                 self._reach_goal(state, item.stay, item.day)
             elif item.event is _Event.HORIZON_CLOSES and item.stay is not None:
                 self._close_horizon(state, item.stay, item.day)
+            elif item.event is _Event.MISS_WINDOW_CLOSES and item.stay is not None:
+                self._close_miss_window(state, item.stay, item.day)
         journeys = [Journey(s.merchant, tuple(stay.freeze() for stay in s.stays), s.paid_at) for s in self.merchants]
-        return CalendarRun(journeys, self.results, self.event_days)
+        return CalendarRun(journeys, self.results, self.email_results, self.event_days)
 
     def _enter(self, state: _MerchantState, segment: Segment, day: float) -> None:
-        if day > self.last_entry_day:
-            return  # the weeks of signups are over: nobody enters a new segment
         behaviour = self.settings.segments[segment]
         deadline = day + self.settings.trial_days if segment is Segment.TRIALIST else math.inf
-        stay = _OpenStay(segment, day, deadline, _Draws(self.seed, state.merchant, segment))
+        stay = _OpenStay(segment, day, deadline, _Draws(self.seed, state.merchant, segment), counted=day <= self.last_entry_day)
         state.stays.append(stay)
-        closes = day + behaviour.horizon_days
-        self.last_horizon_close = max(self.last_horizon_close, closes)
-        self._schedule(state, closes, _Event.HORIZON_CLOSES, stay)
+        if stay.counted:
+            closes = day + behaviour.horizon_days
+            self.run_end = max(self.run_end, closes, day + self.settings.paid_window_days)
+            self._schedule(state, closes, _Event.HORIZON_CLOSES, stay)
         if stay.draws.chance("organic") < behaviour.organic_share:
             organic = day + stay.draws.wait_days("organic_time", behaviour.organic_mean_days)
             if organic <= deadline:
@@ -210,6 +235,12 @@ class _Calendar:
             return
         behaviour = self.settings.segments[stay.segment]
         stay.email, stay.email_sent_at, state.last_email = EmailFate.SENT, day, day
+        if stay.counted:
+            # Idle and Drafter emails are judged from the email; every Trialist from publishing, whatever its offer.
+            opens = stay.entered if stay.segment is Segment.TRIALIST else day
+            closes = opens + behaviour.miss_window_days
+            self.run_end = max(self.run_end, closes)
+            self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, FIRST_DRAFT.subject_appeal)
         clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, FIRST_DRAFT.body_appeal)
         if clicked and stay.draws.chance("act") < behaviour.act_rate:
@@ -225,13 +256,19 @@ class _Calendar:
         stay.left = day
         following = NEXT_SEGMENT[stay.segment]
         if following is None:
-            state.paid_at = day
+            state.paid_at, stay.revenue = day, self.settings.monthly_price
         else:
             self._enter(state, following, day)
 
     def _close_horizon(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         reached = stay.left is not None  # events run in date order, so any goal so far is inside the horizon
-        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached))
+        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, stay.revenue))
+
+
+    def _close_miss_window(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
+        assert stay.email_sent_at is not None
+        hit = stay.left is not None  # events run in date order, and the email only went out while the merchant stayed
+        self.email_results.append(EmailResult(state.merchant.key, stay.segment, stay.entered, stay.email_sent_at, day, stay.left, hit))
 
 
 def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> CalendarRun:
@@ -247,11 +284,15 @@ def _rate(part: int, whole: int) -> float:
 class EmailTally:
     sent: int
     skipped: int
+    hits: int  # followed by the goal action inside the miss window
+    misses: int
 
 
-def _emails(stays: list[Stay]) -> EmailTally:
-    """Emails sent and emails skipped across these stays."""
-    return EmailTally(sum(s.email is EmailFate.SENT for s in stays), sum(s.email is EmailFate.SKIPPED for s in stays))
+def _emails(stays: list[Stay], results: list[EmailResult]) -> EmailTally:
+    """Emails sent and skipped across these stays, and the scored ones that hit or missed."""
+    hits = sum(r.hit for r in results)
+    sent = sum(s.email is EmailFate.SENT for s in stays)
+    return EmailTally(sent, sum(s.email is EmailFate.SKIPPED for s in stays), hits, len(results) - hits)
 
 
 @dataclass(frozen=True)
@@ -260,26 +301,34 @@ class SegmentOutcome:
     reached: int
     emails: EmailTally
     true_lift: float
+    paid_in_window: int  # merchants who paid within the paid window of entering this segment
+    revenue: float  # first-month revenue from goal actions within the horizon (Trialists paying)
 
     @property
     def reached_share(self) -> float:
         return _rate(self.reached, self.counted)
 
+    @property
+    def paid_share(self) -> float:
+        return _rate(self.paid_in_window, self.counted)
 
-def segment_outcomes(results: dict[Approach, list[StayResult]], journeys: dict[Approach, list[Journey]]) -> dict[Segment, dict[Approach, SegmentOutcome]]:
-    """Per segment and approach: the stays counted, how many reached the goal action within the
-    horizon, the emails, and true lift against no email."""
+
+def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float) -> dict[Segment, dict[Approach, SegmentOutcome]]:
+    """Per segment and approach, over counted stays: how many reached the goal action within the
+    horizon, true lift against no email, the emails and how they scored, paid conversion within the
+    paid window, and first-month revenue."""
+
+    def outcome(run: CalendarRun, segment: Segment, no_email_share: float) -> SegmentOutcome:
+        results = [r for r in run.results if r.segment is segment]
+        reached = sum(r.reached for r in results)
+        stays = [(j, s) for j in run.journeys for s in j.stays if s.segment is segment and s.counted]
+        emails = _emails([s for _, s in stays], [e for e in run.email_results if e.segment is segment])
+        paid = sum(j.paid_at is not None and j.paid_at <= s.entered + paid_window_days for j, s in stays)
+        lift = _rate(reached, len(results)) - no_email_share
+        return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.revenue for r in results))
+
     out: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:
-        reached = {a: [r.reached for r in rs if r.segment is segment] for a, rs in results.items()}
-        no_email_share = _rate(sum(reached[Approach.NO_EMAIL]), len(reached[Approach.NO_EMAIL]))
-        out[segment] = {
-            a: SegmentOutcome(
-                len(r),
-                sum(r),
-                _emails([s for j in journeys[a] for s in j.stays if s.segment is segment]),
-                _rate(sum(r), len(r)) - no_email_share,
-            )
-            for a, r in reached.items()
-        }
+        no_email = outcome(runs[Approach.NO_EMAIL], segment, 0.0)
+        out[segment] = {a: outcome(run, segment, no_email.reached_share) for a, run in runs.items()}
     return out

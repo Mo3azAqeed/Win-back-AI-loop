@@ -212,8 +212,8 @@ def test_the_calendar_handles_every_merchants_events_in_date_order(run: RunResul
 def test_the_report_states_idle_results_in_percentage_points() -> None:
     report = run_simulation(with_idle(**CERTAIN_EMAIL), seed=1).report
 
-    assert "| No email | 2,565 | 0.0% | reference | 0 | 0 |" in report
-    assert "| Hand-written email (your first draft) | 2,565 | 100.0% | +100.0 | 2,565 | 0 |" in report
+    assert "| No email | 2,565 | 0.0% | reference |" in report
+    assert "| Hand-written email (your first draft) | 2,565 | 100.0% | +100.0 |" in report
 
 
 def test_the_report_shows_the_send_day_from_settings() -> None:
@@ -305,7 +305,8 @@ def test_the_report_shows_each_segments_results_and_every_first_draft() -> None:
     from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
 
     assert "### Drafter: publish" in from_1000 and "### Trialist: pay" in from_1000
-    assert f"| Hand-written email (your first draft) | {drafters.counted:,} | 100.0% | +0.0 | 0 | {drafters.counted:,} |" in from_1000
+    assert f"| Hand-written email (your first draft) | {drafters.counted:,} | 100.0% | +0.0 |" in from_1000
+    assert f"| Hand-written email (your first draft) | 0 | {drafters.counted:,} | 0 | 0 |" in from_1000
     assert "{store_name} is ready to go live" in run.report
     assert "You won't pay anything until the trial ends." in run.report
     assert "[Publish my store]" in run.report
@@ -381,7 +382,7 @@ def test_every_stay_gets_its_result_on_the_day_its_horizon_closes_and_not_before
     for approach in Approach:
         start = run.by_start[1000]
         results = start.results[approach]
-        stays = [stay for j in start.journeys[approach] for stay in j.stays]
+        stays = [stay for j in start.journeys[approach] for stay in j.stays if stay.counted]
 
         assert len(results) == len(stays)
         assert [r.known_on for r in results] == sorted(r.known_on for r in results)
@@ -390,7 +391,86 @@ def test_every_stay_gets_its_result_on_the_day_its_horizon_closes_and_not_before
             assert r.reached == (r.goal_day is not None and r.goal_day <= r.known_on)
 
 
-def test_no_segment_is_entered_after_week_13(run: RunResult) -> None:
+def test_only_stays_entered_by_the_end_of_week_13_are_counted(run: RunResult) -> None:
     for approach in Approach:
         stays = [stay for j in run.by_start[1000].journeys[approach] for stay in j.stays]
-        assert max(stay.entered for stay in stays) <= 13 * 7
+        assert all(stay.counted == (stay.entered <= 13 * 7) for stay in stays)
+        assert any(not stay.counted for stay in stays)  # merchants keep moving after week 13
+
+
+# Every email is read and clicked, and every click leads to the goal action within minutes.
+CERTAIN_EVERYWHERE = {"idle": CERTAIN_EMAIL, "drafter": CERTAIN_EMAIL, "trialist": CERTAIN_EMAIL}
+
+
+def test_a_merchant_signing_up_at_the_end_of_week_13_can_still_pay_within_30_days() -> None:
+    # Worked by hand: emails on days 2, 4 and 6 after signup (the 48-hour gap), each acted on at once,
+    # so every Idle merchant pays about 6 days after signing up. The last signups arrive on day 91,
+    # so they draft, publish and pay after week 13; their 30-day window must not be cut off.
+    idle = run_simulation(with_segments(**CERTAIN_EVERYWHERE), seed=1).by_start[1000].outcomes[Segment.IDLE]
+
+    assert idle[Approach.HAND_WRITTEN].paid_in_window == idle[Approach.HAND_WRITTEN].counted == IDLE_FROM_1000
+    assert idle[Approach.NO_EMAIL].paid_in_window == 0
+
+
+def test_a_payment_more_than_30_days_after_entering_a_segment_does_not_count_for_it() -> None:
+    # Worked by hand: drafting and paying each come about 2 days after their email, but Drafters only
+    # publish on their own, after 40 days on average. An Idle merchant pays about 4 days + that wait
+    # after entering Idle, so it pays within 30 days only if publishing takes under 26 days:
+    # 1 - e^(-26/40) = 47.8% of 2,565 merchants (chance moves this by about a point).
+    slow_publish = {"organic_share": 1.0, "organic_mean_days": 40, "act_rate": 0.0}
+    settings = with_segments(idle=CERTAIN_EMAIL, drafter=slow_publish, trialist=CERTAIN_EMAIL)
+    idle = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
+
+    assert 0.44 < idle.paid_in_window / idle.counted < 0.52
+
+
+def test_an_email_is_scored_on_the_day_its_miss_window_closes_and_never_before(run: RunResult) -> None:
+    # Idle and Drafter emails wait 3 and 7 days from the email; every Trialist email waits until 14 days after publishing.
+    start = run.by_start[1000]
+    results = start.email_results[Approach.HAND_WRITTEN]
+    sent = [s for j in start.journeys[Approach.HAND_WRITTEN] for s in j.stays if s.counted and s.email_sent_at is not None]
+
+    assert len(results) == len(sent)
+    assert [r.known_on for r in results] == sorted(r.known_on for r in results)
+    for r in results:
+        closes = {Segment.IDLE: r.sent_on + 3, Segment.DRAFTER: r.sent_on + 7, Segment.TRIALIST: r.entered + 14}[r.segment]
+        assert r.known_on == closes
+        assert r.hit == (r.goal_day is not None and r.sent_on < r.goal_day <= r.known_on)
+    assert start.email_results[Approach.NO_EMAIL] == []
+
+
+def test_a_draft_started_after_the_miss_window_is_a_miss_even_inside_the_horizon() -> None:
+    # Worked by hand: drafting comes 3 days after the click on average. The email is a hit only if the
+    # draft starts within the 3-day miss window: 1 - e^(-1) = 63.2% of emails. It still counts as
+    # reached for true lift if the draft starts within the 6 days left of the 8-day horizon: 1 - e^(-2) = 86.5%.
+    settings = with_idle(**{**CERTAIN_EMAIL, "response_mean_days": 3})
+    idle = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
+
+    assert idle.emails.hits + idle.emails.misses == idle.emails.sent == idle.counted
+    assert 0.60 < idle.emails.hits / idle.emails.sent < 0.66
+    assert 0.84 < idle.reached_share < 0.89
+
+
+def test_every_trialist_who_pays_brings_40_dollars_of_first_month_revenue(run: RunResult) -> None:
+    trialists = run.by_start[1000].outcomes[Segment.TRIALIST]
+
+    for approach in Approach:
+        assert trialists[approach].reached > 0
+        assert trialists[approach].revenue == 40 * trialists[approach].reached
+    assert run.by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].revenue == 0
+
+
+def test_the_report_shows_hits_misses_paid_conversion_and_trialist_revenue() -> None:
+    # Every email works at once, so every emailed merchant hits, pays within days, and brings $40.
+    run = run_simulation(with_segments(**CERTAIN_EVERYWHERE), seed=1)
+    trialists = run.by_start[1000].outcomes[Segment.TRIALIST][Approach.HAND_WRITTEN]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+    idle_part, rest = from_1000.split("### Drafter: publish", 1)
+    trialist_part = rest.split("### Trialist: pay", 1)[1]
+
+    assert "| Hand-written email (your first draft) | 2,565 | 100.0% | +100.0 | 100.0% |" in idle_part
+    assert "| No email | 2,565 | 0.0% | reference | 0.0% |" in idle_part
+    assert "| Hand-written email (your first draft) | 2,565 | 0 | 2,565 | 0 |" in idle_part
+    assert "within 3 days of the email" in idle_part
+    assert "within 14 days of publishing" in trialist_part
+    assert f"| ${trialists.revenue:,.0f} |" in trialist_part and trialists.revenue > 0

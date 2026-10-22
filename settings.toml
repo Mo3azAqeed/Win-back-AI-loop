@@ -24,8 +24,13 @@ min_gap_days = { value = 2, placeholder = false, note = "At least this many days
 [trial]
 days = { value = 7, placeholder = false, note = "The free trial starts at publish and lasts this many days." }
 
+[paid]
+monthly_price = { value = 40, placeholder = false, note = "The one plan's price; each payment is this much first-month revenue." }
+window_days = { value = 30, placeholder = false, note = "Paid conversion is tracked for this many days after a merchant enters each segment." }
+
 [idle]
 horizon_days = { value = 8, placeholder = false, note = "Idle horizon: true lift counts a draft started within this many days of entering Idle." }
+miss_window_days = { value = 3, placeholder = false, note = "An Idle email is a miss if no draft is started within this many days of the email." }
 hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Idle email (your first draft) goes out this many days after entering Idle (signup, for new merchants)." }
 organic_share = { value = 0.12, placeholder = true, note = "Share of Idle merchants who would start a draft one day with no email." }
 organic_mean_days = { value = 2.5, placeholder = true, note = "Average days until those merchants start a draft on their own." }
@@ -36,6 +41,7 @@ response_mean_days = { value = 0.3, placeholder = true, note = "Average days bet
 
 [drafter]
 horizon_days = { value = 12, placeholder = false, note = "Drafter horizon: true lift counts a publish within this many days of the draft save." }
+miss_window_days = { value = 7, placeholder = false, note = "A Drafter email is a miss if the store isn't published within this many days of the email." }
 hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Drafter email goes out this many days after the draft is saved." }
 organic_share = { value = 0.30, placeholder = true, note = "Share of Drafters who would publish one day with no email." }
 organic_mean_days = { value = 3, placeholder = true, note = "Average days until those Drafters publish on their own." }
@@ -46,6 +52,7 @@ response_mean_days = { value = 0.3, placeholder = true, note = "Average days bet
 
 [trialist]
 horizon_days = { value = 14, placeholder = false, note = "Trialist horizon: true lift counts a paid conversion within this many days of publishing." }
+miss_window_days = { value = 14, placeholder = false, note = "A Trialist email is a miss if the merchant hasn't paid within this many days of publishing (counted from publishing, not the email, so every offer is judged alike)." }
 hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Trialist email goes out this many days after publishing." }
 organic_share = { value = 0.242, placeholder = true, note = "Share of Trialists who would pay one day with no email; with the 4-day average below, about 20% pay inside the 7-day trial." }
 organic_mean_days = { value = 4, placeholder = true, note = "Average days after publishing until those Trialists pay; only payments inside the trial count." }

@@ -30,6 +30,7 @@ class SegmentSettings:
     over which true lift is counted."""
 
     horizon_days: float
+    miss_window_days: float
     hand_written_after_days: float
     organic_share: float
     organic_mean_days: float
@@ -50,6 +51,8 @@ class Settings:
     growth_last_week: float
     min_gap_days: float
     trial_days: float
+    monthly_price: float
+    paid_window_days: float
     segments: dict[Segment, SegmentSettings]
     first_drafts: dict[str, Email]
     entries: tuple[Setting, ...]
@@ -79,6 +82,8 @@ def load_settings(path: Path) -> Settings:
         growth_last_week=value("growth.last_week"),
         min_gap_days=value("sending.min_gap_days"),
         trial_days=value("trial.days"),
+        monthly_price=value("paid.monthly_price"),
+        paid_window_days=value("paid.window_days"),
         segments={s: segment(s.value) for s in Segment},
         first_drafts=drafts,
         entries=tuple(entries.values()),

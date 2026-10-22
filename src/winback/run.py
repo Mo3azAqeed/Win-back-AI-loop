@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
+from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -20,6 +20,7 @@ class StartResult:
     merchants: list[Merchant]
     journeys: dict[Approach, list[Journey]]
     results: dict[Approach, list[StayResult]]
+    email_results: dict[Approach, list[EmailResult]]
     event_days: dict[Approach, list[float]]
     outcomes: dict[Segment, dict[Approach, SegmentOutcome]]
 
@@ -52,6 +53,7 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         merchants=simulated,
         journeys=journeys,
         results=results,
+        email_results={a: c.email_results for a, c in calendars.items()},
         event_days={a: c.event_days for a, c in calendars.items()},
-        outcomes=segment_outcomes(results, journeys),
+        outcomes=segment_outcomes(calendars, settings.paid_window_days),
     )
