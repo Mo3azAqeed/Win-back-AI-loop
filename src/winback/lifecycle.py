@@ -119,17 +119,22 @@ def _rate(part: int, whole: int) -> float:
     return part / whole if whole else 0.0
 
 
-def _emails(stays: list[Stay]) -> tuple[int, int]:
+@dataclass(frozen=True)
+class EmailTally:
+    sent: int
+    skipped: int
+
+
+def _emails(stays: list[Stay]) -> EmailTally:
     """Emails sent and emails skipped across these stays."""
-    return sum(s.email is EmailFate.SENT for s in stays), sum(s.email is EmailFate.SKIPPED for s in stays)
+    return EmailTally(sum(s.email is EmailFate.SENT for s in stays), sum(s.email is EmailFate.SKIPPED for s in stays))
 
 
 @dataclass(frozen=True)
 class SegmentOutcome:
     counted: int
     reached: int
-    sent: int
-    skipped: int
+    emails: EmailTally
     true_lift: float
 
     @property
@@ -140,28 +145,28 @@ class SegmentOutcome:
 @dataclass(frozen=True)
 class SegmentTraffic:
     entered: int
-    sent: int
-    skipped: int
+    emails: EmailTally
 
 
 def idle_outcomes(settings: Settings, journeys: dict[Approach, list[Journey]]) -> dict[Approach, SegmentOutcome]:
-    """Idle merchants counted over a fixed horizon from entering Idle, for each approach."""
+    """Idle merchants counted over the Idle horizon (a fixed number of days from entering Idle), for each approach."""
     end, horizon = simulation_end(settings), settings.idle_horizon_days
-    tallies: dict[Approach, tuple[int, int, int, int]] = {}
-    for approach, approach_journeys in journeys.items():
-        idle_stays = [
-            j.stays[0] for j in approach_journeys if j.stays[0].segment is Segment.IDLE and j.stays[0].entered + horizon <= end
-        ]
-        reached = sum(s.left is not None and s.left <= s.entered + horizon for s in idle_stays)
-        tallies[approach] = (len(idle_stays), reached, *_emails(idle_stays))
-    baseline = _rate(tallies[Approach.NO_EMAIL][1], tallies[Approach.NO_EMAIL][0])
-    return {a: SegmentOutcome(n, r, s, k, _rate(r, n) - baseline) for a, (n, r, s, k) in tallies.items()}
+    counted: dict[Approach, list[Stay]] = {
+        approach: [j.stays[0] for j in js if j.stays[0].segment is Segment.IDLE and j.stays[0].entered + horizon <= end]
+        for approach, js in journeys.items()
+    }
+    reached = {a: sum(s.left is not None and s.left <= s.entered + horizon for s in stays) for a, stays in counted.items()}
+    no_email_share = _rate(reached[Approach.NO_EMAIL], len(counted[Approach.NO_EMAIL]))
+    return {
+        a: SegmentOutcome(len(stays), reached[a], _emails(stays), _rate(reached[a], len(stays)) - no_email_share)
+        for a, stays in counted.items()
+    }
 
 
 def traffic(journeys: list[Journey]) -> dict[Segment, SegmentTraffic]:
-    """Per segment: merchants who entered it, emails sent there, and emails skipped."""
+    """Per segment: merchants who entered it, and the emails sent and skipped there."""
     out = {}
     for segment in Segment:
         stays = [s for j in journeys for s in j.stays if s.segment is segment]
-        out[segment] = SegmentTraffic(len(stays), *_emails(stays))
+        out[segment] = SegmentTraffic(len(stays), _emails(stays))
     return out

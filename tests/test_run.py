@@ -130,15 +130,15 @@ def test_merchants_who_start_a_draft_before_the_email_is_due_are_skipped() -> No
     everyone_drafts_fast = with_idle(organic_share=1.0, organic_mean_days=0.01)
     email = run_simulation(everyone_drafts_fast, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
 
-    assert email.sent == 0
-    assert email.skipped == email.counted
+    assert email.emails.sent == 0
+    assert email.emails.skipped == email.counted
 
 
 def test_when_nobody_drafts_alone_everyone_gets_the_email_and_it_lifts_drafts() -> None:
     idle = run_simulation(with_idle(organic_share=0.0), seed=1).by_start[1000].idle
 
-    assert idle[Approach.HAND_WRITTEN].skipped == 0
-    assert idle[Approach.HAND_WRITTEN].sent == idle[Approach.HAND_WRITTEN].counted
+    assert idle[Approach.HAND_WRITTEN].emails.skipped == 0
+    assert idle[Approach.HAND_WRITTEN].emails.sent == idle[Approach.HAND_WRITTEN].counted
     assert idle[Approach.NO_EMAIL].reached == 0
     assert idle[Approach.HAND_WRITTEN].true_lift > 0
 
@@ -202,7 +202,7 @@ def test_only_merchants_whose_horizon_fits_in_the_run_are_counted() -> None:
 def test_the_report_states_idle_results_in_percentage_points() -> None:
     report = run_simulation(with_idle(**CERTAIN_EMAIL), seed=1).report
 
-    assert "| No email | 2,565 | 0.0% | baseline | 0 | 0 |" in report
+    assert "| No email | 2,565 | 0.0% | reference | 0 | 0 |" in report
     assert "| Hand-written email (your first draft) | 2,565 | 100.0% | +100.0 | 2,565 | 0 |" in report
 
 
@@ -284,8 +284,8 @@ def test_drafters_who_publish_before_their_email_is_due_are_skipped() -> None:
     drafters = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.DRAFTER]
 
     assert drafters.entered > 250
-    assert drafters.sent == 0
-    assert drafters.skipped == drafters.entered
+    assert drafters.emails.sent == 0
+    assert drafters.emails.skipped == drafters.entered
 
 
 def test_the_report_shows_each_segments_traffic_and_every_first_draft() -> None:
@@ -318,8 +318,8 @@ def test_a_trialist_email_due_after_the_trial_has_ended_is_skipped() -> None:
     settings = with_segments(trialist={"hand_written_after_days": 8})
     trialists = run_simulation(settings, seed=1).by_start[1000].traffic[Approach.HAND_WRITTEN][Segment.TRIALIST]
 
-    assert trialists.sent == 0
-    assert trialists.skipped == trialists.entered > 100
+    assert trialists.emails.sent == 0
+    assert trialists.emails.skipped == trialists.entered > 100
 
 
 def test_a_merchants_luck_in_one_segment_does_not_decide_the_next() -> None:
@@ -331,3 +331,19 @@ def test_a_merchants_luck_in_one_segment_does_not_decide_the_next() -> None:
     published = [j for j in drafted if len(j.stays) > 2]
 
     assert 0.25 < len(published) / len(drafted) < 0.35
+
+
+def test_about_a_fifth_of_trialists_pay_inside_the_trial_with_no_email() -> None:
+    # The spec's placeholder: about 20% of Trialists pay before the trial ends with no email.
+    # 10,000 merchants, 85% of them existing Trialists, so chance moves the share by under 1.5 points.
+    settings = dataclasses.replace(
+        load_settings(SETTINGS),
+        start_sizes=(10_000,),
+        already_paying_share=0.0,
+        existing_shares={Segment.IDLE: 0.15, Segment.DRAFTER: 0.0, Segment.TRIALIST: 0.85},
+    )
+    journeys = run_simulation(settings, seed=1).by_start[10_000].journeys[Approach.NO_EMAIL]
+    trialists = [j for j in journeys if j.merchant.start_segment is Segment.TRIALIST]
+    paid = sum(j.paid_at is not None for j in trialists)
+
+    assert 0.185 < paid / len(trialists) < 0.215

@@ -48,7 +48,7 @@ response_mean_days = { value = 0.3, placeholder = true, note = "Average days bet
 
 [trialist]
 hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Trialist email goes out this many days after publishing." }
-organic_share = { value = 0.20, placeholder = true, note = "Share of Trialists who would pay with no email, if the trial lasted long enough." }
+organic_share = { value = 0.242, placeholder = true, note = "Share of Trialists who would pay one day with no email; with the 4-day average below, about 20% pay inside the 7-day trial." }
 organic_mean_days = { value = 4, placeholder = true, note = "Average days after publishing until those Trialists pay; only payments inside the trial count." }
 read_rate = { value = 0.50, placeholder = true, note = "Chance a Trialist reads your Trialist first draft (hidden quality 100)." }
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Trialist first draft's button (hidden quality 100)." }

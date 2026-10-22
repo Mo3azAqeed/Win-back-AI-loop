@@ -63,8 +63,8 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "|---|---|---|---|---|---|",
         ]
         for approach, o in result.idle.items():
-            lift = "baseline" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
-            lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.sent:,} | {o.skipped:,} |")
+            lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
+            lines.append(f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.emails.sent:,} | {o.emails.skipped:,} |")
         lines += [
             "",
             "### Segments with your first drafts",
@@ -74,7 +74,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "| Segment | Merchants entered | Emails sent | Skipped (moved on or trial over) |",
             "|---|---|---|---|",
             *(
-                f"| {SEGMENT_TEXT[s][0]} | {t.entered:,} | {t.sent:,} | {t.skipped:,} |"
+                f"| {SEGMENT_TEXT[s][0]} | {t.entered:,} | {t.emails.sent:,} | {t.emails.skipped:,} |"
                 for s, t in result.traffic[Approach.HAND_WRITTEN].items()
             ),
             "",
