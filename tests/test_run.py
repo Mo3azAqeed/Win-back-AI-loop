@@ -191,9 +191,9 @@ def test_an_email_never_makes_a_merchant_draft_later_than_they_would_have() -> N
     assert idle[Approach.HAND_WRITTEN].reached >= idle[Approach.NO_EMAIL].reached
 
 
-def test_a_merchant_signing_up_at_the_end_of_week_13_still_gets_its_full_window() -> None:
+def test_a_merchant_signing_up_at_the_end_of_week_13_still_gets_its_full_horizon() -> None:
     # A 20-day Idle horizon, longer than the old fixed 14-day run-out, and an email on day 15 that
-    # makes everyone draft at once. Only if the run lasts until the last window closes do merchants
+    # makes everyone draft at once. Only if the run lasts until the last horizon closes do merchants
     # who sign up at the end of week 13 get their day-15 email, so every Idle merchant drafts in time.
     settings = with_idle(**CERTAIN_EMAIL, horizon_days=20, hand_written_after_days=15)
     email = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
@@ -373,3 +373,23 @@ def test_a_goal_action_from_an_earlier_segment_cannot_end_a_later_one() -> None:
 
     assert len(drafter_stays) > 1000
     assert all(stay.left is None for stay in drafter_stays)
+
+
+def test_every_stay_gets_its_result_on_the_day_its_horizon_closes_and_not_before(run: RunResult) -> None:
+    horizons = {Segment.IDLE: 8, Segment.DRAFTER: 12, Segment.TRIALIST: 14}
+    for approach in Approach:
+        start = run.by_start[1000]
+        results = start.results[approach]
+        stays = [stay for j in start.journeys[approach] for stay in j.stays]
+
+        assert len(results) == len(stays)
+        assert [r.known_on for r in results] == sorted(r.known_on for r in results)
+        for r in results:
+            assert r.known_on == r.entered + horizons[r.segment]
+            assert r.reached == (r.goal_day is not None and r.goal_day <= r.known_on)
+
+
+def test_no_segment_is_entered_after_week_13(run: RunResult) -> None:
+    for approach in Approach:
+        stays = [stay for j in run.by_start[1000].journeys[approach] for stay in j.stays]
+        assert max(stay.entered for stay in stays) <= 13 * 7

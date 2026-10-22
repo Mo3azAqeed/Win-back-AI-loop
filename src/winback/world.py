@@ -23,10 +23,10 @@ def _whole(x: float) -> int:
     return math.floor(x + 0.5)
 
 
-def simulation_end(settings: Settings) -> float:
-    """The last simulated day: the weeks of signups plus the longest horizon, so the window of a
-    merchant who arrives on the last day of the last week still closes inside the run."""
-    return settings.weeks * DAYS_PER_WEEK + max(s.horizon_days for s in settings.segments.values())
+def last_entry_day(settings: Settings) -> float:
+    """The last day a merchant can enter a segment: the end of the weeks of signups. The run itself
+    goes on until the horizon of every segment entered by then has closed."""
+    return settings.weeks * DAYS_PER_WEEK
 
 
 def already_paying(settings: Settings, start: int) -> int:

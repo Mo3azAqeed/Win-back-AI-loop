@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, Journey, SegmentOutcome, SegmentTraffic, idle_outcomes, run_calendar, traffic
+from winback.lifecycle import Approach, Journey, SegmentOutcome, SegmentTraffic, StayResult, idle_outcomes, run_calendar, traffic
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -19,6 +19,7 @@ class StartResult:
     weekly_signups: list[int]
     merchants: list[Merchant]
     journeys: dict[Approach, list[Journey]]
+    results: dict[Approach, list[StayResult]]
     event_days: dict[Approach, list[float]]
     idle: dict[Approach, SegmentOutcome]
     traffic: dict[Approach, dict[Segment, SegmentTraffic]]
@@ -42,7 +43,8 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
     existing = existing_by_segment(settings, start)
     simulated = merchants(settings, existing, signups, seed)
     calendars = {a: run_calendar(settings, simulated, seed, a) for a in Approach}
-    journeys = {a: js for a, (js, _) in calendars.items()}
+    journeys = {a: c.journeys for a, c in calendars.items()}
+    results = {a: c.results for a, c in calendars.items()}
     return StartResult(
         existing_merchants=start,
         already_paying=paying,
@@ -50,7 +52,8 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         weekly_signups=signups,
         merchants=simulated,
         journeys=journeys,
-        event_days={a: days for a, (_, days) in calendars.items()},
-        idle=idle_outcomes(settings, journeys),
+        results=results,
+        event_days={a: c.event_days for a, c in calendars.items()},
+        idle=idle_outcomes(results, journeys),
         traffic={a: traffic(js) for a, js in journeys.items()},
     )

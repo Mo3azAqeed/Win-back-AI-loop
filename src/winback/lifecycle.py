@@ -14,7 +14,7 @@ from enum import Enum
 from winback.draws import draw
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
-from winback.world import Merchant, simulation_end
+from winback.world import Merchant, last_entry_day
 
 
 class Approach(Enum):
@@ -80,108 +80,134 @@ class _Draws:
 
 
 class _Event(Enum):
-    ENTER = 0
+    # On the same day, an email falling due is handled before a goal action, then a horizon closing.
+    EMAIL_DUE = 0
     GOAL = 1
-    EMAIL_DUE = 2
+    ENTER = 2
+    HORIZON_CLOSES = 3
+
+
+@dataclass(order=True)
+class _Scheduled:
+    day: float
+    event_order: int
+    sequence: int
+    event: _Event = field(compare=False)
+    merchant: int = field(compare=False)
+    stay: "_OpenStay | None" = field(compare=False, default=None)
+
+
+@dataclass(frozen=True)
+class StayResult:
+    """What a stay achieved, known on the day its horizon closes (and never before)."""
+
+    merchant_key: str
+    segment: Segment
+    entered: float
+    known_on: float
+    goal_day: float | None
+    reached: bool
 
 
 @dataclass
 class _OpenStay:
-    """A stay still in progress: its goal action and email can still change."""
+    """One merchant's stay in one segment while the run is going."""
 
     segment: Segment
     entered: float
     deadline: float
     draws: _Draws
+    left: float | None = None
     goal_day: float | None = None
-    goal_id: int | None = None  # which scheduled goal action is the live one; earlier ones are stale
     email: EmailFate = EmailFate.NOT_PLANNED
-    email_due: float | None = None
     email_sent_at: float | None = None
 
-    @property
-    def email_pending(self) -> bool:
-        return self.email_due is not None and self.email is EmailFate.NOT_PLANNED
-
-    def close(self, left: float | None) -> Stay:
-        """Settle the stay. An email still pending was skipped if the merchant moved on before it was
-        due; if the run ended first, it was never sent and counts as not planned."""
-        email = self.email
-        if self.email_pending and left is not None and self.email_due is not None and left < self.email_due:
-            email = EmailFate.SKIPPED
-        return Stay(self.segment, self.entered, left, email, self.email_sent_at)
+    def freeze(self) -> Stay:
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at)
 
 
 @dataclass
 class _MerchantState:
+    index: int
     merchant: Merchant
-    stays: list[Stay] = field(default_factory=list)
-    open: _OpenStay | None = None
+    stays: list[_OpenStay] = field(default_factory=list)
     last_email: float = -math.inf
     paid_at: float | None = None
 
+    @property
+    def current(self) -> _OpenStay | None:
+        return self.stays[-1] if self.stays and self.stays[-1].left is None else None
+
+
+@dataclass(frozen=True)
+class CalendarRun:
+    journeys: list[Journey]
+    results: list[StayResult]  # in the order they became known
+    event_days: list[float]  # the day of every event, in the order handled
+
 
 class _Calendar:
-    """One approach's run: every merchant's events on one timeline, handled in date order."""
+    """One approach's run: every merchant's events on one timeline, handled in date order.
+
+    Merchants enter segments during the weeks of signups; the run then keeps going until the
+    horizon of the last segment entered in those weeks has closed."""
 
     def __init__(self, settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> None:
         self.settings, self.seed, self.approach = settings, seed, approach
-        self.end = simulation_end(settings)
-        self.merchants = [_MerchantState(m) for m in merchants]
-        self.queue: list[tuple[float, int, _Event, int, int]] = []
-        self.order = itertools.count()
+        self.last_entry_day = last_entry_day(settings)
+        self.last_horizon_close = self.last_entry_day
+        self.merchants = [_MerchantState(i, m) for i, m in enumerate(merchants)]
+        self.queue: list[_Scheduled] = []
+        self.sequence = itertools.count()
+        self.results: list[StayResult] = []
         self.event_days: list[float] = []
-        for i, m in enumerate(merchants):
-            self._schedule(m.arrival_day, _Event.ENTER, i)
-
-    def _schedule(self, day: float, event: _Event, merchant: int, goal_id: int = -1) -> None:
-        if day <= self.end:
-            heapq.heappush(self.queue, (day, next(self.order), event, merchant, goal_id))
-
-    def run(self) -> tuple[list[Journey], list[float]]:
-        while self.queue:
-            day, _, event, i, goal_id = heapq.heappop(self.queue)
-            self.event_days.append(day)
-            state = self.merchants[i]
-            if event is _Event.ENTER:
-                self._enter(state, i, state.merchant.start_segment, day)
-            elif event is _Event.EMAIL_DUE:
-                self._email_due(state, i, day)
-            elif state.open is not None and goal_id == state.open.goal_id:
-                self._goal(state, i, day)
-        journeys = []
         for state in self.merchants:
-            if state.open is not None:
-                state.stays.append(state.open.close(None))
-            journeys.append(Journey(state.merchant, tuple(state.stays), state.paid_at))
-        return journeys, self.event_days
+            self._schedule(state, state.merchant.arrival_day, _Event.ENTER)
 
-    def _enter(self, state: _MerchantState, i: int, segment: Segment, day: float) -> None:
+    def _schedule(self, state: _MerchantState, day: float, event: _Event, stay: _OpenStay | None = None) -> None:
+        heapq.heappush(self.queue, _Scheduled(day, event.value, next(self.sequence), event, state.index, stay))
+
+    def run(self) -> CalendarRun:
+        while self.queue and self.queue[0].day <= max(self.last_entry_day, self.last_horizon_close):
+            item = heapq.heappop(self.queue)
+            self.event_days.append(item.day)
+            state = self.merchants[item.merchant]
+            if item.event is _Event.ENTER:
+                self._enter(state, state.merchant.start_segment, item.day)
+            elif item.event is _Event.EMAIL_DUE and item.stay is not None:
+                self._email_due(state, item.stay, item.day)
+            elif item.event is _Event.GOAL and item.stay is not None and item.stay.left is None:
+                # A goal event belongs to its own stay, and only the earliest one ends it.
+                self._reach_goal(state, item.stay, item.day)
+            elif item.event is _Event.HORIZON_CLOSES and item.stay is not None:
+                self._close_horizon(state, item.stay, item.day)
+        journeys = [Journey(s.merchant, tuple(stay.freeze() for stay in s.stays), s.paid_at) for s in self.merchants]
+        return CalendarRun(journeys, self.results, self.event_days)
+
+    def _enter(self, state: _MerchantState, segment: Segment, day: float) -> None:
+        if day > self.last_entry_day:
+            return  # the weeks of signups are over: nobody enters a new segment
         behaviour = self.settings.segments[segment]
         deadline = day + self.settings.trial_days if segment is Segment.TRIALIST else math.inf
         stay = _OpenStay(segment, day, deadline, _Draws(self.seed, state.merchant, segment))
-        state.open = stay
+        state.stays.append(stay)
+        closes = day + behaviour.horizon_days
+        self.last_horizon_close = max(self.last_horizon_close, closes)
+        self._schedule(state, closes, _Event.HORIZON_CLOSES, stay)
         if stay.draws.chance("organic") < behaviour.organic_share:
             organic = day + stay.draws.wait_days("organic_time", behaviour.organic_mean_days)
             if organic <= deadline:
-                self._set_goal(stay, i, organic)
+                self._set_goal(state, stay, organic)
         if self.approach is Approach.HAND_WRITTEN:
-            self._plan_email(state, i, stay, day)
+            due = max(day + behaviour.hand_written_after_days, state.last_email + self.settings.min_gap_days)
+            self._schedule(state, due, _Event.EMAIL_DUE, stay)
 
-    def _plan_email(self, state: _MerchantState, i: int, stay: _OpenStay, day: float) -> None:
-        """The one send path: every email is planned here and then sent or skipped on its due day."""
-        behaviour = self.settings.segments[stay.segment]
-        due = max(day + behaviour.hand_written_after_days, state.last_email + self.settings.min_gap_days)
-        stay.email_due = due
-        if due > stay.deadline:
+    def _email_due(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
+        """The one send path: on its due day an email is sent, or skipped if the merchant moved on
+        or the trial ended."""
+        if stay.left is not None or day > stay.deadline:
             stay.email = EmailFate.SKIPPED
-        else:
-            self._schedule(due, _Event.EMAIL_DUE, i)
-
-    def _email_due(self, state: _MerchantState, i: int, day: float) -> None:
-        stay = state.open
-        if stay is None or stay.email_due != day or not stay.email_pending:
-            return  # the merchant moved on before the email was due
+            return
         behaviour = self.settings.segments[stay.segment]
         stay.email, stay.email_sent_at, state.last_email = EmailFate.SENT, day, day
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, FIRST_DRAFT.subject_appeal)
@@ -189,26 +215,27 @@ class _Calendar:
         if clicked and stay.draws.chance("act") < behaviour.act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):
-                self._set_goal(stay, i, prompted)
+                self._set_goal(state, stay, prompted)
 
-    def _set_goal(self, stay: _OpenStay, i: int, day: float) -> None:
-        stay.goal_day, stay.goal_id = day, next(self.order)
-        self._schedule(day, _Event.GOAL, i, stay.goal_id)
+    def _set_goal(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
+        stay.goal_day = day
+        self._schedule(state, day, _Event.GOAL, stay)
 
-    def _goal(self, state: _MerchantState, i: int, day: float) -> None:
-        assert state.open is not None
-        state.stays.append(state.open.close(day))
-        following = NEXT_SEGMENT[state.open.segment]
-        state.open = None
+    def _reach_goal(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
+        stay.left = day
+        following = NEXT_SEGMENT[stay.segment]
         if following is None:
             state.paid_at = day
         else:
-            self._enter(state, i, following, day)
+            self._enter(state, following, day)
+
+    def _close_horizon(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
+        reached = stay.left is not None  # events run in date order, so any goal so far is inside the horizon
+        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached))
 
 
-def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> tuple[list[Journey], list[float]]:
-    """Run one approach for every merchant on one shared calendar. Returns the journeys and the
-    days of every event handled, in the order they were handled."""
+def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> CalendarRun:
+    """Run one approach for every merchant on one shared calendar."""
     return _Calendar(settings, merchants, seed, approach).run()
 
 
@@ -245,16 +272,15 @@ class SegmentTraffic:
     emails: EmailTally
 
 
-def idle_outcomes(settings: Settings, journeys: dict[Approach, list[Journey]]) -> dict[Approach, SegmentOutcome]:
-    """Idle merchants counted over the Idle horizon (a fixed number of days from entering Idle), for each approach.
-    The run lasts long enough for every Idle merchant's horizon to close."""
-    horizon = settings.segments[Segment.IDLE].horizon_days
-    counted = {approach: [j.stays[0] for j in js if j.stays[0].segment is Segment.IDLE] for approach, js in journeys.items()}
-    reached = {a: sum(s.left is not None and s.left <= s.entered + horizon for s in stays) for a, stays in counted.items()}
-    no_email_share = _rate(reached[Approach.NO_EMAIL], len(counted[Approach.NO_EMAIL]))
+def idle_outcomes(results: dict[Approach, list[StayResult]], journeys: dict[Approach, list[Journey]]) -> dict[Approach, SegmentOutcome]:
+    """Idle merchants and whether they started a draft within the Idle horizon, for each approach.
+    Every Idle stay's horizon closes inside the run, so every Idle merchant is counted."""
+    idle = {a: [r for r in rs if r.segment is Segment.IDLE] for a, rs in results.items()}
+    emails = {a: _emails([j.stays[0] for j in js if j.stays and j.stays[0].segment is Segment.IDLE]) for a, js in journeys.items()}
+    no_email_share = _rate(sum(r.reached for r in idle[Approach.NO_EMAIL]), len(idle[Approach.NO_EMAIL]))
     return {
-        a: SegmentOutcome(len(stays), reached[a], _emails(stays), _rate(reached[a], len(stays)) - no_email_share)
-        for a, stays in counted.items()
+        a: SegmentOutcome(len(rs), sum(r.reached for r in rs), emails[a], _rate(sum(r.reached for r in rs), len(rs)) - no_email_share)
+        for a, rs in idle.items()
     }
 
 
