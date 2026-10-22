@@ -50,7 +50,10 @@ class SegmentOutcome:
 
 
 def _shifted(rate: float, appeal: float) -> float:
-    """A reference chance moved by a hidden appeal on the log-odds scale."""
+    """A reference chance moved by a hidden appeal on the log-odds scale.
+    A certain or impossible chance stays so, whatever the appeal."""
+    if rate <= 0.0 or rate >= 1.0:
+        return rate
     return 1 / (1 + math.exp(-(math.log(rate / (1 - rate)) + appeal)))
 
 

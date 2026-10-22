@@ -138,3 +138,83 @@ def test_the_report_shows_idle_results_and_the_first_draft_that_was_sent(run: Ru
     assert "Your new store is one clone away" in run.report
     assert "Clone a store to start from, then make every page yours with the section builder." in run.report
     assert "[Start my first draft]" in run.report
+
+
+# A world where nobody drafts on their own and everyone who gets the email reads it,
+# clicks and starts a draft almost at once. Every outcome below is worked out by hand.
+CERTAIN_EMAIL = dict(organic_share=0.0, read_rate=1.0, click_rate=1.0, act_rate=1.0, response_mean_days=0.001)
+
+
+def test_an_email_that_arrives_after_the_horizon_cannot_lift_drafts() -> None:
+    idle = run_simulation(with_idle(**CERTAIN_EMAIL, hand_written_after_days=9), seed=1).by_start[1000].idle
+
+    assert idle[Approach.HAND_WRITTEN].true_lift == 0.0
+
+
+def test_reading_and_clicking_are_separate_chances_set_in_settings() -> None:
+    # Worked by hand: 35% read x 60% click x 100% start a draft = 21% of 2,065 merchants.
+    # Chance alone moves this by under 3 points (three standard deviations).
+    settings = with_idle(**{**CERTAIN_EMAIL, "read_rate": 0.35, "click_rate": 0.6})
+    lift = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN].true_lift
+
+    assert 0.18 < lift < 0.24
+
+
+def test_a_slow_response_lands_after_the_horizon() -> None:
+    # Worked by hand: with 1,000 days on average between click and draft, only
+    # 1 - e^(-6/1000) = 0.6% start a draft within the 6 days left before the horizon.
+    settings = with_idle(**{**CERTAIN_EMAIL, "response_mean_days": 1000})
+    lift = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN].true_lift
+
+    assert lift < 0.02
+
+
+def test_an_email_never_makes_a_merchant_draft_later_than_they_would_have() -> None:
+    # Half would draft on their own (often after the email); the email prompts drafts far too late to count.
+    settings = with_idle(**{**CERTAIN_EMAIL, "organic_share": 0.5, "organic_mean_days": 3, "response_mean_days": 1000})
+    idle = run_simulation(settings, seed=1).by_start[1000].idle
+
+    assert idle[Approach.HAND_WRITTEN].reached >= idle[Approach.NO_EMAIL].reached
+
+
+def test_only_merchants_whose_horizon_fits_in_the_run_are_counted() -> None:
+    run = run_simulation(dataclasses.replace(load_settings(SETTINGS), run_out_days=0), seed=1).by_start[1000]
+    last_day = 13 * 7
+    fits = [m for m in run.merchants if not m.existing and m.arrival_day + 8 <= last_day]
+
+    assert run.idle[Approach.NO_EMAIL].counted == len(fits) < sum(WEEKLY_SIGNUPS_FROM_1000)
+
+
+def test_the_report_states_idle_results_in_percentage_points() -> None:
+    report = run_simulation(with_idle(**CERTAIN_EMAIL), seed=1).report
+
+    assert "| No email | 2,065 | 0.0% | baseline | 0 | 0 |" in report
+    assert "| Hand-written email (your first draft) | 2,065 | 100.0% | +100.0 | 2,065 | 0 |" in report
+
+
+def test_the_report_shows_the_send_day_from_settings() -> None:
+    report = run_simulation(with_idle(hand_written_after_days=3), seed=1).report
+
+    assert "Sent 3 days after signup." in report
+
+
+def test_the_command_can_run_a_single_starting_size(tmp_path: Path) -> None:
+    from winback.cli import main
+
+    out = tmp_path / "report.md"
+    main(["--settings", str(SETTINGS), "--start", "1500", "--out", str(out)])
+
+    report = out.read_text()
+    assert "## Starting from 1,500 merchants" in report
+    assert "## Starting from 1,000 merchants" not in report
+
+
+def test_a_number_written_without_its_placeholder_flag_is_refused(tmp_path: Path) -> None:
+    broken = SETTINGS.read_text().replace(
+        'weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }', "weeks = 13"
+    )
+    (tmp_path / "settings.toml").write_text(broken)
+    (tmp_path / "first_drafts.toml").write_text((SETTINGS.parent / "first_drafts.toml").read_text())
+
+    with pytest.raises(ValueError, match="growth.weeks"):
+        load_settings(tmp_path / "settings.toml")
