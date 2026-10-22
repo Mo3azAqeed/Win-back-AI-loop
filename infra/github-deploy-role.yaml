@@ -65,7 +65,7 @@ Resources:
               - Sid: AlertsTopic
                 Effect: Allow
                 Action: sns:*
-                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts"
+                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts*"
               - Sid: ScheduleAlarmsLogsBudget
                 Effect: Allow
                 Action:
@@ -74,24 +74,78 @@ Resources:
                   - logs:*
                   - budgets:*
                 Resource: "*"
-              - Sid: RolesTheStackCreates
+              - Sid: RolesTheStackCreatesMustCarryTheBoundary
                 Effect: Allow
                 Action:
                   - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/winback-*"
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Ref RoleBoundary
+              - Sid: RolesTheStackCreates
+                Effect: Allow
+                Action:
                   - iam:DeleteRole
                   - iam:GetRole
                   - iam:PassRole
                   - iam:UpdateRole
+                  - iam:UpdateRoleDescription
                   - iam:UpdateAssumeRolePolicy
-                  - iam:PutRolePolicy
                   - iam:GetRolePolicy
                   - iam:DeleteRolePolicy
-                  - iam:AttachRolePolicy
                   - iam:DetachRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfilesForRole
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:ListRoleTags
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/winback-*"
+              - Sid: TheBoundaryStays
+                Effect: Deny
+                Action: iam:DeleteRolePermissionsBoundary
+                Resource: "*"
+
+  # The most any role in the win-back stack can ever do, whatever policies it is given.
+  # Without it, the deploy role could create a winback-* role with admin rights and use it.
+  RoleBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: winback-role-boundary
+      Description: Permissions boundary for every role the win-back stack creates.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: WriteReports
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::winback-*/*"
+          - Sid: SendAlerts
+            Effect: Allow
+            Action: sns:Publish
+            Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts"
+          - Sid: ReadTheOpenRouterKey
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/winback/*"
+          - Sid: WriteLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:winback-*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:winback-*:*"
+          - Sid: ScheduleStartsTheFunction
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource:
+              - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:winback-*"
+              - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:winback-*:*"
 
 Outputs:
   DeployRoleArn:

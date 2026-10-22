@@ -26,7 +26,7 @@ Choose one AWS region and use it for every step, for example `eu-west-1` (Irelan
 
 If the deploy fails because the GitHub OIDC provider already exists, run it again with `--parameter-overrides CreateOidcProvider=false`.
 
-The role works only for this repository's `main` branch. It can only manage the win-back stack, so a pull request or another branch cannot touch your AWS account.
+The role works only for this repository's `main` branch, so a pull request or another branch cannot touch your AWS account. It can only manage the win-back stack. Every role the stack creates carries the `winback-role-boundary` permissions boundary, so even a bad change to `template.yaml` cannot give the Lambda more than it needs: writing reports, sending alerts, reading the OpenRouter key, and writing its own logs. This stack must exist before the first deploy.
 
 ## 3. Tell GitHub where to deploy
 

@@ -67,6 +67,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       Description: Runs the win-back simulation and saves its report to S3.
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/winback-role-boundary"
       CodeUri: .
       Handler: winback.aws.handler
       Runtime: python3.13
@@ -99,6 +100,7 @@ Resources:
           Type: ScheduleV2
           Properties:
             Description: Weekly run. No seed, so the date is the seed.
+            PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/winback-role-boundary"
             ScheduleExpression: cron(0 6 ? * MON *)
             ScheduleExpressionTimezone: UTC
             Input: "{}"
@@ -151,6 +153,8 @@ Resources:
         BudgetName: winback-monthly
         BudgetType: COST
         TimeUnit: MONTHLY
+        CostTypes:
+          IncludeCredit: false  # otherwise the Free plan's credits hide every dollar spent
         BudgetLimit:
           Amount: !Ref MonthlyBudgetUsd
           Unit: USD

@@ -24,12 +24,12 @@ def handler(event: Mapping[str, object], context: object) -> dict[str, str]:
     def put(key: str, text: str) -> None:
         s3.put_object(Bucket=bucket, Key=key, Body=text.encode(), ContentType="text/markdown; charset=utf-8")
 
-    key = publish(event, today=datetime.now(UTC).date(), settings_path=BUNDLED_SETTINGS, put=put)
+    key = run_and_save(event, today=datetime.now(UTC).date(), settings_path=BUNDLED_SETTINGS, put=put)
     boto3.client("sns").publish(TopicArn=topic, Subject="Win-back report ready", Message=ready_message(bucket, region, key))
     return {"report": f"s3://{bucket}/{key}"}
 
 
-def publish(event: Mapping[str, object], *, today: date, settings_path: Path, put: Callable[[str, str], None]) -> str:
+def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Path, put: Callable[[str, str], None]) -> str:
     """Run the simulation the event asks for, put its report under its own key and as the latest, and return its key.
 
     The event may hold a seed and one starting size. Without a seed the date is used, so weekly runs differ."""
@@ -38,10 +38,9 @@ def publish(event: Mapping[str, object], *, today: date, settings_path: Path, pu
         seed = int(today.strftime("%Y%m%d"))
     start = _whole_number(event, "start")
     settings = load_settings(settings_path)
-    key = f"runs/{today.isoformat()}-seed{seed}.md"
     if start is not None:
         settings = dataclasses.replace(settings, start_sizes=(start,))
-        key = f"runs/{today.isoformat()}-seed{seed}-start{start}.md"
+    key = f"runs/{today.isoformat()}-seed{seed}" + (f"-start{start}" if start is not None else "") + ".md"
     report = run_simulation(settings, seed).report
     put(key, report)
     put(LATEST, report)
