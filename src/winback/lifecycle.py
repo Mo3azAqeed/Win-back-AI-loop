@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from winback.draws import draw
-from winback.settings import SegmentSettings, Settings
-from winback.world import Merchant, Segment, simulation_end
-
-NEXT = {Segment.IDLE: Segment.DRAFTER, Segment.DRAFTER: Segment.TRIALIST, Segment.TRIALIST: Segment.PAID}
+from winback.segments import NEXT_SEGMENT, Segment
+from winback.settings import Settings
+from winback.world import Merchant, simulation_end
 
 
 class Approach(Enum):
@@ -19,7 +18,7 @@ class Approach(Enum):
 class EmailFate(Enum):
     NOT_PLANNED = "not planned"
     SENT = "sent"
-    SKIPPED = "skipped"  # the merchant moved on before the email was due
+    SKIPPED = "skipped"  # the merchant moved on, or the trial ended, before the email was due
 
 
 @dataclass(frozen=True)
@@ -49,6 +48,7 @@ class Stay:
 class Journey:
     merchant: Merchant
     stays: tuple[Stay, ...]
+    paid_at: float | None
 
 
 def _shifted(rate: float, appeal: float) -> float:
@@ -72,48 +72,56 @@ class _Draws:
         return -mean_days * math.log(1.0 - self.chance(purpose))
 
 
-def _behaviour(settings: Settings, segment: Segment) -> SegmentSettings:
-    return {Segment.IDLE: settings.idle, Segment.DRAFTER: settings.drafter, Segment.TRIALIST: settings.trialist}[segment]
+def _stay(settings: Settings, merchant: Merchant, seed: int, approach: Approach, segment: Segment, entered: float, last_email: float) -> Stay:
+    """One merchant's time in one segment: when it takes the goal action, and what happens to its email."""
+    behaviour, draws, end = settings.segments[segment], _Draws(seed, merchant, segment), simulation_end(settings)
+    deadline = entered + settings.trial_days if segment is Segment.TRIALIST else math.inf
+    goal_day: float | None = None
+    if draws.chance("organic") < behaviour.organic_share:
+        goal_day = entered + draws.wait_days("organic_time", behaviour.organic_mean_days)
+    if goal_day is not None and goal_day > deadline:
+        goal_day = None
+    fate, sent_at = EmailFate.NOT_PLANNED, None
+    if approach is Approach.HAND_WRITTEN:
+        due = max(entered + behaviour.hand_written_after_days, last_email + settings.min_gap_days)
+        moved_on_first = goal_day is not None and goal_day < due and goal_day <= end
+        if moved_on_first or due > deadline:
+            fate = EmailFate.SKIPPED
+        elif due <= end:
+            fate, sent_at = EmailFate.SENT, due
+            read = draws.chance("read") < _shifted(behaviour.read_rate, FIRST_DRAFT.subject_appeal)
+            clicked = read and draws.chance("click") < _shifted(behaviour.click_rate, FIRST_DRAFT.body_appeal)
+            if clicked and draws.chance("act") < behaviour.act_rate:
+                prompted = due + draws.wait_days("response", behaviour.response_mean_days)
+                if prompted <= deadline:
+                    goal_day = prompted if goal_day is None else min(goal_day, prompted)
+    left = goal_day if goal_day is not None and goal_day <= end else None
+    return Stay(segment, entered, left, fate, sent_at)
 
 
-def journey(settings: Settings, m: Merchant, seed: int, approach: Approach, copy: EmailCopy = FIRST_DRAFT) -> Journey:
+def journey(settings: Settings, merchant: Merchant, seed: int, approach: Approach) -> Journey:
     """Follow one merchant from its first segment until it pays or the run ends."""
-    end = simulation_end(settings)
     stays: list[Stay] = []
-    segment, entered, last_email = m.start_segment, m.arrival_day, -math.inf
-    while segment is not Segment.PAID and entered <= end:
-        b, d = _behaviour(settings, segment), _Draws(seed, m, segment)
-        deadline = entered + settings.trial_days if segment is Segment.TRIALIST else math.inf
-        step: float | None = None
-        if d.chance("organic") < b.organic_share:
-            step = entered + d.wait_days("organic_time", b.organic_mean_days)
-        if step is not None and step > deadline:
-            step = None
-        fate, sent_at = EmailFate.NOT_PLANNED, None
-        if approach is Approach.HAND_WRITTEN:
-            due = max(entered + b.hand_written_after_days, last_email + settings.min_gap_days)
-            if (step is not None and step < due) or due > deadline:
-                fate = EmailFate.SKIPPED
-            elif due <= end:
-                fate, sent_at, last_email = EmailFate.SENT, due, due
-                read = d.chance("read") < _shifted(b.read_rate, copy.subject_appeal)
-                clicked = read and d.chance("click") < _shifted(b.click_rate, copy.body_appeal)
-                if clicked and d.chance("act") < b.act_rate:
-                    prompted = due + d.wait_days("response", b.response_mean_days)
-                    if prompted <= deadline:
-                        step = prompted if step is None else min(step, prompted)
-        left = step if step is not None and step <= end else None
-        stays.append(Stay(segment, entered, left, fate, sent_at))
-        if left is None:
-            break
-        segment, entered = NEXT[segment], left
-    if segment is Segment.PAID:
-        stays.append(Stay(Segment.PAID, entered, None, EmailFate.NOT_PLANNED, None))
-    return Journey(m, tuple(stays))
+    segment: Segment | None = merchant.start_segment
+    entered, last_email = merchant.arrival_day, -math.inf
+    while segment is not None:
+        stay = _stay(settings, merchant, seed, approach, segment, entered, last_email)
+        stays.append(stay)
+        if stay.email_sent_at is not None:
+            last_email = stay.email_sent_at
+        if stay.left is None:
+            return Journey(merchant, tuple(stays), None)
+        segment, entered = NEXT_SEGMENT[segment], stay.left
+    return Journey(merchant, tuple(stays), entered)
 
 
 def _rate(part: int, whole: int) -> float:
     return part / whole if whole else 0.0
+
+
+def _emails(stays: list[Stay]) -> tuple[int, int]:
+    """Emails sent and emails skipped across these stays."""
+    return sum(s.email is EmailFate.SENT for s in stays), sum(s.email is EmailFate.SKIPPED for s in stays)
 
 
 @dataclass(frozen=True)
@@ -140,22 +148,20 @@ def idle_outcomes(settings: Settings, journeys: dict[Approach, list[Journey]]) -
     """Idle merchants counted over a fixed horizon from entering Idle, for each approach."""
     end, horizon = simulation_end(settings), settings.idle_horizon_days
     tallies: dict[Approach, tuple[int, int, int, int]] = {}
-    for approach, js in journeys.items():
-        firsts = [j.stays[0] for j in js if j.stays and j.stays[0].segment is Segment.IDLE and j.stays[0].entered + horizon <= end]
-        reached = sum(s.left is not None and s.left <= s.entered + horizon for s in firsts)
-        sent = sum(s.email is EmailFate.SENT for s in firsts)
-        skipped = sum(s.email is EmailFate.SKIPPED for s in firsts)
-        tallies[approach] = (len(firsts), reached, sent, skipped)
+    for approach, approach_journeys in journeys.items():
+        idle_stays = [
+            j.stays[0] for j in approach_journeys if j.stays[0].segment is Segment.IDLE and j.stays[0].entered + horizon <= end
+        ]
+        reached = sum(s.left is not None and s.left <= s.entered + horizon for s in idle_stays)
+        tallies[approach] = (len(idle_stays), reached, *_emails(idle_stays))
     baseline = _rate(tallies[Approach.NO_EMAIL][1], tallies[Approach.NO_EMAIL][0])
     return {a: SegmentOutcome(n, r, s, k, _rate(r, n) - baseline) for a, (n, r, s, k) in tallies.items()}
 
 
 def traffic(journeys: list[Journey]) -> dict[Segment, SegmentTraffic]:
-    """Per segment: merchants who entered it, emails sent there, and emails skipped because the merchant moved on."""
+    """Per segment: merchants who entered it, emails sent there, and emails skipped."""
     out = {}
-    for segment in (Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST):
+    for segment in Segment:
         stays = [s for j in journeys for s in j.stays if s.segment is segment]
-        out[segment] = SegmentTraffic(
-            len(stays), sum(s.email is EmailFate.SENT for s in stays), sum(s.email is EmailFate.SKIPPED for s in stays)
-        )
+        out[segment] = SegmentTraffic(len(stays), *_emails(stays))
     return out

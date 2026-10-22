@@ -18,12 +18,9 @@ def with_segments(
     trialist: dict[str, float] | None = None,
 ) -> Settings:
     settings = load_settings(SETTINGS)
-    return dataclasses.replace(
-        settings,
-        idle=dataclasses.replace(settings.idle, **(idle or {})),
-        drafter=dataclasses.replace(settings.drafter, **(drafter or {})),
-        trialist=dataclasses.replace(settings.trialist, **(trialist or {})),
-    )
+    changes = {Segment.IDLE: idle, Segment.DRAFTER: drafter, Segment.TRIALIST: trialist}
+    segments = {s: dataclasses.replace(b, **(changes[s] or {})) for s, b in settings.segments.items()}
+    return dataclasses.replace(settings, segments=segments)
 
 
 def with_idle(**changes: float) -> Settings:
@@ -212,7 +209,7 @@ def test_the_report_states_idle_results_in_percentage_points() -> None:
 def test_the_report_shows_the_send_day_from_settings() -> None:
     report = run_simulation(with_idle(hand_written_after_days=3), seed=1).report
 
-    assert "Sent 3 days after signup." in report
+    assert "Sent 3 days after entering Idle (signup, for new merchants)." in report
 
 
 def test_the_command_can_run_a_single_starting_size(tmp_path: Path) -> None:
@@ -245,7 +242,7 @@ def test_existing_merchants_start_in_their_segment_spread_over_two_weeks(run: Ru
     assert max(m.arrival_day for m in existing) > 10
 
 
-LIFECYCLE = [Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST, Segment.PAID]
+LIFECYCLE = [Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST]
 
 
 def test_merchants_move_through_the_lifecycle_in_order_one_segment_at_a_time(run: RunResult) -> None:
@@ -256,7 +253,9 @@ def test_merchants_move_through_the_lifecycle_in_order_one_segment_at_a_time(run
         assert order == list(range(order[0], order[0] + len(order)))
         for before, after in zip(journey.stays, journey.stays[1:]):
             assert before.left is not None and before.left == after.entered
-        reached_paid += journey.stays[-1].segment is Segment.PAID
+        if journey.paid_at is not None:
+            assert journey.stays[-1].segment is Segment.TRIALIST and journey.stays[-1].left == journey.paid_at
+            reached_paid += 1
     assert reached_paid > 0
 
 

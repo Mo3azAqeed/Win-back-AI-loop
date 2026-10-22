@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from winback import report
 from winback.lifecycle import Approach, Journey, SegmentOutcome, SegmentTraffic, idle_outcomes, journey, traffic
 from winback.settings import Settings
-from winback.world import Merchant, Segment, already_paying, existing_by_segment, merchants, weekly_signups
+from winback.segments import Segment
+from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
 
 
 @dataclass(frozen=True)

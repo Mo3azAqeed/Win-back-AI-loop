@@ -2,19 +2,12 @@
 
 import math
 from dataclasses import dataclass
-from enum import Enum
 
 from winback.draws import draw
+from winback.segments import Segment
 from winback.settings import Settings
 
 DAYS_PER_WEEK = 7
-
-
-class Segment(Enum):
-    IDLE = "idle"
-    DRAFTER = "drafter"
-    TRIALIST = "trialist"
-    PAID = "paid"
 
 
 @dataclass(frozen=True)
@@ -57,8 +50,7 @@ def weekly_signups(settings: Settings, start: int) -> list[int]:
 
 def existing_by_segment(settings: Settings, start: int) -> dict[Segment, int]:
     """How many existing merchants sit in each segment today (those already paying aren't simulated)."""
-    segments = (Segment.IDLE, Segment.DRAFTER, Segment.TRIALIST)
-    return {s: _whole(start * share) for s, share in zip(segments, settings.existing_shares)}
+    return {s: _whole(start * share) for s, share in settings.existing_shares.items()}
 
 
 def merchants(settings: Settings, existing: dict[Segment, int], signups: list[int], seed: int) -> list[Merchant]:

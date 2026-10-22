@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from winback.segments import Segment
+
 
 @dataclass(frozen=True)
 class Setting:
@@ -39,7 +41,7 @@ class SegmentSettings:
 class Settings:
     start_sizes: tuple[int, ...]
     already_paying_share: float
-    existing_shares: tuple[float, float, float]
+    existing_shares: dict[Segment, float]
     existing_spread_days: float
     weeks: int
     growth_first_week: float
@@ -48,9 +50,7 @@ class Settings:
     min_gap_days: float
     trial_days: float
     idle_horizon_days: float
-    idle: SegmentSettings
-    drafter: SegmentSettings
-    trialist: SegmentSettings
+    segments: dict[Segment, SegmentSettings]
     first_drafts: dict[str, Email]
     entries: tuple[Setting, ...]
 
@@ -72,11 +72,7 @@ def load_settings(path: Path) -> Settings:
     return Settings(
         start_sizes=(int(value("merchants.start")), int(value("merchants.start_alternative"))),
         already_paying_share=value("merchants.already_paying_share"),
-        existing_shares=(
-            value("merchants.existing_idle_share"),
-            value("merchants.existing_drafter_share"),
-            value("merchants.existing_trialist_share"),
-        ),
+        existing_shares={s: value(f"merchants.existing_{s.value}_share") for s in Segment},
         existing_spread_days=value("merchants.existing_spread_days"),
         weeks=int(value("growth.weeks")),
         growth_first_week=value("growth.first_week"),
@@ -85,9 +81,7 @@ def load_settings(path: Path) -> Settings:
         min_gap_days=value("sending.min_gap_days"),
         trial_days=value("trial.days"),
         idle_horizon_days=value("idle.horizon_days"),
-        idle=segment("idle"),
-        drafter=segment("drafter"),
-        trialist=segment("trialist"),
+        segments={s: segment(s.value) for s in Segment},
         first_drafts=drafts,
         entries=tuple(entries.values()),
     )

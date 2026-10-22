@@ -28,8 +28,8 @@ min_gap_days = { value = 2, placeholder = false, note = "At least this many days
 days = { value = 7, placeholder = false, note = "The free trial starts at publish and lasts this many days." }
 
 [idle]
-horizon_days = { value = 8, placeholder = false, note = "Idle merchants are counted as starting a draft if they do so within this many days of signing up." }
-hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Idle email (your first draft) goes out this many days after signup." }
+horizon_days = { value = 8, placeholder = false, note = "Idle merchants are counted as starting a draft if they do so within this many days of entering Idle." }
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Idle email (your first draft) goes out this many days after entering Idle (signup, for new merchants)." }
 organic_share = { value = 0.12, placeholder = true, note = "Share of Idle merchants who would start a draft one day with no email." }
 organic_mean_days = { value = 2.5, placeholder = true, note = "Average days until those merchants start a draft on their own." }
 read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant reads your first draft (hidden quality 100)." }
@@ -38,7 +38,7 @@ act_rate = { value = 0.25, placeholder = true, note = "Chance a merchant who cli
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and starting the draft." }
 
 [drafter]
-hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Drafter email goes out this many days after the draft is started." }
+hand_written_after_days = { value = 2, placeholder = false, note = "The hand-written Drafter email goes out this many days after the draft is saved." }
 organic_share = { value = 0.30, placeholder = true, note = "Share of Drafters who would publish one day with no email." }
 organic_mean_days = { value = 3, placeholder = true, note = "Average days until those Drafters publish on their own." }
 read_rate = { value = 0.43, placeholder = true, note = "Chance a Drafter reads your Drafter first draft (hidden quality 100)." }
