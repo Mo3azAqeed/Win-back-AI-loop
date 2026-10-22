@@ -57,7 +57,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "",
             "### Idle: start a draft",
             "",
-            f"Each Idle merchant counts as reached if it starts a store draft within {settings.idle_horizon_days:g} days of entering Idle.",
+            f"Each Idle merchant counts as reached if it starts a store draft within {settings.segments[Segment.IDLE].horizon_days:g} days of entering Idle.",
             "",
             "| Approach | Merchants counted | Started a draft | True lift (pts) | Emails sent | Skipped (drafted first) |",
             "|---|---|---|---|---|---|",

@@ -24,8 +24,9 @@ def _whole(x: float) -> int:
 
 
 def simulation_end(settings: Settings) -> float:
-    """The last simulated day: the weeks of signups plus the run-out that lets late merchants be counted."""
-    return settings.weeks * DAYS_PER_WEEK + settings.run_out_days
+    """The last simulated day: the weeks of signups plus the longest horizon, so the window of a
+    merchant who arrives on the last day of the last week still closes inside the run."""
+    return settings.weeks * DAYS_PER_WEEK + max(s.horizon_days for s in settings.segments.values())
 
 
 def already_paying(settings: Settings, start: int) -> int:

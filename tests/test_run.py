@@ -191,12 +191,22 @@ def test_an_email_never_makes_a_merchant_draft_later_than_they_would_have() -> N
     assert idle[Approach.HAND_WRITTEN].reached >= idle[Approach.NO_EMAIL].reached
 
 
-def test_only_merchants_whose_horizon_fits_in_the_run_are_counted() -> None:
-    run = run_simulation(dataclasses.replace(load_settings(SETTINGS), run_out_days=0), seed=1).by_start[1000]
-    last_day = 13 * 7
-    fits = [m for m in run.merchants if m.start_segment is Segment.IDLE and m.arrival_day + 8 <= last_day]
+def test_a_merchant_signing_up_at_the_end_of_week_13_still_gets_its_full_window() -> None:
+    # A 20-day Idle horizon, longer than the old fixed 14-day run-out, and an email on day 15 that
+    # makes everyone draft at once. Only if the run lasts until the last window closes do merchants
+    # who sign up at the end of week 13 get their day-15 email, so every Idle merchant drafts in time.
+    settings = with_idle(**CERTAIN_EMAIL, horizon_days=20, hand_written_after_days=15)
+    email = run_simulation(settings, seed=1).by_start[1000].idle[Approach.HAND_WRITTEN]
 
-    assert run.idle[Approach.NO_EMAIL].counted == len(fits) < IDLE_FROM_1000
+    assert email.counted == IDLE_FROM_1000
+    assert email.reached == email.counted
+
+
+def test_the_calendar_handles_every_merchants_events_in_date_order(run: RunResult) -> None:
+    for approach in Approach:
+        days = run.by_start[1000].event_days[approach]
+        assert len(days) > IDLE_FROM_1000
+        assert all(earlier <= later for earlier, later in zip(days, days[1:]))
 
 
 def test_the_report_states_idle_results_in_percentage_points() -> None:
@@ -347,3 +357,19 @@ def test_about_a_fifth_of_trialists_pay_inside_the_trial_with_no_email() -> None
     paid = sum(j.paid_at is not None for j in trialists)
 
     assert 0.185 < paid / len(trialists) < 0.215
+
+
+def test_a_goal_action_from_an_earlier_segment_cannot_end_a_later_one() -> None:
+    # Everyone would draft on their own around day 5, but the email gets them drafting within hours.
+    # Every Drafter would publish on their own only after about a billion days, and the Drafter email
+    # can't prompt it, so no Drafter stay may end in the run. A leftover "would have drafted on day 5"
+    # from Idle must not count as publishing.
+    settings = with_segments(
+        idle={**CERTAIN_EMAIL, "organic_share": 1.0, "organic_mean_days": 5.0},
+        drafter={"organic_share": 1.0, "organic_mean_days": 1e9, "act_rate": 0.0},
+    )
+    journeys = run_simulation(settings, seed=1).by_start[1000].journeys[Approach.HAND_WRITTEN]
+    drafter_stays = [s for j in journeys for s in j.stays if s.segment is Segment.DRAFTER]
+
+    assert len(drafter_stays) > 1000
+    assert all(stay.left is None for stay in drafter_stays)

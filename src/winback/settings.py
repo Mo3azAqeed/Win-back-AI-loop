@@ -26,8 +26,10 @@ class Email:
 @dataclass(frozen=True)
 class SegmentSettings:
     """How merchants in one segment behave. The read and click rates are your first draft's
-    for that segment (hidden quality 100)."""
+    for that segment (hidden quality 100). The horizon is the fixed number of days from the trigger
+    over which true lift is counted."""
 
+    horizon_days: float
     hand_written_after_days: float
     organic_share: float
     organic_mean_days: float
@@ -46,10 +48,8 @@ class Settings:
     weeks: int
     growth_first_week: float
     growth_last_week: float
-    run_out_days: int
     min_gap_days: float
     trial_days: float
-    idle_horizon_days: float
     segments: dict[Segment, SegmentSettings]
     first_drafts: dict[str, Email]
     entries: tuple[Setting, ...]
@@ -77,10 +77,8 @@ def load_settings(path: Path) -> Settings:
         weeks=int(value("growth.weeks")),
         growth_first_week=value("growth.first_week"),
         growth_last_week=value("growth.last_week"),
-        run_out_days=int(value("simulation.run_out_days")),
         min_gap_days=value("sending.min_gap_days"),
         trial_days=value("trial.days"),
-        idle_horizon_days=value("idle.horizon_days"),
         segments={s: segment(s.value) for s in Segment},
         first_drafts=drafts,
         entries=tuple(entries.values()),
