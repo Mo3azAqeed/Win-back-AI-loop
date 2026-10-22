@@ -1,0 +1,15 @@
+# Facts the email writer may state. Anything not here must not appear in an email.
+# Read by the real writer in #13. Every entry was confirmed by the founder.
+
+[plan]
+name = "One plan"
+price = "$40/month"
+
+[trial]
+length = "7 days"
+starts = "when the merchant publishes their store"
+no_payment_until_trial_ends = "You won't pay anything until the trial ends."
+
+[features]
+store_cloning = "Clone a store to start from."
+section_builder = "Make every page yours with the section builder."
