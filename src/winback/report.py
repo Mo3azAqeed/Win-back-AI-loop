@@ -107,8 +107,8 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
     lines += [
         held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
         "",
-        f"Approaches count only emailed merchants; the {settings.holdout_share:.0%} held out for life are never emailed, "
-        "and their goal rate is the baseline real data would measure.",
+        f"Approaches count only emailed merchants. The {settings.holdout_share:.0%} held out for life are never emailed; "
+        "their goal rate is the baseline real data would measure.",
         "",
         f"An email is a hit if the merchant {done} within {behaviour.miss_window_days:g} days of {MISS_WINDOW_FROM[segment]}, "
         "and a miss once that window has passed without it. Skipped emails were due after the merchant moved on or the trial ended.",

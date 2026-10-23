@@ -332,12 +332,14 @@ def test_trialists_only_pay_inside_their_seven_day_trial() -> None:
         assert all(stay.left - stay.entered <= 7 for stay in trialist_stays if stay.left is not None)
 
 
-def test_a_trialist_email_due_after_the_trial_has_ended_is_skipped() -> None:
+def test_a_trialist_email_due_after_the_trial_has_ended_is_skipped_real_or_ghost() -> None:
     settings = with_segments(trialist={"hand_written_after_days": 8})
-    trialists = run_simulation(settings, seed=1).by_start[1000].outcomes[Segment.TRIALIST][Approach.HAND_WRITTEN]
+    start = run_simulation(settings, seed=1).by_start[1000]
+    trialists, held_out = start.outcomes[Segment.TRIALIST][Approach.HAND_WRITTEN], start.baselines[Segment.TRIALIST]
 
-    assert trialists.emails.sent == 0
+    assert trialists.emails.sent == held_out.emails.sent == 0
     assert trialists.emails.skipped == trialists.counted > 100
+    assert held_out.emails.skipped == held_out.counted > 0
 
 
 def test_a_merchants_luck_in_one_segment_does_not_decide_the_next() -> None:
@@ -516,14 +518,17 @@ def test_about_8_percent_of_merchants_are_held_out_the_same_in_every_approach(ru
         assert [j.merchant.holdout for j in start.journeys[approach]] == [m.holdout for m in start.merchants]
 
 
-def test_no_holdout_merchant_ever_receives_an_email_but_each_gets_a_ghost_send() -> None:
-    journeys = run_simulation(with_segments(**CERTAIN_EVERYWHERE), seed=1).by_start[1000].journeys[Approach.HAND_WRITTEN]
-    held = holdout(journeys)
+def test_no_holdout_merchant_ever_receives_an_email_but_each_gets_a_ghost_send(run: RunResult) -> None:
+    for start in (run_simulation(with_segments(**CERTAIN_EVERYWHERE), seed=1).by_start[1000], run.by_start[1000]):
+        held = holdout(start.journeys[Approach.HAND_WRITTEN])
+        held_keys = {j.merchant.key for j in held}
 
-    assert held
-    assert all(stay.email is not EmailFate.SENT for j in held for stay in j.stays)
-    assert all(j.stays[0].email is EmailFate.GHOST_SENT for j in held)
-    assert all(j.paid_at is None for j in held)  # with no organic action, nobody held out moves on
+        assert held
+        assert all(stay.email is not EmailFate.SENT for j in held for stay in j.stays)
+        assert not any(r.merchant_key in held_keys for r in start.email_results[Approach.HAND_WRITTEN])
+        assert all(stay.email is not EmailFate.NOT_PLANNED for j in held for stay in j.stays if stay.counted)
+        for segment in Segment:
+            assert (start.baselines[segment].emails.hits, start.baselines[segment].emails.misses) == (0, 0)
 
 
 def test_ghost_sends_are_skipped_like_real_ones_and_counted_apart() -> None:

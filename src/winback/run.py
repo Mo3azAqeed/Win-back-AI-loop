@@ -57,5 +57,6 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         email_results={a: c.email_results for a, c in calendars.items()},
         event_days={a: c.event_days for a, c in calendars.items()},
         outcomes=segment_outcomes(calendars, settings.paid_window_days),
+        # A holdout merchant is never emailed, so it behaves the same in every emailing approach.
         baselines=holdout_baselines(calendars[Approach.HAND_WRITTEN], settings.paid_window_days),
     )

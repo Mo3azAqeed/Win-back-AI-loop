@@ -326,11 +326,13 @@ class SegmentOutcome:
 
 
 def _outcome(run: CalendarRun, segment: Segment, held_out: bool, paid_window_days: float, no_email_share: float) -> SegmentOutcome:
-    """One segment's counted stays, either of emailed merchants or of the holdout."""
+    """One segment's counted stays, either of emailed merchants or of the holdout. The holdout's
+    emails are ghost sends, so it never has scored emails."""
     results = [r for r in run.results if r.segment is segment and r.holdout is held_out]
     reached = sum(r.reached for r in results)
     stays = [(j, s) for j in run.journeys if j.merchant.holdout is held_out for s in j.stays if s.segment is segment and s.counted]
-    emails = _emails([s for _, s in stays], [e for e in run.email_results if e.segment is segment])
+    scored = [] if held_out else [e for e in run.email_results if e.segment is segment]
+    emails = _emails([s for _, s in stays], scored)
     paid = sum(j.paid_at is not None and s.entered <= j.paid_at <= s.entered + paid_window_days for j, s in stays)
     lift = _rate(reached, len(results)) - no_email_share
     return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.first_month_revenue for r in results))
@@ -340,15 +342,18 @@ def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float)
     """Per segment and approach, over the counted stays of emailed merchants: how many reached the goal
     action within the horizon, true lift against no email, the emails and how they scored, paid
     conversion within the paid window, and first-month revenue. The holdout is left out of every
-    approach, so true lift compares the same merchants with and without email."""
+    approach, so true lift is measured on emailed merchants only."""
     out: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:
-        no_email = _outcome(runs[Approach.NO_EMAIL], segment, False, paid_window_days, 0.0)
-        out[segment] = {a: _outcome(run, segment, False, paid_window_days, no_email.reached_share) for a, run in runs.items()}
+        no_email = _outcome(runs[Approach.NO_EMAIL], segment, held_out=False, paid_window_days=paid_window_days, no_email_share=0.0)
+        out[segment] = {
+            a: _outcome(run, segment, held_out=False, paid_window_days=paid_window_days, no_email_share=no_email.reached_share)
+            for a, run in runs.items()
+        }
     return out
 
 
 def holdout_baselines(run: CalendarRun, paid_window_days: float) -> dict[Segment, SegmentOutcome]:
     """Per segment, the holdout of an emailing approach: its goal rate is the baseline real data would
     measure, and its emails are ghost sends."""
-    return {segment: _outcome(run, segment, True, paid_window_days, 0.0) for segment in Segment}
+    return {segment: _outcome(run, segment, held_out=True, paid_window_days=paid_window_days, no_email_share=0.0) for segment in Segment}
