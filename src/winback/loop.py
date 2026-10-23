@@ -1,16 +1,20 @@
 """The AI loop's scorer: Thompson sampling over subjects, bodies and timing, with a stand-in writer.
 
 Every choice the loop can make (a subject, a body, a timing for one segment) has a Beta posterior
-over how often it succeeds. To choose, the loop draws once from each posterior and takes the highest
+over how often it is rewarded. To choose, the loop draws once from each posterior and takes the highest
 draw, so choices that look better get more traffic while uncertain ones still get tried.
 """
 
 import math
 import random
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from winback.segments import Segment
 from winback.settings import SegmentSettings, Settings, Variant
+
+
+K = TypeVar("K")
 
 
 @dataclass(frozen=True)
@@ -19,12 +23,16 @@ class Timing:
     days: float
 
 
-TIMINGS = (Timing("+1 hour", 1 / 24), Timing("+2 days", 2.0), Timing("+5 days", 5.0))
+ONE_HOUR, TWO_DAYS, FIVE_DAYS = Timing("+1 hour", 1 / 24), Timing("+2 days", 2.0), Timing("+5 days", 5.0)
+TIMINGS = (ONE_HOUR, TWO_DAYS, FIVE_DAYS)
 
 
-def read_shift(timing: Timing, behaviour: SegmentSettings) -> float:
-    """How sending at this timing changes reading, on the log-odds scale; +2 days is the reference."""
-    return {"+1 hour": behaviour.read_shift_1_hour, "+2 days": 0.0, "+5 days": behaviour.read_shift_5_days}[timing.label]
+def read_shift(days_after_trigger: float, behaviour: SegmentSettings) -> float:
+    """How the moment an email actually goes out changes reading, on the log-odds scale: the shift of
+    the nearest timing, so an email held back by the 48-hour gap is read as when it really arrives.
+    +2 days is the reference."""
+    nearest = min(TIMINGS, key=lambda t: abs(t.days - days_after_trigger))
+    return {ONE_HOUR: behaviour.read_shift_1_hour, TWO_DAYS: 0.0, FIVE_DAYS: behaviour.read_shift_5_days}[nearest]
 
 
 def _logit(p: float) -> float:
@@ -38,7 +46,7 @@ class _Posterior:
     a: float = 1.0
     b: float = 1.0
     tries: int = 0
-    successes: int = 0
+    rewards: int = 0
 
     @property
     def mean(self) -> float:
@@ -49,9 +57,9 @@ class _Posterior:
         n = self.a + self.b
         return self.a * self.b / (n * n * (n + 1))
 
-    def learn(self, success: bool) -> None:
-        self.a, self.b = self.a + success, self.b + (not success)
-        self.tries, self.successes = self.tries + 1, self.successes + success
+    def learn(self, rewarded: bool) -> None:
+        self.a, self.b = self.a + rewarded, self.b + (not rewarded)
+        self.tries, self.rewards = self.tries + 1, self.rewards + rewarded
 
 
 @dataclass
@@ -100,29 +108,29 @@ class AiLoop:
 
     - Idle tests a few subjects and bodies at a time and learns from human clicks, at send time.
       Until every variant in play has enough sends to be judged, they share the traffic evenly;
-      otherwise Thompson sampling would starve a poor variant before it could ever be judged.
-      Once the leader is clearly better than another variant, that variant is retired and the
-      writer adds the next one from its list, starting from a cautious prior.
+      otherwise Thompson sampling would starve a poor variant before it could ever be judged, and
+      the writer would never get another turn (ADR 0004). Once the leader is clearly better than
+      another variant, that variant is retired and the writer adds the next one from its list. The
+      newcomer starts from a cautious prior, so a few lucky clicks don't make it the leader at once.
     - Drafters and Trialists get whichever Idle subject and body currently lead.
     - Every segment learns timing from the goal action of every merchant assigned that timing,
       judged when the horizon closes."""
 
     def __init__(self, settings: Settings, rng: random.Random) -> None:
-        self.settings, self.rng = settings.loop, rng
+        self.rules, self.rng = settings.loop, rng
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
         self.waiting = {"subject": list(settings.prewritten_subjects), "body": list(settings.prewritten_bodies)}
         self.variants: dict[str, list[LoopVariant]] = {"subject": [], "body": []}
-        self._add("subject", Variant(draft.subject, "", 100.0), _Posterior())
-        self._add("body", Variant(draft.body, draft.cta, 100.0), _Posterior())
+        self._add("subject", Variant(draft.subject, "", 100.0, placeholder=False), _Posterior())
+        self._add("body", Variant(draft.body, draft.cta, 100.0, placeholder=False), _Posterior())
         for slot in self.variants:
-            while len(self._active(slot)) < self.settings.active_variants and self.waiting[slot]:
+            while len(self._active(slot)) < self.rules.active_variants and self.waiting[slot]:
                 self._add(slot, self.waiting[slot].pop(0), _Posterior())
-        self.timings = {s: {t.label: _Posterior() for t in TIMINGS} for s in Segment}
+        self.timings = {s: {t: _Posterior() for t in TIMINGS} for s in Segment}
 
     def choose_timing(self, segment: Segment) -> Timing:
-        label = self._draw_best(self.timings[segment])
-        return next(t for t in TIMINGS if t.label == label)
+        return self._draw_best(self.timings[segment])
 
     def choose_copy(self, segment: Segment) -> tuple[LoopVariant, LoopVariant]:
         """The subject and body for one email: drawn for Idle, the current Idle leaders otherwise."""
@@ -130,27 +138,31 @@ class AiLoop:
             return self._draw_variant("subject"), self._draw_variant("body")
         return self._leader("subject"), self._leader("body")
 
-    def learn_from_click(self, subject: LoopVariant, body: LoopVariant, clicked: bool) -> None:
-        """An Idle email went out: both its subject and body learn whether a human clicked."""
+    def learn_from_click(self, segment: Segment, subject: LoopVariant, body: LoopVariant, clicked: bool) -> None:
+        """An email went out. If it was an Idle email, its subject and body learn whether a human
+        clicked; Drafters and Trialists only reuse the Idle leaders. Every click counts as human
+        until scanner clicks are simulated (#10)."""
+        if segment is not Segment.IDLE:
+            return
         for slot, variant in (("subject", subject), ("body", body)):
             variant.posterior.learn(clicked)
             self._review(slot)
 
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
-        self.timings[segment][timing.label].learn(reached)
+        self.timings[segment][timing].learn(reached)
 
     def report(self) -> LoopReport:
         def records(slot: str) -> list[VariantRecord]:
             leader = self._leader(slot)
             return [
-                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, v.posterior.successes, v.retired, v is leader)
+                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, v.posterior.rewards, v.retired, v is leader)
                 for v in self.variants[slot]
             ]
 
         timings = {}
         for segment, posteriors in self.timings.items():
-            best = max(posteriors, key=lambda label: posteriors[label].mean)
-            timings[segment] = [TimingRecord(label, p.tries, p.successes, label == best) for label, p in posteriors.items()]
+            best = max(posteriors, key=lambda t: posteriors[t].mean)
+            timings[segment] = [TimingRecord(t.label, p.tries, p.rewards, t is best) for t, p in posteriors.items()]
         return LoopReport(records("subject"), records("body"), timings)
 
     def _add(self, slot: str, variant: Variant, prior: _Posterior) -> None:
@@ -168,12 +180,11 @@ class AiLoop:
 
     def _draw_variant(self, slot: str) -> LoopVariant:
         active = self._active(slot)
-        if any(v.posterior.tries < self.settings.min_sends for v in active):
+        if any(v.posterior.tries < self.rules.min_sends for v in active):
             return self.rng.choice(active)  # an even share, until every variant can be judged
-        best = self._draw_best({str(i): v.posterior for i, v in enumerate(active)})
-        return active[int(best)]
+        return active[self._draw_best({i: v.posterior for i, v in enumerate(active)})]
 
-    def _draw_best(self, posteriors: dict[str, _Posterior]) -> str:
+    def _draw_best(self, posteriors: "dict[K, _Posterior]") -> K:
         draws = {key: self.rng.betavariate(p.a, p.b) for key, p in posteriors.items()}
         return max(draws, key=lambda key: draws[key])
 
@@ -181,14 +192,15 @@ class AiLoop:
         """Retire a variant once the leader is clearly better, and let the writer replace it."""
         active, leader = self._active(slot), self._leader(slot)
         for variant in active:
-            if variant is leader or min(variant.posterior.tries, leader.posterior.tries) < self.settings.min_sends:
+            if variant is leader or min(variant.posterior.tries, leader.posterior.tries) < self.rules.min_sends:
                 continue
-            if _chance_better(leader.posterior, variant.posterior) < self.settings.retire_confidence:
+            if _chance_better(leader.posterior, variant.posterior) < self.rules.retire_confidence:
                 continue
             variant.retired = True
             if self.waiting[slot]:
-                average = sum(v.posterior.mean for v in active) / len(active)
-                strength = self.settings.prior_sends
+                staying = self._active(slot)
+                average = sum(v.posterior.mean for v in staying) / len(staying)
+                strength = self.rules.prior_sends
                 self._add(slot, self.waiting[slot].pop(0), _Posterior(average * strength, (1 - average) * strength))
             return
 

@@ -28,6 +28,7 @@ def test_the_stand_in_writers_list_has_at_least_8_subjects_and_8_bodies_within_t
         words = f"{variant.text} {variant.cta}".lower()
         assert set(re.findall(r"\d+", words)) <= allowed_numbers, variant.text
         assert not any(phrase in words for phrase in banned), variant.text
+        assert not words.startswith(("re:", "fwd:")), variant.text
         assert variant.quality > 0
 
 
@@ -75,15 +76,21 @@ def test_when_one_subject_is_secretly_much_better_the_ai_loop_ends_up_sending_it
 
 
 def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early_timing() -> None:
-    # Drafters who get an email an hour after saving almost never read it. Many Drafters publish on
-    # their own within days, so judging by the window after the email would flatter the early email;
-    # judged by everyone assigned, from the trigger, it should lose.
-    settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_rate=0.5, click_rate=1.0, act_rate=1.0, read_shift_1_hour=-4.0)
-    timings = run_simulation(settings, seed=1).by_start[1000].loop.timings[Segment.DRAFTER]
-    early = next(t for t in timings if t.label == "+1 hour")
+    # Drafters read an email sent 1 hour after saving far less (read shift -2), so +1 hour is truly worst.
+    # A third of Drafters publish on their own within days, which a judge counting the window after the
+    # email would credit to the early email. Judged by everyone assigned, from the trigger, +1 hour gets
+    # under a third of Drafters on average and is never ahead (one seed can be lucky, so six are used).
+    settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_shift_1_hour=-2.0, act_rate=0.6)
+    settings = dataclasses.replace(settings, start_sizes=(1000,))
+    shares, ahead = [], 0
+    for seed in range(1, 7):
+        timings = run_simulation(settings, seed=seed).by_start[1000].loop.timings[Segment.DRAFTER]
+        early = next(t for t in timings if t.label == "+1 hour")
+        shares.append(early.assigned / sum(t.assigned for t in timings))
+        ahead += early.leading
 
-    assert not early.leading
-    assert early.assigned < sum(t.assigned for t in timings) / 3
+    assert sum(shares) / len(shares) < 0.3
+    assert ahead == 0
 
 
 def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_its_leaders(run: RunResult) -> None:

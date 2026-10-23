@@ -48,7 +48,7 @@ cta = "Start my first draft"
 quality = { value = 125, placeholder = true }
 
 [[body]]
-text = "Hi {first_name}, your account is ready. Clone a store, make every page yours with the section builder, and publish when you're happy. Your 7-day free trial starts when you publish."
+text = "Hi {first_name}, clone a store to start from, make every page yours with the section builder, and publish when you're happy. Your 7-day free trial starts when you publish."
 cta = "Start my store"
 quality = { value = 95, placeholder = true }
 
@@ -68,7 +68,7 @@ cta = "Clone a store"
 quality = { value = 100, placeholder = true }
 
 [[body]]
-text = "Hi {first_name}, most stores start from another store. Clone one, then use the section builder to make every page yours."
+text = "Hi {first_name}, you don't have to start from nothing. Clone a store to start from, then use the section builder to make every page yours."
 cta = "Start my first draft"
 quality = { value = 110, placeholder = true }
 

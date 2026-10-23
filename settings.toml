@@ -74,4 +74,4 @@ read_shift_5_days = { value = 0.1, placeholder = true, note = "How an email sent
 active_variants = { value = 2, placeholder = false, note = "The AI loop tests at most this many Idle subjects, and this many bodies, at a time." }
 min_sends = { value = 120, placeholder = false, note = "A variant is judged only once it and the leader each have this many sends; until then the variants in play share Idle traffic evenly." }
 retire_confidence = { value = 0.9, placeholder = false, note = "A variant is retired once the leader is this likely to be better." }
-prior_sends = { value = 10, placeholder = false, note = "A replacement starts as if it had this many sends at its slot's average: cautious, so it must earn its traffic." }
+prior_sends = { value = 10, placeholder = false, note = "A replacement starts as if it had this many sends at its slot's average, so a few lucky clicks don't make it the leader Drafters and Trialists get." }

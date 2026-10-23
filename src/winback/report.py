@@ -79,6 +79,11 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         "These numbers are made up and should be replaced with real data:",
         "",
         *(f"- {s.note} ({s.key} = {s.value:g})" for s in settings.entries if s.placeholder),
+        *(
+            [f"- The hidden quality of each of the stand-in writer's {len(settings.prewritten_subjects)} subjects and {len(settings.prewritten_bodies)} bodies (prewritten.toml)."]
+            if any(v.placeholder for v in (*settings.prewritten_subjects, *settings.prewritten_bodies))
+            else []
+        ),
         "",
     ]
     return "\n".join(lines)
@@ -150,14 +155,15 @@ def _loop_section(loop: LoopReport) -> list[str]:
         "",
         *variants("Body", loop.bodies),
         "",
-        "Each segment learns timing from every emailed merchant assigned it, judged when the horizon closes.",
+        "Each segment learns timing from every emailed merchant assigned it, judged when the horizon closes. "
+        "With a few hundred merchants per timing, the one ahead so far may still be ahead by chance.",
         "",
         "| Segment | Timing | Merchants judged | Reached the goal | Now |",
         "|---|---|---|---|---|",
     ]
     for segment, timings in loop.timings.items():
         for t in timings:
-            lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'leading' if t.leading else ''} |")
+            lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'ahead so far' if t.leading else ''} |")
     return lines + [""]
 
 

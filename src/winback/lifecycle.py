@@ -263,14 +263,14 @@ class _Calendar:
             self.run_end = max(self.run_end, closes)
             self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
         subject_appeal, body_appeal, timing_shift = FIRST_DRAFT.subject_appeal, FIRST_DRAFT.body_appeal, 0.0
-        copy = None
-        if self.loop is not None and stay.timing is not None:
-            copy = self.loop.choose_copy(stay.segment)
-            subject_appeal, body_appeal, timing_shift = copy[0].appeal, copy[1].appeal, read_shift(stay.timing, behaviour)
+        chosen = None
+        if self.loop is not None:
+            chosen = subject, body = self.loop.choose_copy(stay.segment)
+            subject_appeal, body_appeal, timing_shift = subject.appeal, body.appeal, read_shift(day - stay.entered, behaviour)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
         clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
-        if self.loop is not None and copy is not None and stay.segment is Segment.IDLE:
-            self.loop.learn_from_click(*copy, clicked)
+        if self.loop is not None and chosen is not None:
+            self.loop.learn_from_click(stay.segment, *chosen, clicked)
         if clicked and stay.draws.chance("act") < behaviour.act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):

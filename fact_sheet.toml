@@ -15,5 +15,6 @@ store_cloning = "Clone a store to start from."
 section_builder = "Make every page yours with the section builder."
 
 [rules]
-# Phrases no email may contain: they misdescribe store cloning (Shopify rules).
-banned_phrases = ["copy any store", "import from any store"]
+# Phrases no email may contain: they misdescribe store cloning (Shopify App Store requirement 1.1.13).
+# Subjects also may not pretend to be a reply or a forward ("Re:", "Fwd:").
+banned_phrases = ["any store", "any website"]

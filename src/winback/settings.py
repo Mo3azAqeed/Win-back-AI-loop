@@ -31,6 +31,7 @@ class Variant:
     text: str
     cta: str
     quality: float
+    placeholder: bool
 
 
 @dataclass(frozen=True)
@@ -115,8 +116,8 @@ def load_settings(path: Path) -> Settings:
         paid_window_days=value("paid.window_days"),
         segments={s: segment(s.value) for s in Segment},
         first_drafts=drafts,
-        prewritten_subjects=tuple(Variant(v["text"], "", float(v["quality"]["value"])) for v in prewritten["subject"]),
-        prewritten_bodies=tuple(Variant(v["text"], v["cta"], float(v["quality"]["value"])) for v in prewritten["body"]),
+        prewritten_subjects=tuple(_variant(v, "subject") for v in prewritten["subject"]),
+        prewritten_bodies=tuple(_variant(v, "body") for v in prewritten["body"]),
         loop=LoopSettings(
             active_variants=int(value("ai_loop.active_variants")),
             min_sends=int(value("ai_loop.min_sends")),
@@ -125,6 +126,12 @@ def load_settings(path: Path) -> Settings:
         ),
         entries=tuple(entries.values()),
     )
+
+
+def _variant(raw: dict[str, Any], slot: str) -> Variant:
+    """One prewritten subject or body; its hidden quality is a number like any setting, marked as real or placeholder."""
+    [quality] = _entries({"quality": raw["quality"]}, f"prewritten.{slot}.")
+    return Variant(raw["text"], raw.get("cta", ""), quality.value, quality.placeholder)
 
 
 def _entries(raw: dict[str, Any], prefix: str = "") -> list[Setting]:
