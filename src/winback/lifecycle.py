@@ -26,6 +26,9 @@ class EmailFate(Enum):
     NOT_PLANNED = "not planned"
     SENT = "sent"
     SKIPPED = "skipped"  # the merchant moved on, or the trial ended, before the email was due
+    # A holdout merchant's send time, picked and skipped exactly like a real email's, with nothing sent.
+    GHOST_SENT = "ghost sent"
+    GHOST_SKIPPED = "ghost skipped"
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,7 @@ class StayResult:
     known_on: float
     goal_day: float | None
     reached: bool
+    holdout: bool
     first_month_revenue: float  # what the goal action brought, if it was a payment; 0 otherwise
 
 
@@ -229,9 +233,14 @@ class _Calendar:
 
     def _email_due(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         """The one send path: on its due day an email is sent, or skipped if the merchant moved on
-        or the trial ended."""
+        or the trial ended. A holdout merchant gets a ghost send instead: the same day and the same
+        rules, but nothing is sent, so nothing can be read or clicked."""
+        ghost = state.merchant.holdout
         if stay.left is not None or day > stay.deadline:
-            stay.email = EmailFate.SKIPPED
+            stay.email = EmailFate.GHOST_SKIPPED if ghost else EmailFate.SKIPPED
+            return
+        if ghost:
+            stay.email, stay.email_sent_at, state.last_email = EmailFate.GHOST_SENT, day, day
             return
         behaviour = self.settings.segments[stay.segment]
         stay.email, stay.email_sent_at, state.last_email = EmailFate.SENT, day, day
@@ -262,7 +271,9 @@ class _Calendar:
 
     def _close_horizon(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         reached = stay.left is not None  # events run in date order, so any goal so far is inside the horizon
-        self.results.append(StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, stay.first_month_revenue))
+        self.results.append(
+            StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, state.merchant.holdout, stay.first_month_revenue)
+        )
 
     def _close_miss_window(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         assert stay.email_sent_at is not None
@@ -288,10 +299,12 @@ class EmailTally:
 
 
 def _emails(stays: list[Stay], results: list[EmailResult]) -> EmailTally:
-    """Emails sent and skipped across these stays, and the scored ones that hit or missed."""
+    """Emails sent and skipped across these stays, and the scored ones that hit or missed. Holdout
+    stays only ever have ghost sends, so their tally counts ghost sends and ghost skips."""
     hits = sum(r.hit for r in results)
-    sent = sum(s.email is EmailFate.SENT for s in stays)
-    return EmailTally(sent, sum(s.email is EmailFate.SKIPPED for s in stays), hits, len(results) - hits)
+    sent = sum(s.email in (EmailFate.SENT, EmailFate.GHOST_SENT) for s in stays)
+    skipped = sum(s.email in (EmailFate.SKIPPED, EmailFate.GHOST_SKIPPED) for s in stays)
+    return EmailTally(sent, skipped, hits, len(results) - hits)
 
 
 @dataclass(frozen=True)
@@ -312,22 +325,30 @@ class SegmentOutcome:
         return _rate(self.paid_in_window, self.counted)
 
 
+def _outcome(run: CalendarRun, segment: Segment, held_out: bool, paid_window_days: float, no_email_share: float) -> SegmentOutcome:
+    """One segment's counted stays, either of emailed merchants or of the holdout."""
+    results = [r for r in run.results if r.segment is segment and r.holdout is held_out]
+    reached = sum(r.reached for r in results)
+    stays = [(j, s) for j in run.journeys if j.merchant.holdout is held_out for s in j.stays if s.segment is segment and s.counted]
+    emails = _emails([s for _, s in stays], [e for e in run.email_results if e.segment is segment])
+    paid = sum(j.paid_at is not None and s.entered <= j.paid_at <= s.entered + paid_window_days for j, s in stays)
+    lift = _rate(reached, len(results)) - no_email_share
+    return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.first_month_revenue for r in results))
+
+
 def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float) -> dict[Segment, dict[Approach, SegmentOutcome]]:
-    """Per segment and approach, over counted stays: how many reached the goal action within the
-    horizon, true lift against no email, the emails and how they scored, paid conversion within the
-    paid window, and first-month revenue."""
-
-    def outcome(run: CalendarRun, segment: Segment, no_email_share: float) -> SegmentOutcome:
-        results = [r for r in run.results if r.segment is segment]
-        reached = sum(r.reached for r in results)
-        stays = [(j, s) for j in run.journeys for s in j.stays if s.segment is segment and s.counted]
-        emails = _emails([s for _, s in stays], [e for e in run.email_results if e.segment is segment])
-        paid = sum(j.paid_at is not None and s.entered <= j.paid_at <= s.entered + paid_window_days for j, s in stays)
-        lift = _rate(reached, len(results)) - no_email_share
-        return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.first_month_revenue for r in results))
-
+    """Per segment and approach, over the counted stays of emailed merchants: how many reached the goal
+    action within the horizon, true lift against no email, the emails and how they scored, paid
+    conversion within the paid window, and first-month revenue. The holdout is left out of every
+    approach, so true lift compares the same merchants with and without email."""
     out: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:
-        no_email = outcome(runs[Approach.NO_EMAIL], segment, 0.0)
-        out[segment] = {a: outcome(run, segment, no_email.reached_share) for a, run in runs.items()}
+        no_email = _outcome(runs[Approach.NO_EMAIL], segment, False, paid_window_days, 0.0)
+        out[segment] = {a: _outcome(run, segment, False, paid_window_days, no_email.reached_share) for a, run in runs.items()}
     return out
+
+
+def holdout_baselines(run: CalendarRun, paid_window_days: float) -> dict[Segment, SegmentOutcome]:
+    """Per segment, the holdout of an emailing approach: its goal rate is the baseline real data would
+    measure, and its emails are ghost sends."""
+    return {segment: _outcome(run, segment, True, paid_window_days, 0.0) for segment in Segment}

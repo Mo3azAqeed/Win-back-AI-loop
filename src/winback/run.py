@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
+from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, holdout_baselines, run_calendar, segment_outcomes
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -22,7 +22,8 @@ class StartResult:
     results: dict[Approach, list[StayResult]]
     email_results: dict[Approach, list[EmailResult]]
     event_days: dict[Approach, list[float]]
-    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]
+    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants only
+    baselines: dict[Segment, SegmentOutcome]  # the holdout, never emailed
 
 
 @dataclass(frozen=True)
@@ -56,4 +57,5 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         email_results={a: c.email_results for a, c in calendars.items()},
         event_days={a: c.event_days for a, c in calendars.items()},
         outcomes=segment_outcomes(calendars, settings.paid_window_days),
+        baselines=holdout_baselines(calendars[Approach.HAND_WRITTEN], settings.paid_window_days),
     )

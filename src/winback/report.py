@@ -24,6 +24,7 @@ SEGMENT_TEXT = {
     Segment.TRIALIST: SegmentText("Trialist", "publishing", "pay", "paid"),
 }
 APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
+HOLDOUT_LABEL = "Holdout (never emailed)"
 # Where each segment's miss window starts.
 MISS_WINDOW_FROM = {Segment.IDLE: "the email", Segment.DRAFTER: "the email", Segment.TRIALIST: "publishing"}
 
@@ -69,7 +70,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "",
         ]
         for segment in SEGMENT_TEXT:
-            lines += _segment_section(settings, segment, result.outcomes[segment])
+            lines += _segment_section(settings, segment, result.outcomes[segment], result.baselines[segment])
     lines += [
         "## Placeholders",
         "",
@@ -81,8 +82,9 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
     return "\n".join(lines)
 
 
-def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Approach, SegmentOutcome]") -> list[str]:
-    """One segment's results for every approach, then how the emails that went out were scored."""
+def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Approach, SegmentOutcome]", baseline: SegmentOutcome) -> list[str]:
+    """One segment's results for every approach and its holdout baseline, then how the emails that
+    went out were scored, with the holdout's ghost sends apart."""
     label, trigger, goal, done = SEGMENT_TEXT[segment]
     behaviour = settings.segments[segment]
     paying = segment is Segment.TRIALIST
@@ -101,7 +103,12 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
         row = f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.paid_share:.1%} |"
         lines.append(row + (f" ${o.first_month_revenue:,.0f} |" if paying else ""))
+    held = f"| {HOLDOUT_LABEL} | {baseline.counted:,} | {baseline.reached_share:.1%} | baseline | {baseline.paid_share:.1%} |"
     lines += [
+        held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
+        "",
+        f"Approaches count only emailed merchants; the {settings.holdout_share:.0%} held out for life are never emailed, "
+        "and their goal rate is the baseline real data would measure.",
         "",
         f"An email is a hit if the merchant {done} within {behaviour.miss_window_days:g} days of {MISS_WINDOW_FROM[segment]}, "
         "and a miss once that window has passed without it. Skipped emails were due after the merchant moved on or the trial ended.",
@@ -113,6 +120,7 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
             for a, o in outcomes.items()
             if a is not Approach.NO_EMAIL
         ),
+        f"| Holdout (ghost sends: nothing sent) | {baseline.emails.sent:,} | {baseline.emails.skipped:,} | – | – |",
         "",
     ]
     return lines

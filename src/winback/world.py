@@ -16,6 +16,7 @@ class Merchant:
     arrival_day: float
     existing: bool
     start_segment: Segment
+    holdout: bool  # held out for life: never sent a win-back email in any approach
 
 
 def _whole(x: float) -> int:
@@ -24,8 +25,8 @@ def _whole(x: float) -> int:
 
 
 def last_entry_day(settings: Settings) -> float:
-    """The last day a merchant can enter a segment: the end of the weeks of signups. The run itself
-    goes on until the horizon of every segment entered by then has closed."""
+    """The end of the weeks of signups. Only stays entered by then are counted; merchants keep moving
+    afterwards until every counted stay's horizon, miss window and paid window has closed."""
     return settings.weeks * DAYS_PER_WEEK
 
 
@@ -57,15 +58,20 @@ def existing_by_segment(settings: Settings, start: int) -> dict[Segment, int]:
 def merchants(settings: Settings, existing: dict[Segment, int], signups: list[int], seed: int) -> list[Merchant]:
     """Every simulated merchant. Existing merchants enter their segment at seeded moments spread over
     the first days of the run; new signups arrive at a seeded moment inside their week and start in
-    Idle. A merchant's key (and so every draw made for it) depends only on its own group and place in
-    that group, so it doesn't shift when other counts change."""
+    Idle. A merchant's key (and so every draw made for it, including whether it is held out) depends
+    only on its own group and place in that group, so it doesn't shift when other counts change."""
     out: list[Merchant] = []
     for segment, count in existing.items():
         for k in range(count):
             key = f"existing-{segment.value}-{k}"
-            out.append(Merchant(key, settings.existing_spread_days * draw(seed, key, "arrival"), True, segment))
+            out.append(Merchant(key, settings.existing_spread_days * draw(seed, key, "arrival"), True, segment, _held_out(settings, seed, key)))
     for week, count in enumerate(signups):
         for k in range(count):
             arrival = DAYS_PER_WEEK * (week + draw(seed, "signup", week, k, "arrival"))
-            out.append(Merchant(f"signup-w{week}-{k}", arrival, False, Segment.IDLE))
+            key = f"signup-w{week}-{k}"
+            out.append(Merchant(key, arrival, False, Segment.IDLE, _held_out(settings, seed, key)))
     return out
+
+
+def _held_out(settings: Settings, seed: int, key: str) -> bool:
+    return draw(seed, key, "holdout") < settings.holdout_share

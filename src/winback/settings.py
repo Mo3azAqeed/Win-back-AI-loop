@@ -49,6 +49,7 @@ class Settings:
     weeks: int
     growth_first_week: float
     growth_last_week: float
+    holdout_share: float
     min_gap_days: float
     trial_days: float
     monthly_price: float
@@ -80,6 +81,7 @@ def load_settings(path: Path) -> Settings:
         weeks=int(value("growth.weeks")),
         growth_first_week=value("growth.first_week"),
         growth_last_week=value("growth.last_week"),
+        holdout_share=value("holdout.share"),
         min_gap_days=value("sending.min_gap_days"),
         trial_days=value("trial.days"),
         monthly_price=value("paid.monthly_price"),
