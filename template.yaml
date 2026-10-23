@@ -132,7 +132,7 @@ Resources:
   RunNearTimeoutAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: A win-back simulation run took over 12 of its 15 minutes. Split the replays before it hits the limit.
+      AlarmDescription: A win-back simulation run took over 12 of its 15 minutes. Make the run shorter or split it before it hits the limit.
       Namespace: AWS/Lambda
       MetricName: Duration
       Dimensions:

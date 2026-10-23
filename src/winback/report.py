@@ -67,7 +67,8 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             *(f"| {week} | {count:,} |" for week, count in enumerate(result.weekly_signups, start=1)),
             f"| Total | {sum(result.weekly_signups):,} |",
             "",
-            f"Emails to the same merchant are at least {settings.min_gap_days:g} days apart.",
+            f"Emails to the same merchant are at least {settings.min_gap_days:g} days apart. Every rate, lift and "
+            "revenue below rests on placeholder settings (listed at the end), so read them as directions, not forecasts.",
             "",
         ]
         for segment in SEGMENT_TEXT:
@@ -115,7 +116,8 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
         "",
         f"Approaches count only emailed merchants. The {settings.holdout_share:.0%} held out for life are never emailed; "
-        "their goal rate is the baseline real data would measure.",
+        "their goal rate is the baseline real data would measure. "
+        f"With {baseline.counted:,} merchants held out, chance alone moves its rate by about ±{_margin(baseline):.1f} points.",
         "",
         f"An email is a hit if the merchant {done} within {behaviour.miss_window_days:g} days of {MISS_WINDOW_FROM[segment]}, "
         "and a miss once that window has passed without it. Skipped emails were due after the merchant moved on or the trial ended.",
@@ -169,3 +171,9 @@ def _loop_section(loop: LoopReport) -> list[str]:
 
 def _share(part: int, whole: int) -> str:
     return f"{part / whole:.1%}" if whole else "–"
+
+
+def _margin(outcome: SegmentOutcome) -> float:
+    """The 95% margin of a share, in points: how far chance alone can move it at this sample size."""
+    p, n = outcome.reached_share, outcome.counted
+    return 1.96 * (p * (1 - p) / n) ** 0.5 * 100 if n else 0.0

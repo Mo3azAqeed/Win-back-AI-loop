@@ -10,7 +10,7 @@ Only the edges assume a laptop:
 
 | Edge | What it assumes today | On AWS |
 |---|---|---|
-| `load_settings(path)` | `settings.toml` and `first_drafts.toml` sit side by side on disk | Still fine. Both files are bundled into the Lambda package, which can read its own files. Settings change through git, so every run's settings are versioned. **No change needed.** |
+| `load_settings(path)` | `settings.toml`, `first_drafts.toml` and `prewritten.toml` sit side by side on disk | Still fine. All three are bundled into the Lambda package, which can read its own files. Settings change through git, so every run's settings are versioned. **No change needed.** |
 | `winback` command (`cli.py`) | Writes `reports/report.md` to the current folder | Lambda can only write to `/tmp`, so the command is not reused. The Lambda handler in `src/winback/aws.py` calls `run_simulation` and puts the report in S3. The command stays for local runs. |
 | Seed | Defaults to 1, so every run is identical | Each scheduled run needs a new seed, otherwise it repeats the same report. The schedule sends `{seed, start}`, and if no seed arrives the handler uses the date. |
 | OpenRouter key (#13) | #13 says "read from the environment" | The connector takes the key as an argument and never reads the environment itself. The command passes it from an environment variable; the Lambda handler reads it from Parameter Store. This keeps the key out of the engine and out of the Lambda console. |

@@ -67,8 +67,8 @@ read_rate = { value = 0.50, placeholder = true, note = "Chance a Trialist reads 
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Trialist first draft's button (hidden quality 100)." }
 act_rate = { value = 0.25, placeholder = true, note = "Chance a Trialist who clicks then pays." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and paying." }
-read_shift_1_hour = { value = -0.5, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Trialists read slightly better later in the trial." }
-read_shift_5_days = { value = 0.1, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0)." }
+read_shift_1_hour = { value = -0.5, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Trialists read best a couple of days into the trial." }
+read_shift_5_days = { value = -0.3, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0). The spec's hidden truth: +2 days is best for Trialists." }
 
 [ai_loop]
 active_variants = { value = 2, placeholder = false, note = "The AI loop tests at most this many Idle subjects, and this many bodies, at a time." }

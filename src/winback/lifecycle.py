@@ -89,7 +89,8 @@ class _Draws:
 
 
 class _Event(Enum):
-    # On the same day, an email falling due is handled before a goal action, then a horizon or miss window closing.
+    # On the same day: an email falling due, then a goal action, then a merchant entering, then a horizon
+    # and then a miss window closing.
     EMAIL_DUE = 0
     GOAL = 1
     ENTER = 2

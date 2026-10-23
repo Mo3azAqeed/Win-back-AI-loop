@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
+from winback.lifecycle import EmailFate
 
 ROOT = Path(__file__).resolve().parent.parent
 SETTINGS = ROOT / "settings.toml"
@@ -61,7 +62,7 @@ def test_the_ai_loop_never_emails_the_holdout_and_keeps_the_sending_rules(run: R
         assert len({s.segment for s in sent}) == len(sent)
         days = [s.email_sent_at for s in sent if s.email_sent_at is not None]
         assert all(later - earlier >= 2 - 1e-9 for earlier, later in zip(days, days[1:]))
-        assert all(not journey.merchant.holdout for s in sent if s.email.value == "sent")
+        assert all(not journey.merchant.holdout for s in sent if s.email is EmailFate.SENT)
 
 
 def test_when_one_subject_is_secretly_much_better_the_ai_loop_ends_up_sending_it_most() -> None:

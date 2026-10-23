@@ -589,3 +589,14 @@ def test_the_report_shows_each_segments_baseline_and_ghost_sends_apart_from_real
         assert f"| Holdout (never emailed) | {baseline.counted:,} | {baseline.reached_share:.1%} | baseline |" in section
         assert f"| Holdout (ghost sends: nothing sent) | {baseline.emails.sent:,} | {baseline.emails.skipped:,} | – | – |" in section
         assert f"| Hand-written email (your first draft) | {email.sent:,} | {email.skipped:,} |" in section
+
+
+def test_the_report_warns_that_its_numbers_rest_on_placeholders_and_how_much_chance_moves_the_holdout(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+    idle = start.baselines[Segment.IDLE]
+    # Worked by hand for the Idle holdout: 1.96 x sqrt(p(1 - p) / n) is the 95% margin of a share.
+    margin = 1.96 * (idle.reached_share * (1 - idle.reached_share) / idle.counted) ** 0.5 * 100
+
+    assert "rests on placeholder settings" in from_1000
+    assert f"chance alone moves its rate by about ±{margin:.1f} points" in from_1000.split("### Idle: start a draft", 1)[1].split("### ", 1)[0]
