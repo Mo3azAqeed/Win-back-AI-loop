@@ -1,0 +1,109 @@
+import dataclasses
+import re
+import tomllib
+from pathlib import Path
+
+import pytest
+
+from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
+
+ROOT = Path(__file__).resolve().parent.parent
+SETTINGS = ROOT / "settings.toml"
+
+
+@pytest.fixture
+def run() -> RunResult:
+    return run_simulation(load_settings(SETTINGS), seed=1)
+
+
+def test_the_stand_in_writers_list_has_at_least_8_subjects_and_8_bodies_within_the_fact_sheet() -> None:
+    settings = load_settings(SETTINGS)
+    fact_sheet = tomllib.loads((ROOT / "fact_sheet.toml").read_text())
+    facts = " ".join(str(v) for section in fact_sheet.values() for v in section.values())
+    allowed_numbers = set(re.findall(r"\d+", facts))
+    banned = fact_sheet["rules"]["banned_phrases"]
+
+    assert len(settings.prewritten_subjects) >= 8 and len(settings.prewritten_bodies) >= 8
+    for variant in (*settings.prewritten_subjects, *settings.prewritten_bodies):
+        words = f"{variant.text} {variant.cta}".lower()
+        assert set(re.findall(r"\d+", words)) <= allowed_numbers, variant.text
+        assert not any(phrase in words for phrase in banned), variant.text
+        assert variant.quality > 0
+
+
+def with_subjects(settings: Settings, *qualities: float) -> Settings:
+    subjects = tuple(dataclasses.replace(v, quality=q) for v, q in zip(settings.prewritten_subjects, qualities))
+    return dataclasses.replace(settings, prewritten_subjects=subjects + settings.prewritten_subjects[len(qualities):])
+
+
+def with_segment(settings: Settings, segment: Segment, **changes: float) -> Settings:
+    segments = {**settings.segments, segment: dataclasses.replace(settings.segments[segment], **changes)}
+    return dataclasses.replace(settings, segments=segments)
+
+
+def test_the_ai_loop_starts_from_your_first_drafts(run: RunResult) -> None:
+    settings = load_settings(SETTINGS)
+    loop = run.by_start[1000].loop
+
+    assert (loop.subjects[0].text, loop.subjects[0].quality) == (settings.first_drafts["idle"].subject, 100)
+    assert (loop.bodies[0].text, loop.bodies[0].cta, loop.bodies[0].quality) == (settings.first_drafts["idle"].body, settings.first_drafts["idle"].cta, 100)
+    assert [v.text for v in loop.subjects[1:]] == [v.text for v in settings.prewritten_subjects[: len(loop.subjects) - 1]]
+
+
+def test_the_ai_loop_never_emails_the_holdout_and_keeps_the_sending_rules(run: RunResult) -> None:
+    journeys = run.by_start[1000].journeys[Approach.AI_LOOP]
+    held = {j.merchant.key for j in journeys if j.merchant.holdout}
+
+    assert not any(r.merchant_key in held for r in run.by_start[1000].email_results[Approach.AI_LOOP])
+    for journey in journeys:
+        sent = [s for s in journey.stays if s.email_sent_at is not None]
+        assert len({s.segment for s in sent}) == len(sent)
+        days = [s.email_sent_at for s in sent if s.email_sent_at is not None]
+        assert all(later - earlier >= 2 - 1e-9 for earlier, later in zip(days, days[1:]))
+        assert all(not journey.merchant.holdout for s in sent if s.email.value == "sent")
+
+
+def test_when_one_subject_is_secretly_much_better_the_ai_loop_ends_up_sending_it_most() -> None:
+    # The first two replacements are poor (quality 20) and get retired; the third is far better than
+    # anything else (quality 250: 2.5 times your first draft's reads).
+    settings = with_subjects(load_settings(SETTINGS), 20, 20, 250)
+    loop = run_simulation(settings, seed=1).by_start[1000].loop
+    best = max(loop.subjects, key=lambda v: v.sends)
+
+    assert best.quality == 250
+    assert best.leading
+
+
+def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early_timing() -> None:
+    # Drafters who get an email an hour after saving almost never read it. Many Drafters publish on
+    # their own within days, so judging by the window after the email would flatter the early email;
+    # judged by everyone assigned, from the trigger, it should lose.
+    settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_rate=0.5, click_rate=1.0, act_rate=1.0, read_shift_1_hour=-4.0)
+    timings = run_simulation(settings, seed=1).by_start[1000].loop.timings[Segment.DRAFTER]
+    early = next(t for t in timings if t.label == "+1 hour")
+
+    assert not early.leading
+    assert early.assigned < sum(t.assigned for t in timings) / 3
+
+
+def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_its_leaders(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+    leading_subject = next(v for v in start.loop.subjects if v.leading)
+
+    for segment in Segment:
+        ai = start.outcomes[segment][Approach.AI_LOOP]
+        assert f"| AI loop | {ai.counted:,} | {ai.reached_share:.1%} | {ai.true_lift * 100:+.1f} |" in from_1000
+    assert "### What the AI loop is sending" in from_1000
+    assert leading_subject.text in from_1000.split("### What the AI loop is sending", 1)[1]
+    for segment in Segment:
+        leading_timing = next(t for t in start.loop.timings[segment] if t.leading)
+        assert leading_timing.label in from_1000
+
+
+def test_only_idle_emails_teach_subjects_and_bodies(run: RunResult) -> None:
+    # Drafters and Trialists reuse the Idle leaders; their clicks teach timing only.
+    start = run.by_start[1000]
+    idle_sent = start.outcomes[Segment.IDLE][Approach.AI_LOOP].emails.sent
+
+    assert sum(v.sends for v in start.loop.subjects) == sum(v.sends for v in start.loop.bodies) == idle_sent

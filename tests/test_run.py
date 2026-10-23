@@ -244,7 +244,8 @@ def test_a_number_written_without_its_placeholder_flag_is_refused(tmp_path: Path
         'weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }', "weeks = 13"
     )
     (tmp_path / "settings.toml").write_text(broken)
-    (tmp_path / "first_drafts.toml").write_text((SETTINGS.parent / "first_drafts.toml").read_text())
+    for companion in ("first_drafts.toml", "prewritten.toml"):
+        (tmp_path / companion).write_text((SETTINGS.parent / companion).read_text())
 
     with pytest.raises(ValueError, match="growth.weeks"):
         load_settings(tmp_path / "settings.toml")

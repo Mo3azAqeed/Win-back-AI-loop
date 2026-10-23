@@ -8,10 +8,12 @@ outcomes can only ever see what has already happened.
 import heapq
 import itertools
 import math
+import random
 from dataclasses import dataclass, field
 from enum import Enum
 
 from winback.draws import draw
+from winback.loop import AiLoop, LoopReport, Timing, read_shift
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
 from winback.world import Merchant, last_entry_day
@@ -20,6 +22,7 @@ from winback.world import Merchant, last_entry_day
 class Approach(Enum):
     NO_EMAIL = "no_email"
     HAND_WRITTEN = "hand_written"
+    AI_LOOP = "ai_loop"
 
 
 class EmailFate(Enum):
@@ -141,6 +144,7 @@ class _OpenStay:
     deadline: float
     draws: _Draws
     counted: bool
+    timing: Timing | None = None  # the AI loop's choice for this stay
     left: float | None = None
     goal_day: float | None = None
     first_month_revenue: float = 0.0
@@ -170,6 +174,7 @@ class CalendarRun:
     results: list[StayResult]  # in the order they became known
     email_results: list[EmailResult]  # in the order they became known
     event_days: list[float]  # the day of every event, in the order handled
+    loop: LoopReport | None  # where the AI loop stands at the end (AI loop only)
 
 
 class _Calendar:
@@ -188,6 +193,7 @@ class _Calendar:
         self.sequence = itertools.count()
         self.results: list[StayResult] = []
         self.email_results: list[EmailResult] = []
+        self.loop = AiLoop(settings, random.Random(int(draw(seed, "ai loop") * 2**53))) if approach is Approach.AI_LOOP else None
         self.event_days: list[float] = []
         for state in self.merchants:
             self._schedule(state, state.merchant.arrival_day, _Event.ENTER)
@@ -212,7 +218,7 @@ class _Calendar:
             elif item.event is _Event.MISS_WINDOW_CLOSES and item.stay is not None:
                 self._close_miss_window(state, item.stay, item.day)
         journeys = [Journey(s.merchant, tuple(stay.freeze() for stay in s.stays), s.paid_at) for s in self.merchants]
-        return CalendarRun(journeys, self.results, self.email_results, self.event_days)
+        return CalendarRun(journeys, self.results, self.email_results, self.event_days, self.loop.report() if self.loop else None)
 
     def _enter(self, state: _MerchantState, segment: Segment, day: float) -> None:
         behaviour = self.settings.segments[segment]
@@ -228,8 +234,14 @@ class _Calendar:
             if organic <= deadline:
                 self._set_goal(state, stay, organic)
         if self.approach is Approach.HAND_WRITTEN:
-            due = max(day + behaviour.hand_written_after_days, state.last_email + self.settings.min_gap_days)
-            self._schedule(state, due, _Event.EMAIL_DUE, stay)
+            self._schedule_email(state, stay, day + behaviour.hand_written_after_days)
+        elif self.loop is not None:
+            # Holdout merchants get a timing too, picked the same way, for their ghost send.
+            stay.timing = self.loop.choose_timing(segment)
+            self._schedule_email(state, stay, day + stay.timing.days)
+
+    def _schedule_email(self, state: _MerchantState, stay: _OpenStay, wanted: float) -> None:
+        self._schedule(state, max(wanted, state.last_email + self.settings.min_gap_days), _Event.EMAIL_DUE, stay)
 
     def _email_due(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         """The one send path: on its due day an email is sent, or skipped if the merchant moved on
@@ -250,8 +262,15 @@ class _Calendar:
             closes = opens + behaviour.miss_window_days
             self.run_end = max(self.run_end, closes)
             self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
-        read = stay.draws.chance("read") < _shifted(behaviour.read_rate, FIRST_DRAFT.subject_appeal)
-        clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, FIRST_DRAFT.body_appeal)
+        subject_appeal, body_appeal, timing_shift = FIRST_DRAFT.subject_appeal, FIRST_DRAFT.body_appeal, 0.0
+        copy = None
+        if self.loop is not None and stay.timing is not None:
+            copy = self.loop.choose_copy(stay.segment)
+            subject_appeal, body_appeal, timing_shift = copy[0].appeal, copy[1].appeal, read_shift(stay.timing, behaviour)
+        read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
+        clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
+        if self.loop is not None and copy is not None and stay.segment is Segment.IDLE:
+            self.loop.learn_from_click(*copy, clicked)
         if clicked and stay.draws.chance("act") < behaviour.act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):
@@ -271,6 +290,8 @@ class _Calendar:
 
     def _close_horizon(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         reached = stay.left is not None  # events run in date order, so any goal so far is inside the horizon
+        if self.loop is not None and stay.timing is not None and not state.merchant.holdout:
+            self.loop.learn_from_assignment(stay.segment, stay.timing, reached)
         self.results.append(
             StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, state.merchant.holdout, stay.first_month_revenue)
         )

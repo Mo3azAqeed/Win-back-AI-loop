@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, NamedTuple
 
 from winback.lifecycle import Approach, SegmentOutcome
+from winback.loop import LoopReport, VariantRecord
 from winback.settings import Settings
 from winback.segments import Segment
 
@@ -23,7 +24,7 @@ SEGMENT_TEXT = {
     Segment.DRAFTER: SegmentText("Drafter", "saving the draft", "publish", "published"),
     Segment.TRIALIST: SegmentText("Trialist", "publishing", "pay", "paid"),
 }
-APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)"}
+APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)", Approach.AI_LOOP: "AI loop"}
 HOLDOUT_LABEL = "Holdout (never emailed)"
 # Where each segment's miss window starts.
 MISS_WINDOW_FROM = {Segment.IDLE: "the email", Segment.DRAFTER: "the email", Segment.TRIALIST: "publishing"}
@@ -71,6 +72,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         ]
         for segment in SEGMENT_TEXT:
             lines += _segment_section(settings, segment, result.outcomes[segment], result.baselines[segment])
+        lines += _loop_section(result.loop)
     lines += [
         "## Placeholders",
         "",
@@ -124,3 +126,40 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         "",
     ]
     return lines
+
+
+def _loop_section(loop: LoopReport) -> list[str]:
+    """What the AI loop has tried, what leads now, and which timing each segment favours."""
+
+    def variants(heading: str, records: list[VariantRecord]) -> list[str]:
+        out = [f"| {heading} | Hidden quality | Sends | Human clicks | Now |", "|---|---|---|---|---|"]
+        for i, v in enumerate(records):
+            words = v.text + (f" **[{v.cta}]**" if v.cta else "") + (" (your first draft)" if i == 0 else "")
+            status = "retired" if v.retired else "leading" if v.leading else "in play"
+            out.append(f"| {words} | {v.quality:g} | {v.sends:,} | {_share(v.clicks, v.sends)} | {status} |")
+        return out
+
+    lines = [
+        "### What the AI loop is sending",
+        "",
+        "Idle tests subjects and bodies against each other and learns from human clicks. Drafters and Trialists "
+        "get whichever Idle subject and body lead. Hidden quality is visible only because this is a simulation: "
+        "100 is your first draft, and every other number is a placeholder.",
+        "",
+        *variants("Subject", loop.subjects),
+        "",
+        *variants("Body", loop.bodies),
+        "",
+        "Each segment learns timing from every emailed merchant assigned it, judged when the horizon closes.",
+        "",
+        "| Segment | Timing | Merchants judged | Reached the goal | Now |",
+        "|---|---|---|---|---|",
+    ]
+    for segment, timings in loop.timings.items():
+        for t in timings:
+            lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'leading' if t.leading else ''} |")
+    return lines + [""]
+
+
+def _share(part: int, whole: int) -> str:
+    return f"{part / whole:.1%}" if whole else "–"

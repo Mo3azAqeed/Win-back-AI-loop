@@ -41,6 +41,8 @@ read_rate = { value = 0.35, placeholder = true, note = "Chance an Idle merchant 
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your first draft's button (hidden quality 100)." }
 act_rate = { value = 0.25, placeholder = true, note = "Chance a merchant who clicks then starts a draft." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and starting the draft." }
+read_shift_1_hour = { value = 0.4, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Idle merchants read best soon after signing up." }
+read_shift_5_days = { value = -0.5, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0)." }
 
 [drafter]
 horizon_days = { value = 12, placeholder = false, note = "Drafter horizon: true lift counts a publish within this many days of the draft save." }
@@ -52,6 +54,8 @@ read_rate = { value = 0.43, placeholder = true, note = "Chance a Drafter reads y
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Drafter first draft's button (hidden quality 100)." }
 act_rate = { value = 0.30, placeholder = true, note = "Chance a Drafter who clicks then publishes." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and publishing." }
+read_shift_1_hour = { value = -0.5, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Drafters read best a couple of days after saving." }
+read_shift_5_days = { value = -0.3, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0)." }
 
 [trialist]
 horizon_days = { value = 14, placeholder = false, note = "Trialist horizon: true lift counts a paid conversion within this many days of publishing." }
@@ -63,3 +67,11 @@ read_rate = { value = 0.50, placeholder = true, note = "Chance a Trialist reads 
 click_rate = { value = 0.20, placeholder = true, note = "Chance a reader clicks your Trialist first draft's button (hidden quality 100)." }
 act_rate = { value = 0.25, placeholder = true, note = "Chance a Trialist who clicks then pays." }
 response_mean_days = { value = 0.3, placeholder = true, note = "Average days between clicking and paying." }
+read_shift_1_hour = { value = -0.5, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Trialists read slightly better later in the trial." }
+read_shift_5_days = { value = 0.1, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0)." }
+
+[ai_loop]
+active_variants = { value = 2, placeholder = false, note = "The AI loop tests at most this many Idle subjects, and this many bodies, at a time." }
+min_sends = { value = 120, placeholder = false, note = "A variant is judged only once it and the leader each have this many sends; until then the variants in play share Idle traffic evenly." }
+retire_confidence = { value = 0.9, placeholder = false, note = "A variant is retired once the leader is this likely to be better." }
+prior_sends = { value = 10, placeholder = false, note = "A replacement starts as if it had this many sends at its slot's average: cautious, so it must earn its traffic." }
