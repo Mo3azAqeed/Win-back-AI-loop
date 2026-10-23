@@ -102,8 +102,11 @@ def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_i
     for segment in Segment:
         ai = start.outcomes[segment][Approach.AI_LOOP]
         assert f"| AI loop | {ai.counted:,} | {ai.reached_share:.1%} | {ai.true_lift * 100:+.1f} |" in from_1000
-    assert "### What the AI loop is sending" in from_1000
-    assert leading_subject.text in from_1000.split("### What the AI loop is sending", 1)[1]
+    loop_part = from_1000.split("### What the AI loop is sending", 1)[1]
+    assert f"| {leading_subject.text} | {leading_subject.quality:g} | {leading_subject.sends:,} |" in loop_part
+    assert loop_part.split(f"| {leading_subject.text} |", 1)[1].split("\n", 1)[0].endswith("| leading |")
+    retired = next(v for v in (*start.loop.subjects, *start.loop.bodies) if v.retired)
+    assert loop_part.split(f"| {retired.text}", 1)[1].split("\n", 1)[0].endswith("| retired |")
     for segment in Segment:
         leading_timing = next(t for t in start.loop.timings[segment] if t.leading)
         assert leading_timing.label in from_1000
@@ -115,3 +118,18 @@ def test_only_idle_emails_teach_subjects_and_bodies(run: RunResult) -> None:
     idle_sent = start.outcomes[Segment.IDLE][Approach.AI_LOOP].emails.sent
 
     assert sum(v.sends for v in start.loop.subjects) == sum(v.sends for v in start.loop.bodies) == idle_sent
+
+
+def test_an_early_email_held_back_by_the_48_hour_gap_is_read_as_when_it_really_arrives() -> None:
+    # Nobody reads a Drafter email sent within the first hour (read shift -10). But every Drafter here is
+    # a new one who drafted minutes after an Idle email (there are no existing Drafters), so an email planned for +1 hour is held back by the 48-hour gap
+    # and arrives about 2 days in, when it is read as often as a +2 days email (43%, and then clicked and
+    # acted on for certain). Nobody publishes on their own, so only the email can make them publish.
+    certain = {"organic_share": 0.0, "read_rate": 1.0, "click_rate": 1.0, "act_rate": 1.0, "response_mean_days": 0.001}
+    settings = with_segment(load_settings(SETTINGS), Segment.IDLE, **certain)
+    settings = with_segment(settings, Segment.DRAFTER, organic_share=0.0, click_rate=1.0, act_rate=1.0, read_shift_1_hour=-10.0)
+    settings = dataclasses.replace(settings, existing_shares={**settings.existing_shares, Segment.DRAFTER: 0.0})
+    early = next(t for t in run_simulation(settings, seed=1).by_start[1000].loop.timings[Segment.DRAFTER] if t.label == "+1 hour")
+
+    assert early.assigned > 20
+    assert 0.3 < early.reached / early.assigned < 0.56

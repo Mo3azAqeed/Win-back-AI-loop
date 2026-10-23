@@ -92,6 +92,7 @@ def test_the_report_labels_every_placeholder(run: RunResult) -> None:
 
     assert "Share of existing merchants who already pay" in placeholders
     assert "Merchants today (founder's figure)" not in placeholders
+    assert "The hidden quality of each of the stand-in writer's 8 subjects and 8 bodies" in placeholders
 
 
 def test_the_same_seed_gives_an_identical_report() -> None:
@@ -484,7 +485,7 @@ def test_the_report_shows_hits_misses_paid_conversion_and_trialist_revenue() -> 
     assert f"| No email | {emailed:,} | 0.0% | reference | 0.0% |" in idle_part
     assert f"| Hand-written email (your first draft) | {emailed:,} | 0 | {emailed:,} | 0 |" in idle_part
     assert "within 3 days of the email" in idle_part
-    assert "within 14 days of publishing" in trialist_part
+    assert "An email is a hit if the merchant paid within 14 days of publishing" in trialist_part
     assert f"| ${trialists.first_month_revenue:,.0f} |" in trialist_part and trialists.first_month_revenue > 0
 
 
@@ -525,7 +526,7 @@ def test_no_holdout_merchant_ever_receives_an_email_but_each_gets_a_ghost_send(r
         held_keys = {j.merchant.key for j in held}
 
         assert held
-        assert all(stay.email is not EmailFate.SENT for j in held for stay in j.stays)
+        assert all(stay.email not in (EmailFate.SENT, EmailFate.SKIPPED) for j in held for stay in j.stays)
         assert not any(r.merchant_key in held_keys for r in start.email_results[Approach.HAND_WRITTEN])
         assert all(stay.email is not EmailFate.NOT_PLANNED for j in held for stay in j.stays if stay.counted)
         for segment in Segment:
@@ -600,3 +601,13 @@ def test_the_report_warns_that_its_numbers_rest_on_placeholders_and_how_much_cha
 
     assert "rests on placeholder settings" in from_1000
     assert f"chance alone moves its rate by about ±{margin:.1f} points" in from_1000.split("### Idle: start a draft", 1)[1].split("### ", 1)[0]
+
+
+def test_the_run_lasts_until_the_last_signups_30_day_paid_window_has_closed() -> None:
+    # Worked by hand: emails 2, 8 and 6 days after each trigger, each acted on at once, so every emailed
+    # Idle merchant pays about 16 days after signing up. The last signups (day 91) pay around day 107,
+    # after every horizon and miss window has closed; only their 30-day paid window keeps the run going.
+    late = {"idle": CERTAIN_EMAIL, "drafter": {**CERTAIN_EMAIL, "hand_written_after_days": 8}, "trialist": {**CERTAIN_EMAIL, "hand_written_after_days": 6}}
+    idle = run_simulation(with_segments(**late), seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
+
+    assert idle.paid_in_window == idle.counted
