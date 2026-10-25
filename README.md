@@ -6,6 +6,7 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 
 - Spec: [#1](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/1), built in tickets #2–#14 and #16
 - Glossary: [`CONTEXT.md`](CONTEXT.md) · Decisions: [`docs/adr/`](docs/adr) · Research: [`docs/research/win-back-ai-loop.md`](docs/research/win-back-ai-loop.md)
+- How the work is run, as stories: [`docs/technical-product-manager-discussion.md`](docs/technical-product-manager-discussion.md)
 - Throwaway prototype: [`prototypes/win-back-sim.prototype.html`](prototypes/win-back-sim.prototype.html) (open it in a browser)
 
 ## How the code fits together

@@ -20,7 +20,10 @@ jobs:
       - name: Type check
         run: uv run mypy
       - name: Lint AWS templates
-        run: uvx cfn-lint==1.58.0 template.yaml infra/github-deploy-role.yaml
+        # Linted for each region they deploy to: a resource type missing in a region fails here, not at deploy time.
+        run: |
+          uvx cfn-lint==1.58.0 --regions us-east-1 eu-north-1 -- template.yaml infra/github-deploy-role.yaml
+          uvx cfn-lint==1.58.0 --regions us-east-1 -- infra/budget.yaml
 
   # Deploys to AWS after every merge to main, once the one-time setup in docs/aws-setup.md is done.
   # Until the AWS_DEPLOY_ROLE_ARN variable exists, this job is skipped.

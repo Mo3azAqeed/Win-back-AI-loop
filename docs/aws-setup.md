@@ -36,9 +36,24 @@ In the GitHub repository, go to **Settings → Secrets and variables → Actions
 |---|---|
 | `AWS_DEPLOY_ROLE_ARN` | the role ARN from step 2 |
 | `AWS_REGION` | your region from step 1, e.g. `eu-west-1` |
-| `ALERT_EMAIL` | where report, failure and budget emails should go |
+| `ALERT_EMAIL` | where report and failure emails should go |
 
 These are variables, not secrets: none of them gives access on its own.
+
+Use **Repository variables**, not Environment variables: the deploy job only reads repository variables.
+
+## 3b. Turn on the budget alert
+
+AWS Budgets is a global service, and CloudFormation can only create a budget in us-east-1, whatever region the rest runs in. In CloudShell, with your own email:
+
+```bash
+aws cloudformation deploy --region us-east-1 \
+  --stack-name winback-budget \
+  --template-file infra/budget.yaml \
+  --parameter-overrides AlertEmail=you@example.com
+```
+
+You get an email if a month's spending passes $5. Free plan credits don't count towards it, so it fires on real money.
 
 ## 4. Deploy
 
