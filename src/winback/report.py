@@ -72,7 +72,7 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
             "",
         ]
         for segment in SEGMENT_TEXT:
-            lines += _segment_section(settings, segment, result.outcomes[segment], result.baselines[segment])
+            lines += _segment_section(settings, segment, result.outcomes[segment], result.pushed[segment], result.baselines[segment])
         lines += _loop_section(result.loop)
     lines += [
         "## Placeholders",
@@ -90,9 +90,11 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
     return "\n".join(lines)
 
 
-def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Approach, SegmentOutcome]", baseline: SegmentOutcome) -> list[str]:
-    """One segment's results for every approach and its holdout baseline, then how the emails that
-    went out were scored, with the holdout's ghost sends apart."""
+def _segment_section(
+    settings: Settings, segment: Segment, outcomes: "dict[Approach, SegmentOutcome]", pushed: "dict[Approach, SegmentOutcome]", baseline: SegmentOutcome
+) -> list[str]:
+    """One segment's results for every approach, the merchants an earlier email pushed into it, and its
+    holdout baseline; then how every email that went out was scored, with the holdout's ghost sends apart."""
     label, trigger, goal, done = SEGMENT_TEXT[segment]
     behaviour = settings.segments[segment]
     paying = segment is Segment.TRIALIST
@@ -111,11 +113,18 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
         row = f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.paid_share:.1%} |"
         lines.append(row + (f" ${o.first_month_revenue:,.0f} |" if paying else ""))
+        extra = pushed[approach]
+        if extra.counted:
+            row = f"| {APPROACH_LABEL[approach]}: pushed here by an earlier email | {extra.counted:,} | {extra.reached_share:.1%} | – | {extra.paid_share:.1%} |"
+            lines.append(row + (f" ${extra.first_month_revenue:,.0f} |" if paying else ""))
     held = f"| {HOLDOUT_LABEL} | {baseline.counted:,} | {baseline.reached_share:.1%} | baseline | {baseline.paid_share:.1%} |"
     lines += [
         held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
         "",
-        f"Approaches count only emailed merchants. The {settings.holdout_share:.0%} held out for life are never emailed; "
+        "Every approach is judged on the same merchants: the emailed ones who would be here with no email at all. "
+        "Merchants who are here only because an earlier email pushed them on are that email's win, counted in the "
+        "segment before, so they get their own line and no lift. "
+        f"The {settings.holdout_share:.0%} held out for life are never emailed; "
         "their goal rate is the baseline real data would measure. "
         f"With {baseline.counted:,} merchants held out, chance alone moves its rate by about ±{_margin(baseline):.1f} points.",
         "",
@@ -125,9 +134,10 @@ def _segment_section(settings: Settings, segment: Segment, outcomes: "dict[Appro
         "| Approach | Emails sent | Skipped | Hits | Misses |",
         "|---|---|---|---|---|",
         *(
-            f"| {APPROACH_LABEL[a]} | {o.emails.sent:,} | {o.emails.skipped:,} | {o.emails.hits:,} | {o.emails.misses:,} |"
+            f"| {APPROACH_LABEL[a]} | {e.sent:,} | {e.skipped:,} | {e.hits:,} | {e.misses:,} |"
             for a, o in outcomes.items()
             if a is not Approach.NO_EMAIL
+            for e in [o.emails + pushed[a].emails]  # every email sent in this segment, whoever it went to
         ),
         f"| Holdout (ghost sends: nothing sent) | {baseline.emails.sent:,} | {baseline.emails.skipped:,} | – | – |",
         "",

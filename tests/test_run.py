@@ -314,7 +314,9 @@ def test_the_report_shows_each_segments_results_and_every_first_draft() -> None:
 
     assert "### Drafter: publish" in from_1000 and "### Trialist: pay" in from_1000
     assert f"| Hand-written email (your first draft) | {drafters.counted:,} | 100.0% | +0.0 |" in from_1000
-    assert f"| Hand-written email (your first draft) | 0 | {drafters.counted:,} | 0 | 0 |" in from_1000
+    # The emails table counts every Drafter email, including those to merchants pushed here by an Idle email.
+    pushed = run.by_start[1000].pushed[Segment.DRAFTER][Approach.HAND_WRITTEN]
+    assert f"| Hand-written email (your first draft) | 0 | {drafters.counted + pushed.counted:,} | 0 | 0 |" in from_1000
     assert "{store_name} is ready to go live" in run.report
     assert "You won't pay anything until the trial ends." in run.report
     assert "[Publish my store]" in run.report
@@ -585,7 +587,8 @@ def test_the_report_shows_each_segments_baseline_and_ghost_sends_apart_from_real
     headings = {Segment.IDLE: "### Idle: start a draft", Segment.DRAFTER: "### Drafter: publish", Segment.TRIALIST: "### Trialist: pay"}
 
     for segment, heading in headings.items():
-        baseline, email = start.baselines[segment], start.outcomes[segment][Approach.HAND_WRITTEN].emails
+        baseline = start.baselines[segment]
+        email = start.outcomes[segment][Approach.HAND_WRITTEN].emails + start.pushed[segment][Approach.HAND_WRITTEN].emails
         section = from_1000.split(heading, 1)[1].split("### ", 1)[0]
         assert f"| Holdout (never emailed) | {baseline.counted:,} | {baseline.reached_share:.1%} | baseline |" in section
         assert f"| Holdout (ghost sends: nothing sent) | {baseline.emails.sent:,} | {baseline.emails.skipped:,} | – | – |" in section
@@ -611,3 +614,35 @@ def test_the_run_lasts_until_the_last_signups_30_day_paid_window_has_closed() ->
     idle = run_simulation(with_segments(**late), seed=1).by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN]
 
     assert idle.paid_in_window == idle.counted
+
+
+def test_each_later_segment_is_judged_on_the_merchants_who_would_be_there_with_no_email(run: RunResult) -> None:
+    start = run.by_start[1000]
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        counted = {a: start.outcomes[segment][a].counted for a in Approach}
+        assert len(set(counted.values())) == 1, counted
+        # Merchants an earlier email pushed into the segment are reported on their own.
+        assert start.pushed[segment][Approach.NO_EMAIL].counted == 0
+        assert start.pushed[segment][Approach.HAND_WRITTEN].counted > 0
+    assert all(start.pushed[Segment.IDLE][a].counted == 0 for a in Approach)
+
+
+def test_when_no_email_can_cost_a_merchant_its_goal_no_segment_shows_a_negative_true_lift() -> None:
+    # An email can only add or bring forward a goal action, never take one away, so judged on the
+    # same merchants every true lift is zero or more. The old comparison showed -0.2 points for
+    # Trialists at 1,500 merchants with seed 1.
+    settings = load_settings(SETTINGS)
+    for seed in (1, 2, 3):
+        for start in run_simulation(settings, seed=seed).by_start.values():
+            for segment in Segment:
+                for approach in (Approach.HAND_WRITTEN, Approach.AI_LOOP):
+                    assert start.outcomes[segment][approach].true_lift >= 0, (seed, segment, approach)
+
+
+def test_the_report_shows_merchants_pushed_into_a_segment_by_an_earlier_email(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+    drafter_part = from_1000.split("### Drafter: publish", 1)[1].split("### ", 1)[0]
+    pushed = start.pushed[Segment.DRAFTER][Approach.HAND_WRITTEN]
+
+    assert f"| Hand-written email (your first draft): pushed here by an earlier email | {pushed.counted:,} | {pushed.reached_share:.1%} |" in drafter_part
