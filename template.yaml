@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Win-back simulation, run weekly on Lambda. Reports go to S3; alerts go to one email address.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Where "report ready", failure and budget emails go.
+    AllowedPattern: ".+@.+"
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 5
+    Description: Email an alert when this month's AWS spending goes above this.
+  OpenRouterKeyParameter:
+    Type: String
+    Default: /winback/openrouter-api-key
+    Description: Parameter Store name of the OpenRouter key (a SecureString you create once; used from #13).
+
+Resources:
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: winback-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  AlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BudgetsCanAlert
+            Effect: Allow
+            Principal: { Service: budgets.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlertsTopic
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+          - Sid: CloudWatchCanAlert
+            Effect: Allow
+            Principal: { Service: cloudwatch.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlertsTopic
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+
+  SimulationFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      Description: Runs the win-back simulation and saves its report to S3.
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/winback-role-boundary"
+      CodeUri: .
+      Handler: winback.aws.handler
+      Runtime: python3.13
+      Architectures: [arm64]
+      MemorySize: 1024
+      Timeout: 900
+      LoggingConfig:
+        LogGroup: !Ref SimulationLogs
+      Environment:
+        Variables:
+          REPORTS_BUCKET: !Ref ReportsBucket
+          ALERTS_TOPIC_ARN: !Ref AlertsTopic
+          OPENROUTER_KEY_PARAMETER: !Ref OpenRouterKeyParameter
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${ReportsBucket.Arn}/*"
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: !Ref AlertsTopic
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${OpenRouterKeyParameter}"
+      Events:
+        Weekly:
+          Type: ScheduleV2
+          Properties:
+            Description: Weekly run. No seed, so the date is the seed.
+            PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/winback-role-boundary"
+            ScheduleExpression: cron(0 6 ? * MON *)
+            ScheduleExpressionTimezone: UTC
+            Input: "{}"
+            RetryPolicy:
+              MaximumRetryAttempts: 0
+
+  SimulationLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
+  RunFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A win-back simulation run failed. See the Lambda's logs.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SimulationFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+
+  RunNearTimeoutAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A win-back simulation run took over 12 of its 15 minutes. Make the run shorter or split it before it hits the limit.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SimulationFunction
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 720000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: winback-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        CostTypes:
+          IncludeCredit: false  # otherwise the Free plan's credits hide every dollar spent
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref AlertsTopic
+
+Outputs:
+  ReportsBucketName:
+    Description: Reports are under runs/, and the newest is always latest.md.
+    Value: !Ref ReportsBucket
+  FunctionName:
+    Description: 'Run it now from the Lambda console Test tab, with {} or {"seed": 7, "start": 1000}.'
+    Value: !Ref SimulationFunction
+  AlertsTopicArn:
+    Value: !Ref AlertsTopic

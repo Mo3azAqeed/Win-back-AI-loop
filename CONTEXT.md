@@ -25,8 +25,12 @@ The 7-day free period that starts when a merchant publishes their cloned store, 
 _Avoid_: Trial at signup
 
 **Paid conversion**:
-A merchant moving from trial to a paid plan. Tracked for every merchant over 30 days, whatever segment it was in.
+A merchant moving from trial to a paid plan. Tracked for every merchant over 30 days from entering each segment (its paid window), whatever segment it was in.
 _Avoid_: Conversion (on its own, ambiguous)
+
+**First-month revenue**:
+What paying Trialists bring in their first month: the plan's $40 for each payment, or $20 for a payment at 50% off (see ADR 0003). Reported per approach so a win that brings in less money is visible.
+_Avoid_: Sales, income
 
 **Holdout**:
 A random 8% of merchants, chosen once and kept for life, who never receive a win-back email in any segment. Kept so lift can be measured with real data.
@@ -69,7 +73,7 @@ _Avoid_: Trigger (when meaning the delay)
 The fixed number of days from a merchant's trigger event over which true lift is counted and timing is judged: 8 days for Idle, 12 for Drafter, 14 for Trialist. Unlike the miss window, it does not depend on when the email went out.
 
 **Miss window**:
-How long after an email the loop waits for the goal action before scoring the email a miss: 3 days for Idle and 7 days for Drafter, counted from the email; for Trialist, 14 days after publishing for everyone, so a trial extension is judged on the same terms as no offer.
+How long after an email the loop waits for the goal action before scoring the email a miss: 3 days for Idle and 7 days for Drafter, counted from the email; for Trialist, 14 days after publishing for everyone, so a trial extension is judged on the same terms as no offer. An email followed by the goal action inside its window is a hit. Until the window closes the email is pending, neither hit nor miss.
 
 **Ghost send**:
 A send time picked for a holdout merchant exactly as it would be for a real email, but with nothing sent, so the holdout is measured over the same days as emailed merchants.

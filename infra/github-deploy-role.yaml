@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  One-time setup. Lets GitHub Actions deploy the win-back stack from the main branch,
+  signing in with OIDC so no AWS keys are stored in GitHub.
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: Mo3azAqeed/Win-back-AI-loop
+    Description: owner/name of the repository allowed to deploy.
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set to false if this AWS account already has the GitHub OIDC provider.
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-deploy-winback  # outside winback-*, so it cannot edit its own permissions
+      Description: Assumed by GitHub Actions on the main branch to run sam deploy.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringEqualsIgnoreCase:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: deploy-winback-stack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: RunCloudFormation
+                Effect: Allow
+                Action: cloudformation:*
+                Resource: "*"
+              - Sid: ArtifactAndReportBuckets
+                Effect: Allow
+                Action: s3:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::winback-*"
+              - Sid: TheFunction
+                Effect: Allow
+                Action: lambda:*
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:winback-*"
+              - Sid: AlertsTopic
+                Effect: Allow
+                Action: sns:*
+                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts*"
+              - Sid: ScheduleAlarmsLogsBudget
+                Effect: Allow
+                Action:
+                  - scheduler:*
+                  - cloudwatch:*
+                  - logs:*
+                  - budgets:*
+                Resource: "*"
+              - Sid: RolesTheStackCreatesMustCarryTheBoundary
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/winback-*"
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Ref RoleBoundary
+              - Sid: RolesTheStackCreates
+                Effect: Allow
+                Action:
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:UpdateRole
+                  - iam:UpdateRoleDescription
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfilesForRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/winback-*"
+              - Sid: TheBoundaryStays
+                Effect: Deny
+                Action: iam:DeleteRolePermissionsBoundary
+                Resource: "*"
+
+  # The most any role in the win-back stack can ever do, whatever policies it is given.
+  # Without it, the deploy role could create a winback-* role with admin rights and use it.
+  RoleBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: winback-role-boundary
+      Description: Permissions boundary for every role the win-back stack creates.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: WriteReports
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::winback-*/*"
+          - Sid: SendAlerts
+            Effect: Allow
+            Action: sns:Publish
+            Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts"
+          - Sid: ReadTheOpenRouterKey
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/winback/*"
+          - Sid: WriteLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:winback-*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:winback-*:*"
+          - Sid: ScheduleStartsTheFunction
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource:
+              - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:winback-*"
+              - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:winback-*:*"
+
+Outputs:
+  DeployRoleArn:
+    Description: Put this in the GitHub repository variable AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt DeployRole.Arn

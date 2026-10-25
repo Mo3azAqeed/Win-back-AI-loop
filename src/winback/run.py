@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, Journey, SegmentOutcome, SegmentTraffic, StayResult, idle_outcomes, run_calendar, traffic
+from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, holdout_baselines, run_calendar, segment_outcomes
+from winback.loop import LoopReport
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -20,9 +21,11 @@ class StartResult:
     merchants: list[Merchant]
     journeys: dict[Approach, list[Journey]]
     results: dict[Approach, list[StayResult]]
+    email_results: dict[Approach, list[EmailResult]]
     event_days: dict[Approach, list[float]]
-    idle: dict[Approach, SegmentOutcome]
-    traffic: dict[Approach, dict[Segment, SegmentTraffic]]
+    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants only
+    baselines: dict[Segment, SegmentOutcome]  # the holdout, never emailed
+    loop: LoopReport  # what the AI loop tried and where it stands at the end
 
 
 @dataclass(frozen=True)
@@ -53,7 +56,15 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         merchants=simulated,
         journeys=journeys,
         results=results,
+        email_results={a: c.email_results for a, c in calendars.items()},
         event_days={a: c.event_days for a, c in calendars.items()},
-        idle=idle_outcomes(results, journeys),
-        traffic={a: traffic(js) for a, js in journeys.items()},
+        outcomes=segment_outcomes(calendars, settings.paid_window_days),
+        # A holdout merchant is never emailed, so it behaves the same in every emailing approach.
+        baselines=holdout_baselines(calendars[Approach.HAND_WRITTEN], settings.paid_window_days),
+        loop=_loop_report(calendars[Approach.AI_LOOP].loop),
     )
+
+
+def _loop_report(report: LoopReport | None) -> LoopReport:
+    assert report is not None, "the AI loop's run always has a loop report"
+    return report

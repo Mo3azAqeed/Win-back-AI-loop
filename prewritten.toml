@@ -1,0 +1,78 @@
+# The stand-in writer (#7): real subjects and bodies written to the fact sheet, used in this order
+# when the AI loop retires a variant and needs a replacement. Until the real writer arrives (#13).
+#
+# quality is each one's hidden quality for Idle merchants, where 100 is your first draft:
+# 120 means 20% more reads (subject) or clicks (body). Every quality is a placeholder, made up
+# for the simulation; only real sends could measure it.
+
+[[subject]]
+text = "Start your store from one you already like"
+quality = { value = 110, placeholder = true }
+
+[[subject]]
+text = "Your store, a few minutes away"
+quality = { value = 90, placeholder = true }
+
+[[subject]]
+text = "Clone a store, then make it yours"
+quality = { value = 120, placeholder = true }
+
+[[subject]]
+text = "{first_name}, your first draft is waiting to be started"
+quality = { value = 105, placeholder = true }
+
+[[subject]]
+text = "Skip the blank page"
+quality = { value = 130, placeholder = true }
+
+[[subject]]
+text = "Build every page with the section builder"
+quality = { value = 85, placeholder = true }
+
+[[subject]]
+text = "Still thinking about your store?"
+quality = { value = 95, placeholder = true }
+
+[[subject]]
+text = "One clone, then it's all yours"
+quality = { value = 115, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, pick a store you like and clone it to start from. Then change every page with the section builder until it's yours."
+cta = "Clone a store"
+quality = { value = 115, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, starting from a blank page is the slow way. Clone a store to start from and you'll have a first draft in minutes."
+cta = "Start my first draft"
+quality = { value = 125, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, clone a store to start from, make every page yours with the section builder, and publish when you're happy. Your 7-day free trial starts when you publish."
+cta = "Start my store"
+quality = { value = 95, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, the section builder lets you change any page of a cloned store. Start with one you like."
+cta = "Try the section builder"
+quality = { value = 90, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, you signed up but haven't started yet. It takes a few minutes: clone a store to start from, then make it yours."
+cta = "Start now"
+quality = { value = 105, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, one plan, $40/month, and you won't pay anything until your 7-day trial ends. First, clone a store to start from."
+cta = "Clone a store"
+quality = { value = 100, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, you don't have to start from nothing. Clone a store to start from, then use the section builder to make every page yours."
+cta = "Start my first draft"
+quality = { value = 110, placeholder = true }
+
+[[body]]
+text = "Hi {first_name}, your store doesn't have to start empty. Clone a store you like and change what you need."
+cta = "Clone a store"
+quality = { value = 120, placeholder = true }

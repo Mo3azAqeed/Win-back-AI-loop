@@ -22,7 +22,7 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 
 ## Running on AWS
 
-How the simulation runs itself on AWS, and how real emails go out later: [`docs/aws.md`](docs/aws.md) (what changes in the code, and what the free account covers). Built in ticket #17.
+How the simulation runs itself on AWS, and how real emails go out later: [`docs/aws.md`](docs/aws.md) (what changes in the code, and what the free account covers). Built in ticket #17; to switch it on, follow the one-time [AWS setup](docs/aws-setup.md).
 
 ### Milestone 1: the simulation runs itself
 
