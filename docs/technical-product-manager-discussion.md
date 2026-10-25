@@ -310,6 +310,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-25 | Second planted-bug audit after #19: 75 of 77 caught, including every new #19 bug; the 2 left can't change any result. |
 | 2026-10-25 | Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
 | 2026-10-25 | First successful deploy to AWS: stack `winback` live in eu-north-1, weekly runs on. |
 | 2026-10-25 | First AWS deploy. Fixed three blockers from the logs: variables moved to repository variables; the deploy role now trusts GitHub's new identity format (permanent IDs, for repos created after July 2026); the budget alert moved to its own us-east-1 stack, since CloudFormation offers Budgets only there. CI now lints templates per deploy region. |
