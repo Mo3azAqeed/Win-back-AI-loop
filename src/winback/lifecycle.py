@@ -379,20 +379,24 @@ def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float)
 
     True lift compares the same merchants: those who would be in the segment with no email. An email
     can push extra merchants into a later segment; they are that earlier email's win, already counted
-    there, so they are reported apart. Everyone starts in Idle, so Idle has no pushed merchants. The
-    holdout is never emailed; its goal rate is each segment's baseline, taken from an emailing approach
-    (a holdout merchant behaves the same in every one)."""
+    there, so they are reported apart. Nothing comes before Idle, so no email pushes anyone into it.
+    The holdout is never emailed; its goal rate is each segment's baseline, taken from an emailing
+    approach (a holdout merchant behaves the same in every one)."""
     held = {j.merchant.key for j in runs[Approach.NO_EMAIL].journeys if j.merchant.holdout}
     emailing = runs[Approach.HAND_WRITTEN]
+
+    def emailed_in(run: CalendarRun, segment: Segment) -> set[str]:
+        return {r.merchant_key for r in run.results if r.segment is segment} - held
+
     judged: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     pushed: dict[Segment, dict[Approach, SegmentOutcome]] = {}
     for segment in Segment:
-        would_be_here = {r.merchant_key for r in runs[Approach.NO_EMAIL].results if r.segment is segment} - held
+        would_be_here = emailed_in(runs[Approach.NO_EMAIL], segment)
         no_email = _outcome(runs[Approach.NO_EMAIL], segment, would_be_here, paid_window_days, no_email_share=0.0)
         judged[segment] = {a: _outcome(run, segment, would_be_here, paid_window_days, no_email.reached_share) for a, run in runs.items()}
         pushed[segment] = {}
         for a, run in runs.items():
-            here = {r.merchant_key for r in run.results if r.segment is segment} - held - would_be_here
-            pushed[segment][a] = _outcome(run, segment, here, paid_window_days, no_email_share=0.0)
+            pushed_here = emailed_in(run, segment) - would_be_here
+            pushed[segment][a] = _outcome(run, segment, pushed_here, paid_window_days, no_email_share=0.0)
     baselines = {segment: _outcome(emailing, segment, held, paid_window_days, no_email_share=0.0) for segment in Segment}
     return Outcomes(judged, pushed, baselines)

@@ -39,6 +39,10 @@ _Avoid_: Control group (fine in conversation, but use one word)
 **Baseline**:
 The rate at which a segment reaches its goal action without win-back emails, measured on the holdout.
 
+**Pushed merchant**:
+A merchant in Drafter or Trialist who is there only because an earlier email moved them on; with no email they would not have reached that segment during the weeks of signups. Reported on their own line, with no true lift: their arrival is the earlier email's win.
+_Avoid_: Extra, new arrival
+
 **Organic action**:
 A goal action a merchant takes with no email involved. The simulation's placeholder organic rates are what the baseline would measure.
 _Avoid_: Natural conversion

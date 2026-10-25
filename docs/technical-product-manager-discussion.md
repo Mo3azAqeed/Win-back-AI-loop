@@ -282,8 +282,9 @@ Short versions, each with the situation, what I did and the result.
 
 **7. "Our headline number could say an email hurt when it helped."**
 - **Situation:** the report showed the hand-written email at −0.2 points for Trialists, which reads as "the email lost us payments".
-- **What I did:** a review traced it to the definition, not the code. Emails push extra merchants into later segments, so each approach's Trialists were a *different group*. A merchant-by-merchant check showed no email ever cost anyone a payment. I made it a ticket (#19), not a quiet fix, because it changes what the headline means. Every segment is now judged on the same merchants: those who would be there with no email. Merchants an earlier email pushed in get their own line.
-- **Result:** the same case now reads +1.2 points. A test guarantees no lift can be negative when no email can cost a goal. The fix also exposed something useful: merchants the AI loop pushed into Trialist paid at 13.5%, against 3.4% for the hand-written email's.
+- **What I did:** a review traced it to the definition, not the code. Emails push extra merchants into later segments, so each approach's Trialists were a *different set of merchants*. A merchant-by-merchant check showed no email ever cost anyone a payment. I made it a ticket (#19), not a quiet fix, because it changes what the headline means. Every segment is now judged on the same merchants: those who would be there with no email. Merchants an earlier email pushed in get their own line.
+- **Result:** the same case now reads +1.2 points. A test guarantees no lift can be negative when no email can cost a goal action.
+- **A second lesson from the same review:** I first read a difference in the new "pushed" line as a finding (13.5% against 3.4% paying). The spec review checked ten seeds: 19.8% against 17.1%, about 30 merchants each, which is chance. One seed and small groups are not evidence; the report now prints a margin of chance for small groups for exactly this reason.
 
 ---
 
@@ -309,7 +310,8 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
-| 2026-10-25 | First successful deploy to AWS (stack `winback`, eu-north-1). Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
+| 2026-10-25 | Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
+| 2026-10-25 | First successful deploy to AWS: stack `winback` live in eu-north-1, weekly runs on. |
 | 2026-10-25 | First AWS deploy. Fixed three blockers from the logs: variables moved to repository variables; the deploy role now trusts GitHub's new identity format (permanent IDs, for repos created after July 2026); the budget alert moved to its own us-east-1 stack, since CloudFormation offers Budgets only there. CI now lints templates per deploy region. |
 | 2026-10-25 | PR [#20](https://github.com/Mo3azAqeed/Win-back-AI-loop/pull/20) merged: AWS deploy (#17), miss windows (#5), holdout (#6), AI loop (#7). Opened [#19](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/19) (same-merchant lift) from the whole-codebase review. |
 | 2026-10-23 | Whole-codebase review and mutation audit: 70 of 72 planted bugs caught. ADR 0004 (even share) recorded with evidence. |

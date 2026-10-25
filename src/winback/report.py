@@ -122,9 +122,13 @@ def _segment_section(
         held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
         "",
         "Every approach is judged on the same merchants: the emailed ones who would be here with no email at all. "
-        "Merchants who are here only because an earlier email pushed them on are that email's win, counted in the "
-        "segment before, so they get their own line and no lift. "
-        f"The {settings.holdout_share:.0%} held out for life are never emailed; "
+        + (
+            "Merchants who are here only because an earlier email pushed them on are that email's win, counted in the "
+            "segment before, so they get their own line and no lift. "
+            if segment is not Segment.IDLE
+            else ""
+        )
+        + f"The {settings.holdout_share:.0%} held out for life are never emailed; "
         "their goal rate is the baseline real data would measure. "
         f"With {baseline.counted:,} merchants held out, chance alone moves its rate by about ±{_margin(baseline):.1f} points.",
         "",
