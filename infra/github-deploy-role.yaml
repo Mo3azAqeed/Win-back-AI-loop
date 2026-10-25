@@ -4,10 +4,22 @@ Description: >-
   signing in with OIDC so no AWS keys are stored in GitHub.
 
 Parameters:
-  GitHubRepo:
+  GitHubOwner:
     Type: String
-    Default: Mo3azAqeed/Win-back-AI-loop
-    Description: owner/name of the repository allowed to deploy.
+    Default: Mo3azAqeed
+    Description: The GitHub account that owns the repository allowed to deploy.
+  GitHubOwnerId:
+    Type: String
+    Default: "143059688"
+    Description: That account's numeric GitHub ID (never changes, even if the account is renamed).
+  GitHubRepoName:
+    Type: String
+    Default: Win-back-AI-loop
+    Description: The repository allowed to deploy.
+  GitHubRepoId:
+    Type: String
+    Default: "1429001468"
+    Description: That repository's numeric GitHub ID (never changes, even if it is renamed).
   CreateOidcProvider:
     Type: String
     Default: "true"
@@ -41,8 +53,12 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # GitHub names the workflow in one of two formats: the classic one, and (for repositories
+              # created from July 2026) one carrying the owner's and repository's permanent IDs.
               StringEqualsIgnoreCase:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubOwner}/${GitHubRepoName}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepoName}@${GitHubRepoId}:ref:refs/heads/main"
       Policies:
         - PolicyName: deploy-winback-stack
           PolicyDocument:
