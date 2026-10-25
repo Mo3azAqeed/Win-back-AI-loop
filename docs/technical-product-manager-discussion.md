@@ -273,11 +273,12 @@ Short versions, each with the situation, what I did and the result.
 - **What I did:** I asked whether they could actually fail. We planted 72 bugs one at a time.
 - **Result:** 8 slipped through. We added tests for the 6 that mattered and documented why the other 2 can't change any result.
 
-**6. "First deploy: two problems, found one at a time from the logs."**
+**6. "First deploy: three problems, found one at a time from the logs."**
 - **Situation:** after the merge, the deploy job was skipped.
 - **First problem:** the variables were in a GitHub *Environment*, not the repository variables the workflow reads. A screenshot confirmed it; we moved them and re-ran. The job's guard ("skip until set up") had failed safe, not loud.
 - **Second problem:** now the job ran, but AWS refused the sign-in ("Not authorized to perform sts:AssumeRoleWithWebIdentity"). Instead of loosening permissions, we found the cause in GitHub's changelog: repositories created after July 2026 get a new identity format carrying permanent owner and repository IDs. Our role trusted only the old format. We updated the trust to accept both formats, pinned to this repository's exact IDs.
-- **Lesson:** read the error, find the root cause, and fix it without widening access. A platform change can break a correct setup; the logs and the vendor's changelog tell you which.
+- **Third problem:** sign-in worked, then the deploy itself failed: "Unrecognized resource types: AWS::Budgets::Budget". Budgets is a global AWS service, and CloudFormation offers it only in us-east-1, not in our region (eu-north-1, Stockholm). We moved the budget alert into its own one-time stack in us-east-1. We also made CI lint the templates for every region we deploy to, so this class of error now fails in a pull request, not in production.
+- **Lesson:** read the error, find the root cause, and fix it without widening access. Then close the gap that let it through: each failure here produced a check or a doc line so it can't recur.
 
 ---
 
@@ -303,7 +304,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
-| 2026-10-25 | First AWS deploy. Fixed two blockers from the logs: variables moved to repository variables, and the deploy role now trusts GitHub's new identity format (permanent IDs, for repos created after July 2026). |
+| 2026-10-25 | First AWS deploy. Fixed three blockers from the logs: variables moved to repository variables; the deploy role now trusts GitHub's new identity format (permanent IDs, for repos created after July 2026); the budget alert moved to its own us-east-1 stack, since CloudFormation offers Budgets only there. CI now lints templates per deploy region. |
 | 2026-10-25 | PR [#20](https://github.com/Mo3azAqeed/Win-back-AI-loop/pull/20) merged: AWS deploy (#17), miss windows (#5), holdout (#6), AI loop (#7). Opened [#19](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/19) (same-merchant lift) from the whole-codebase review. |
 | 2026-10-23 | Whole-codebase review and mutation audit: 70 of 72 planted bugs caught. ADR 0004 (even share) recorded with evidence. |
 | 2026-10-23 | #7 AI loop and #6 holdout built and reviewed. |

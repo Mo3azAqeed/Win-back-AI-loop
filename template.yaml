@@ -5,12 +5,8 @@ Description: Win-back simulation, run weekly on Lambda. Reports go to S3; alerts
 Parameters:
   AlertEmail:
     Type: String
-    Description: Where "report ready", failure and budget emails go.
+    Description: Where "report ready" and failure emails go. (The budget alert is its own stack, infra/budget.yaml.)
     AllowedPattern: ".+@.+"
-  MonthlyBudgetUsd:
-    Type: Number
-    Default: 5
-    Description: Email an alert when this month's AWS spending goes above this.
   OpenRouterKeyParameter:
     Type: String
     Default: /winback/openrouter-api-key
@@ -46,13 +42,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: BudgetsCanAlert
-            Effect: Allow
-            Principal: { Service: budgets.amazonaws.com }
-            Action: sns:Publish
-            Resource: !Ref AlertsTopic
-            Condition:
-              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
           - Sid: CloudWatchCanAlert
             Effect: Allow
             Principal: { Service: cloudwatch.amazonaws.com }
@@ -145,28 +134,6 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertsTopic]
-
-  MonthlyBudget:
-    Type: AWS::Budgets::Budget
-    Properties:
-      Budget:
-        BudgetName: winback-monthly
-        BudgetType: COST
-        TimeUnit: MONTHLY
-        CostTypes:
-          IncludeCredit: false  # otherwise the Free plan's credits hide every dollar spent
-        BudgetLimit:
-          Amount: !Ref MonthlyBudgetUsd
-          Unit: USD
-      NotificationsWithSubscribers:
-        - Notification:
-            NotificationType: ACTUAL
-            ComparisonOperator: GREATER_THAN
-            Threshold: 100
-            ThresholdType: PERCENTAGE
-          Subscribers:
-            - SubscriptionType: SNS
-              Address: !Ref AlertsTopic
 
 Outputs:
   ReportsBucketName:

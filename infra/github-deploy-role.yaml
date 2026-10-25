@@ -82,13 +82,12 @@ Resources:
                 Effect: Allow
                 Action: sns:*
                 Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:winback-alerts*"
-              - Sid: ScheduleAlarmsLogsBudget
+              - Sid: ScheduleAlarmsLogs
                 Effect: Allow
                 Action:
                   - scheduler:*
                   - cloudwatch:*
                   - logs:*
-                  - budgets:*
                 Resource: "*"
               - Sid: RolesTheStackCreatesMustCarryTheBoundary
                 Effect: Allow
