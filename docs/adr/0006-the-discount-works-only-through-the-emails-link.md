@@ -1,0 +1,5 @@
+# The discount works only through the email's link
+
+A Trialist email from the AI loop can offer the first month at 50% off. The simulation first halved the payment for every Trialist who received that email before paying, as if the discount were applied to the account automatically. That made the discount mostly a cost: 70% of discounted payers would have paid the full $40 anyway, and the AI loop brought less money than the hand-written email ($3,202 against $3,224 over 10 seeds at 1,500 merchants) even though more Trialists paid.
+
+The founder decided (2026-10-26) that the discount works only through the email's link, so only a Trialist who clicks it before paying pays half. With that, 26% of discounted payers would have paid anyway, and the AI loop brings more money than the hand-written email ($3,350 against $3,224) as well as more payers (+3.6 against +2.0 points). The extension stays automatic: its line says "We've added 7 more days to your trial", so every Trialist who receives it can pay until day 14.

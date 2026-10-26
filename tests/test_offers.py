@@ -44,13 +44,17 @@ def test_only_trialists_get_offers_and_only_from_the_ai_loop(run: RunResult) -> 
     assert {s.offer for s in sent} == set(Offer)
 
 
-def test_a_discounted_payment_brings_20_dollars_and_any_other_payment_40(run: RunResult) -> None:
+def test_a_trialist_who_clicks_the_discount_pays_20_dollars_and_any_other_payment_is_40(run: RunResult) -> None:
+    # The discount only works through the email's link (founder's decision), so a Trialist who got the
+    # discount email but never clicked it pays the full price.
     start = run.by_start[1000]
     stays = {(key, s.entered): s for key, s in trialist_stays(start, Approach.AI_LOOP)}
     paid = [r for r in start.results[Approach.AI_LOOP] if r.segment is Segment.TRIALIST and r.reached]
+    got_discount = [r for r in paid if received(stays[(r.merchant_key, r.entered)], Offer.DISCOUNT)]
 
-    discounted = [r for r in paid if received(stays[(r.merchant_key, r.entered)], Offer.DISCOUNT)]
+    discounted = [r for r in got_discount if stays[(r.merchant_key, r.entered)].clicked]
     assert discounted and all(r.first_month_revenue == 20 for r in discounted)
+    assert any(r not in discounted for r in got_discount)
     assert all(r.first_month_revenue == 40 for r in paid if r not in discounted)
     for approach in (Approach.NO_EMAIL, Approach.HAND_WRITTEN):
         assert {r.first_month_revenue for r in start.results[approach] if r.segment is Segment.TRIALIST and r.reached} == {40}
@@ -80,23 +84,23 @@ def test_the_offer_learns_from_revenue_so_a_discounted_payment_counts_as_half(ru
 
 
 def test_when_the_discount_does_nothing_for_paying_the_ai_loop_stops_choosing_it() -> None:
-    # The discount halves revenue and no longer makes anyone more likely to pay, so it is truly worst.
-    # Early on the three offers share the Trialists; by the last third of the run the discount gets far
-    # fewer of them, in every seed, and it never ends up ahead.
+    # The discount no longer makes anyone more likely to pay, so it brings the same payers as no offer,
+    # but those who click it pay half: by revenue it is worse than no offer. Half of Trialist readers
+    # click here, so its cost shows within 13 weeks. Over the second half of the run the AI loop sends it
+    # clearly less often than no offer. A judge counting payments instead of revenue couldn't tell them
+    # apart. One seed can be lucky, so six are averaged.
     settings = with_pay_lift(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,)), Offer.DISCOUNT, 0.0)
-    early, late, leading = [], [], 0
+    trialist = dataclasses.replace(settings.segments[Segment.TRIALIST], click_rate=0.5)
+    settings = dataclasses.replace(settings, segments={**settings.segments, Segment.TRIALIST: trialist})
+    gaps = []
     for seed in range(1, 7):
         start = run_simulation(settings, seed=seed).by_start[1000]
         held = {j.merchant.key for j in start.journeys[Approach.AI_LOOP] if j.merchant.holdout}
         emailed = sorted((s for key, s in trialist_stays(start, Approach.AI_LOOP) if s.counted and key not in held), key=lambda s: s.entered)
-        third = len(emailed) // 3
-        early.append(sum(s.offer is Offer.DISCOUNT for s in emailed[:third]) / third)
-        late.append(sum(s.offer is Offer.DISCOUNT for s in emailed[-third:]) / third)
-        leading += next(o for o in start.loop.offers if o.offer is Offer.DISCOUNT).leading
+        late = emailed[len(emailed) // 2 :]
+        gaps.append((sum(s.offer is Offer.NONE for s in late) - sum(s.offer is Offer.DISCOUNT for s in late)) / len(late))
 
-    assert all(l < e for e, l in zip(early, late))
-    assert sum(late) / len(late) < 0.2
-    assert leading == 0
+    assert sum(gaps) / len(gaps) > 0.07
 
 
 def test_the_report_shows_offers_sent_revenue_and_discounted_payers_who_would_have_paid_anyway(run: RunResult) -> None:
@@ -124,7 +128,8 @@ def test_discounted_payers_who_would_have_paid_anyway_are_those_who_paid_with_no
     start = run.by_start[1000]
     stays = {(key, s.entered): s for key, s in trialist_stays(start, Approach.AI_LOOP)}
     discounted = {
-        r.merchant_key for r in start.results[Approach.AI_LOOP] if r.segment is Segment.TRIALIST and r.reached and received(stays[(r.merchant_key, r.entered)], Offer.DISCOUNT)
+        r.merchant_key for r in start.results[Approach.AI_LOOP]
+        if r.segment is Segment.TRIALIST and r.reached and received(stays[(r.merchant_key, r.entered)], Offer.DISCOUNT) and stays[(r.merchant_key, r.entered)].clicked
     }
     paid_alone = {j.merchant.key for j in start.journeys[Approach.NO_EMAIL] if j.paid_at is not None}
 

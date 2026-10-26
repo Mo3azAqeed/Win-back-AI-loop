@@ -60,6 +60,7 @@ class Stay:
     email_sent_at: float | None
     counted: bool
     offer: Offer | None  # the AI loop's choice for a Trialist; None for every other stay
+    clicked: bool  # a human clicked the email's button
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ class _OpenStay:
     first_month_revenue: float = 0.0
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
+    clicked: bool = False
 
     @property
     def received_offer(self) -> Offer | None:
@@ -162,7 +164,7 @@ class _OpenStay:
         return self.offer if self.email is EmailFate.SENT else None
 
     def freeze(self) -> Stay:
-        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer)
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked)
 
 
 @dataclass
@@ -285,7 +287,7 @@ class _Calendar:
             copy = self.loop.choose_copy(stay.segment)
             subject_appeal, body_appeal, timing_shift = copy.subject_appeal, copy.body_appeal, read_shift(day - stay.entered, behaviour)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
-        clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
+        clicked = stay.clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
         if self.loop is not None and copy is not None:
             self.loop.learn_from_click(stay.segment, copy, clicked)
         act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.received_offer]) if stay.received_offer is not None else behaviour.act_rate
@@ -302,8 +304,9 @@ class _Calendar:
         stay.left = day
         following = NEXT_SEGMENT[stay.segment]
         if following is None:
-            # A discount email that arrived before the payment halves it, even for a merchant who would have paid anyway.
-            discounted = stay.received_offer is Offer.DISCOUNT and stay.email_sent_at is not None and stay.email_sent_at <= day
+            # The discount only works through the email's link: a merchant who clicked it before paying pays
+            # the discounted price, even one who would have paid in full anyway.
+            discounted = stay.received_offer is Offer.DISCOUNT and stay.clicked and stay.email_sent_at is not None and stay.email_sent_at <= day
             price_share = self.settings.offers.discount_price_share if discounted else 1.0
             state.paid_at, stay.first_month_revenue = day, self.settings.monthly_price * price_share
         else:
