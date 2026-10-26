@@ -21,6 +21,21 @@ def run() -> RunResult:
     return run_simulation(only_1000(load_settings(SETTINGS)), seed=1, replays=REPLAYS)
 
 
+def percentile(values: list[float], p: float) -> float:
+    """The p-th percentile by straight-line interpolation between the sorted values (worked by hand: the
+    5th percentile of 0, 10, 20, 30 is 1.5)."""
+    ordered = sorted(values)
+    position = p / 100 * (len(ordered) - 1)
+    below = int(position)
+    above = min(below + 1, len(ordered) - 1)
+    return ordered[below] + (position - below) * (ordered[above] - ordered[below])
+
+
+def test_the_percentile_used_to_check_the_report_matches_a_worked_example() -> None:
+    assert percentile([30, 0, 20, 10], 5) == pytest.approx(1.5)
+    assert percentile([30, 0, 20, 10], 95) == pytest.approx(28.5)
+
+
 def summary_part(report: str) -> str:
     return report.split("## Starting from", 1)[0]
 
@@ -79,7 +94,7 @@ def test_the_report_shows_average_lift_its_middle_90_percent_range_and_how_often
         assert row, segment
         average, low, high, won = float(row[1]), float(row[2]), float(row[3]), int(row[4])
         assert average == pytest.approx(statistics.fmean(ai), abs=0.05)
-        assert min(ai) - 0.05 <= low <= average <= high <= max(ai) + 0.05
+        assert (low, high) == pytest.approx((percentile(ai, 5), percentile(ai, 95)), abs=0.05)
         assert won == wins
         assert f"| {segment.value.title()} | Hand-written email | {statistics.fmean(hand):+.1f} |" in summary
 
@@ -123,6 +138,7 @@ def test_the_plain_english_summary_is_written_from_the_results() -> None:
     strong_summary = strong.split("## Summary", 1)[1].split("## ", 1)[0]
     assert "From 1,000 merchants" in flat_summary and "From 1,000 merchants" in strong_summary
     assert "did better than the hand-written email in 0 of 3 segments" in flat_summary
+    assert flat_summary.count("ahead in 0 of 3 replays") == 3  # a tie is not a win
     assert re.search(r"In Idle the AI loop did better: [+]\d+\.\d points against [+-]\d+\.\d", strong_summary)
     assert re.search(r"In Trialist the AI loop did better", strong_summary)
     assert "ahead from week" in strong_summary
@@ -141,3 +157,39 @@ def test_the_command_runs_the_replays_from_the_settings_unless_told_otherwise(tm
 
     assert "Across 2 replays" in out.read_text()
     assert out.read_text() == run_simulation(only_1000(load_settings(SETTINGS)), seed=2, replays=2).report
+
+
+def test_the_week_the_summary_says_the_ai_loop_pulled_ahead_matches_its_chart() -> None:
+    # A far better Idle subject: the AI loop pulls ahead in Idle and stays ahead.
+    settings = only_1000(load_settings(SETTINGS))
+    settings = dataclasses.replace(settings, prewritten_subjects=(dataclasses.replace(settings.prewritten_subjects[0], quality=400), *settings.prewritten_subjects[1:]))
+    report = run_simulation(settings, seed=1, replays=3).report
+
+    week = int(re.search(r"In Idle the AI loop did better: .*?ahead from week (\d+) on average", report)[1])
+    chart = re.search(r"title \"Idle: cumulative true lift \(pts\)\".*?```", report, re.S)[0]
+    _, hand, ai = ([float(v) for v in line.split(",")] for line in re.findall(r"line \[(.*?)\]", chart))
+    assert all(a > h for a, h in zip(ai[week - 1 :], hand[week - 1 :]))
+    assert week == 1 or ai[week - 2] <= hand[week - 2]
+
+
+def test_the_summary_compares_the_ai_loops_edge_at_both_starting_sizes() -> None:
+    result = run_simulation(load_settings(SETTINGS), seed=1, replays=2)
+
+    def edge(start: int, segment: Segment) -> float:
+        stats = result.replays[start].stats
+        return statistics.fmean(s.lifts[segment][Approach.AI_LOOP] * 100 for s in stats) - statistics.fmean(s.lifts[segment][Approach.HAND_WRITTEN] * 100 for s in stats)
+
+    moves = ", ".join(f"{segment.value.title()} {edge(1000, segment):+.1f} to {edge(1500, segment):+.1f}" for segment in Segment)
+    assert f"Starting from 1,500 merchants instead of 1,000, the AI loop's edge over the hand-written email, in points, moved: {moves}." in result.report
+
+
+def test_without_a_number_of_replays_the_command_replays_as_many_times_as_the_settings_say(tmp_path: Path) -> None:
+    for name in ("settings.toml", "first_drafts.toml", "prewritten.toml"):
+        (tmp_path / name).write_text((SETTINGS.parent / name).read_text())
+    settings_file = tmp_path / "settings.toml"
+    settings_file.write_text(settings_file.read_text().replace("count = { value = 200,", "count = { value = 2,"))
+    out = tmp_path / "report.md"
+
+    main(["--settings", str(settings_file), "--start", "1000", "--out", str(out)])
+
+    assert "## Across 2 replays" in out.read_text()
