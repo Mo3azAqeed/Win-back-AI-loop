@@ -328,3 +328,13 @@ def test_every_version_can_be_downloaded_as_a_spreadsheet(saved: FakeBucket) -> 
     assert len(lines) == 1 + sum(1 + len(s["versions"]["ai"]) + len(s["versions"]["offers"]) for s in data["starts"][0]["segments"])
     assert lines[1].startswith("1000,Idle,Your email,email,")
     assert any(idle["ai"][1]["text"] in line for line in lines)
+
+
+def test_a_run_can_ask_for_the_ai_writer_and_nothing_else() -> None:
+    bucket, ai = FakeBucket(), {"code": "letmein", "replays": 20, "writer": "ai"}
+    status, _, started = call(bucket, "POST", "/api/runs", ai)
+
+    assert status == 202 and started[0]["writer"] == "ai"
+    assert call(FakeBucket(), "POST", "/api/runs", {**ai, "writer": "gpt"})[0] == 400
+    _, _, stand_in = call(FakeBucket(), "POST", "/api/runs", {"code": "letmein", "replays": 20})
+    assert "writer" not in stand_in[0]  # the stand-in writer stays the default

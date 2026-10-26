@@ -210,7 +210,12 @@ async function showCompose() {
   const code = h("input", { type: "password", autocomplete: "off", placeholder: "Access code", "aria-label": "Access code", value: store("winback-code") || "", class: "bg-shell border border-hair rounded px-2.5 h-8 text-sm w-36 font-mono focus:outline-none focus:border-edge" });
   const size = h("div", { class: "flex rounded border border-hair p-0.5 text-xs font-mono" }, [[20, "20 replays"], [200, "200 replays"]].map(([n, t]) => {
     const b = h("button", { type: "button", title: n === 20 ? "Quick: about a minute" : "Full: a few minutes", class: "px-2.5 h-7 rounded " + (settings.replays === n ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, t);
-    b.onclick = () => { settings.replays = n; store("winback-run", { replays: n }); size.querySelectorAll("button").forEach((x, i) => x.className = "px-2.5 h-7 rounded " + ([20, 200][i] === n ? "bg-elevated text-ink" : "text-soft hover:text-ink")); };
+    b.onclick = () => { settings.replays = n; store("winback-run", settings); size.querySelectorAll("button").forEach((x, i) => x.className = "px-2.5 h-7 rounded " + ([20, 200][i] === n ? "bg-elevated text-ink" : "text-soft hover:text-ink")); };
+    return b;
+  }));
+  const writerToggle = h("div", { class: "flex rounded border border-hair p-0.5 text-xs font-mono", role: "group", "aria-label": "Who writes the AI loop's versions" }, [["stand-in", "Stand-in list"], ["ai", "AI writer"]].map(([w, t]) => {
+    const b = h("button", { type: "button", title: w === "ai" ? "The writer and judge models in settings, on OpenRouter (uses your OpenRouter key)" : "The prewritten list: free and repeatable", class: "px-2.5 h-7 rounded " + ((settings.writer || "stand-in") === w ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, t);
+    b.onclick = () => { settings.writer = w; store("winback-run", settings); writerToggle.querySelectorAll("button").forEach((x, i) => x.className = "px-2.5 h-7 rounded " + (["stand-in", "ai"][i] === w ? "bg-elevated text-ink" : "text-soft hover:text-ink")); ready(); };
     return b;
   }));
   const status = h("span", { class: "text-sm text-soft", role: "status" });
@@ -219,7 +224,7 @@ async function showCompose() {
     if (!code.value.trim()) { status.textContent = "Enter the access code first."; code.focus(); return; }
     document.querySelectorAll("[data-go]").forEach(b => b.disabled = true); status.textContent = "Starting…";
     try {
-      const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: code.value.trim(), replays: settings.replays, emails }) });
+      const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: code.value.trim(), replays: settings.replays, writer: settings.writer || "stand-in", emails }) });
       location.hash = "#/running/" + started.run;
     } catch (e) { status.textContent = e.message; document.querySelectorAll("[data-go]").forEach(b => b.disabled = false); }
   };
@@ -232,7 +237,7 @@ async function showCompose() {
   const readyText = h("span", { class: "text-sm text-soft" });
   const ready = () => {
     const complete = emails.filter(e => e.subject.trim() && e.body.trim() && e.cta.trim()).length;
-    readyText.textContent = `${complete}/3 emails complete · ${settings.replays === 200 ? "full run, a few minutes" : "quick run, about a minute"}`;
+    readyText.textContent = `${complete}/3 emails complete · ${settings.replays === 200 ? "full run, a few minutes" : "quick run, about a minute"} · ${settings.writer === "ai" ? "AI writer" : "stand-in writer"}`;
   };
   ready();
   const variables = new Set(emails.flatMap(e => (e.subject + " " + e.body).match(/\{[a-z_]+\}/g) || []));
@@ -253,8 +258,8 @@ async function showCompose() {
     h("div", { class: "grid gap-4 mt-5 lg:grid-cols-3" }, emails.map(editor)),
     card("mt-6 p-4 flex flex-col md:flex-row md:items-center gap-3 sticky bottom-4 shadow-2xl shadow-black/40 bg-elevated/95 backdrop-blur",
       h("div", { class: "flex items-center gap-3 flex-1" }, h("span", { class: "font-medium" }, "Ready for simulation"), h("span", { class: "text-faint" }, "|"), readyText),
-      phoneControls, status, go),
-    h("p", { class: "mt-3 text-xs text-faint" }, "Your words are what gets sent and compared. How appealing they are is a placeholder until the AI judge reads them (#13); the send time you pick changes results now."));
+      writerToggle, phoneControls, status, go),
+    h("p", { class: "mt-3 text-xs text-faint" }, "Your words are what gets sent and compared. With the AI writer, an LLM writes each new version from the fact sheet and the playbook, every draft is checked before it can be sent, and a judge model rates how appealing it is, which sets how well it does in the simulation. With the stand-in list, appeal is a placeholder."));
 }
 
 // ---------- Running ----------
@@ -334,7 +339,7 @@ async function showRuns() {
       tag("RUNNING", "bg-indigo/20 text-indigo"))));
     if (filter !== "running") data.runs.forEach(r => (r.headline || []).forEach((start, k) => rows.push(h("a", { href: "#/run/" + r.run, class: "grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_auto] gap-3 items-center px-5 py-3 border-t border-hair hover:bg-elevated/70 transition" },
       h("div", { class: "flex items-center gap-3 min-w-0" }, h("span", { class: "text-win" }, "✓"),
-        h("div", { class: "min-w-0" }, h("div", { class: "font-mono text-sm truncate" }, r.run), h("div", { class: "text-xs text-soft truncate" }, `${num(start.merchants)} merchants · ${num(r.replays)} replays`))),
+        h("div", { class: "min-w-0" }, h("div", { class: "font-mono text-sm truncate" }, r.run), h("div", { class: "text-xs text-soft truncate" }, `${num(start.merchants)} merchants · ${num(r.replays)} replays` + (r.writer && r.writer !== "stand-in writer" ? " · AI writer" : "")))),
       h("div", { class: "flex flex-wrap gap-1.5" }, start.segments.map(stageChip)),
       h("div", { class: "flex items-center gap-3 justify-end" }, tag(`${start.segments.filter(s => s.ai_did_better).length}/3 stages`, "border border-hair text-soft"), h("span", { class: "text-xs font-mono text-faint whitespace-nowrap" }, day(r.created)))))));
     table.replaceChildren(rows.length ? h("div", {}, rows) : h("div", { class: "p-10 text-center text-soft" }, filter === "all" ? "No runs yet. Write your emails and press Simulate." : "Nothing here."));
@@ -628,9 +633,9 @@ async function showRun(name) {
       collapsible("Every version", `${seg.label}: every version and how it did against yours.`, h("div", {},
         h("div", { class: "flex justify-end mb-3" }, h("a", { href: `/api/runs/${encodeURIComponent(name)}/versions.csv`, download: `${name}-versions.csv`, class: "text-sm px-3 py-1.5 rounded border border-hair hover:border-edge" }, "Export CSV")),
         versionsTable(seg, run),
-        h("p", { class: "text-xs text-faint mt-3 max-w-4xl" }, "First replay. \"Clicks vs yours\" is a version's click rate minus your email's, in points: the fair test of the words. \"Went on to\" also counts merchants who would have acted anyway. Each version's appeal is a placeholder until the AI judge reads the words (planned).")), false),
+        h("p", { class: "text-xs text-faint mt-3 max-w-4xl" }, "First replay. \"Clicks vs yours\" is a version's click rate minus your email's, in points: the fair test of the words. \"Went on to\" also counts merchants who would have acted anyway. " + (run.writer && run.writer !== "stand-in writer" ? "Each version's appeal comes from the AI judge's rating, plus noise." : "With the stand-in writer, each version's appeal is a placeholder; pick the AI writer to have it judged."))), false),
       collapsible("Technical simulation details", "Seed, replays and assumptions.", h("div", { class: "grid gap-3 sm:grid-cols-2 lg:grid-cols-4" },
-        [["Seed", String(run.seed)], ["Replays", `${num(run.replays)} completed`], ["Merchants today", num(start.merchants)], ["Placeholder settings", `${num(run.placeholders)} made-up numbers`]].map(([k, v]) =>
+        [["Seed", String(run.seed)], ["Replays", `${num(run.replays)} completed`], ["Writer", run.writer || "stand-in writer"], ["Placeholder settings", `${num(run.placeholders)} made-up numbers`]].map(([k, v]) =>
           h("div", { class: "rounded-md border border-hair bg-shell p-3" }, h("div", { class: "text-[10px] font-mono uppercase tracking-wider text-faint" }, k), h("div", { class: "font-mono mt-1" }, v)))), false));
   };
   const onStage = e => { if (!view.contains(body)) return document.removeEventListener("stage", onStage); stageIndex = Math.max(0, run.starts[startIndex].segments.findIndex(s => s.segment === e.detail)); render(); body.children[2]?.scrollIntoView({ behavior: "smooth", block: "start" }); };

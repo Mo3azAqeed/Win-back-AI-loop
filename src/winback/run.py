@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
+from winback.copywriter import Copywriter, StandIn
 from winback.lifecycle import Approach, EmailResult, Journey, StayResult, run_calendar
 from winback.loop import LoopReport
 from winback.outcomes import OfferSummary, SegmentOutcome, offer_summary, segment_outcomes
@@ -39,10 +40,12 @@ class RunResult:
     report: str
 
 
-def run_simulation(settings: Settings, seed: int, replays: int | None = 1) -> RunResult:
+def run_simulation(settings: Settings, seed: int, replays: int | None = 1, copywriter: Copywriter | None = None) -> RunResult:
     """Replay the weeks this many times with different luck, from each starting size in the settings, and
     write one report: what happened across the replays, then the first replay in full. `None` replays as
-    many times as the settings say; the default of one is the quick run tests use."""
+    many times as the settings say; the default of one is the quick run tests use. The AI loop's new words
+    come from the copywriter, shared by every replay; without one, from the stand-in writer's list."""
+    copywriter = copywriter or StandIn(settings)
     if replays is None:
         replays = settings.replays
     if replays < 1:
@@ -53,20 +56,20 @@ def run_simulation(settings: Settings, seed: int, replays: int | None = 1) -> Ru
     for start in settings.start_sizes:
         stats = []
         for i, this_seed in enumerate(seeds):
-            result = _run_from(settings, start, this_seed)
+            result = _run_from(settings, start, this_seed, copywriter)
             if i == 0:
                 by_start[start] = result
             stats.append(replay_stats(result.outcomes, result.results, settings))  # only the summary is kept, so memory stays flat
         replayed[start] = Replays(seeds, stats)
-    return RunResult(by_start=by_start, replays=replayed, report=report.render(settings, seed, by_start, replayed))
+    return RunResult(by_start=by_start, replays=replayed, report=report.render(settings, seed, by_start, replayed, copywriter.summary()))
 
 
-def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
+def _run_from(settings: Settings, start: int, seed: int, copywriter: Copywriter) -> StartResult:
     paying = already_paying(settings, start)
     signups = weekly_signups(settings, start)
     existing = existing_by_segment(settings, start)
     simulated = merchants(settings, existing, signups, seed)
-    calendars = {a: run_calendar(settings, simulated, seed, a) for a in Approach}
+    calendars = {a: run_calendar(settings, simulated, seed, a, copywriter) for a in Approach}
     journeys = {a: c.journeys for a, c in calendars.items()}
     results = {a: c.results for a, c in calendars.items()}
     outcomes = segment_outcomes(calendars, settings.paid_window_days)

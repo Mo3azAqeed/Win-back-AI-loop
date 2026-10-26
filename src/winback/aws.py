@@ -9,6 +9,7 @@ from pathlib import Path
 
 import boto3
 
+from winback.copywriter import STAND_IN, Copywriter, openrouter, plumbing
 from winback.export import run_data
 from winback.run import run_simulation
 from winback.segments import Segment
@@ -31,17 +32,30 @@ def handler(event: Mapping[str, object], context: object) -> dict[str, str]:
         kind = "application/json" if key.endswith(".json") else "text/markdown; charset=utf-8"
         s3.put_object(Bucket=bucket, Key=key, Body=text.encode(), ContentType=kind)
 
-    key = run_and_save(event, today=datetime.now(UTC).date(), settings_path=BUNDLED_SETTINGS, put=put)
+    def openrouter_key() -> str:
+        name = os.environ["OPENROUTER_KEY_PARAMETER"]
+        try:
+            value: str = boto3.client("ssm").get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"]
+        except Exception as error:
+            raise RuntimeError(f"Can't read the OpenRouter key from Parameter Store ({name}): create it as a SecureString (docs/aws-setup.md).") from error
+        return value
+
+    if event.get("plumbing"):
+        return {"plumbing": "\n".join(plumbing(load_settings(BUNDLED_SETTINGS), openrouter_key()))}
+    key = run_and_save(event, today=datetime.now(UTC).date(), settings_path=BUNDLED_SETTINGS, put=put, openrouter_key=openrouter_key)
     boto3.client("sns").publish(TopicArn=topic, Subject="Win-back report ready", Message=ready_message(bucket, region, key))
     return {"report": f"s3://{bucket}/{key}"}
 
 
-def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Path, put: Callable[[str, str], None]) -> str:
+def run_and_save(
+    event: Mapping[str, object], *, today: date, settings_path: Path, put: Callable[[str, str], None], openrouter_key: Callable[[], str] | None = None
+) -> str:
     """Run the simulation the event asks for, put its report under its own key and as the latest, its data
     for the web app beside it, and a line in the run list; return the report's key.
 
     The event may hold a seed, one starting size and a number of replays. Without a seed the date is used, so
-    weekly runs differ; without a number of replays the settings decide (200)."""
+    weekly runs differ; without a number of replays the settings decide (200). "writer": "ai" has the real
+    writer and judge write the AI loop's words, with the key openrouter_key reads; otherwise the stand-in does."""
     seed = _whole_number(event, "seed")
     if seed is None:
         seed = int(today.strftime("%Y%m%d"))
@@ -53,8 +67,14 @@ def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Pat
     if start is not None:
         settings = dataclasses.replace(settings, start_sizes=(start,))
     name = run_name(today, seed, start)
-    result = run_simulation(settings, seed, replays)
+    copywriter: Copywriter | None = None
+    if checked_writer(event.get("writer")) == "ai":
+        if openrouter_key is None:
+            raise ValueError("The AI writer needs the OpenRouter key")
+        copywriter = openrouter(settings, openrouter_key(), seed=seed)
+    result = run_simulation(settings, seed, replays, copywriter)
     data = run_data(settings, result, seed=seed, created=today)
+    data["writer"] = copywriter.name if copywriter is not None else STAND_IN
     put(f"runs/{name}.md", result.report)
     put(f"runs/{name}.json", json.dumps(data))
     put(f"index/{name}.json", json.dumps(_index_entry(name, data)))
@@ -86,7 +106,16 @@ def _index_entry(name: str, data: dict[str, object]) -> dict[str, object]:
         }
         for s in starts
     ]
-    return {"run": name, "created": data["created"], "seed": data["seed"], "replays": data["replays"], "headline": headline}
+    return {"run": name, "created": data["created"], "seed": data["seed"], "replays": data["replays"], "writer": data.get("writer"), "headline": headline}
+
+
+def checked_writer(raw: object) -> str:
+    """Who writes the AI loop's words: "stand-in" (the default) or "ai" (the real writer and judge)."""
+    if raw is None or raw == "stand-in":
+        return "stand-in"
+    if raw == "ai":
+        return "ai"
+    raise ValueError(f'writer must be "stand-in" or "ai", got {raw!r}')
 
 
 def _whole_number(event: Mapping[str, object], name: str) -> int | None:

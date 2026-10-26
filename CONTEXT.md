@@ -133,7 +133,17 @@ A written finding about what works for a segment, stored with the evidence behin
 _Avoid_: Insight, learning, memory
 
 **Writer**:
-The LLM that writes subject and body variants, reading the current lessons.
+The LLM that writes subject and body variants, reading the fact sheet, the first drafts and the playbook. Until a run asks for it, the stand-in writer stands in.
+
+**Stand-in writer**:
+The prewritten list of subjects and bodies, each with a hypothesis and a placeholder hidden quality, used in order. The free, repeatable default.
+
+**Fact sheet**:
+The only facts an email may state (`fact_sheet.toml`): the plan and price, the trial, the features, and the Trialist offers, with the banned phrases. Every figure must appear exactly as written there.
+
+**Copywriter**:
+Where the AI loop gets each challenger's new part: the stand-in writer, or the writer and judge with the checks in front of them.
+_Avoid_: Connector (the code's older name for it)
 
 **Judge**:
 The LLM that rates how appealing a variant is to a segment during a simulation. It stands in for real merchants and is a different model from the writer.

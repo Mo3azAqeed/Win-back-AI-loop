@@ -37,7 +37,8 @@ def _row_label(approach: Approach) -> str:
     return APPROACH_LABEL[approach] + (" (your first draft)" if approach is Approach.HAND_WRITTEN else "")
 
 
-def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]", replays: dict[int, Replays]) -> str:
+def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]", replays: dict[int, Replays], writer: list[str] | None = None) -> str:
+    """The whole report. `writer` says who wrote and judged the AI loop's words when the real writer did."""
     lines = [
         "# Win-back simulation report",
         "",
@@ -88,14 +89,16 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]", re
                 lines += _offers_section(settings, result.offers)
         lines += _loop_section(settings, result.loop)
     lines += [
+        *(["## Writer and judge", "", *writer, ""] if writer else []),
         "## Placeholders",
         "",
         "These numbers are made up and should be replaced with real data:",
         "",
-        *(f"- {s.note} ({s.key} = {s.value:g})" for s in settings.entries if s.placeholder),
+        # The writer's settings matter only when the real writer and judge did the writing.
+        *(f"- {s.note} ({s.key} = {s.value:g})" for s in settings.entries if s.placeholder and (writer or not s.key.startswith("writer."))),
         *(
             [f"- The hidden quality of each of the stand-in writer's {len(settings.prewritten_subjects)} subjects and {len(settings.prewritten_bodies)} bodies (prewritten.toml)."]
-            if any(v.placeholder for v in (*settings.prewritten_subjects, *settings.prewritten_bodies))
+            if not writer and any(v.placeholder for v in (*settings.prewritten_subjects, *settings.prewritten_bodies))
             else []
         ),
         "",

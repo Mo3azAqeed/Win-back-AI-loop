@@ -83,6 +83,29 @@ class OfferSettings:
 
 
 @dataclass(frozen=True)
+class FactSheet:
+    """What the writer may state in an Idle email (every fact on the sheet except the Trialist offers) and the
+    phrases no email may contain."""
+
+    facts: tuple[str, ...]
+    banned_phrases: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WriterSettings:
+    """The real writer and judge (#13): their models on OpenRouter, the checks every draft must pass, and how a
+    judge's rating becomes a variant's hidden quality."""
+
+    writer_model: str
+    judge_model: str
+    max_attempts: int  # drafts the writer may make for one challenger before that part is skipped
+    subject_max_characters: int
+    quality_per_point: float  # each rating point above your first draft's multiplies hidden quality by e to this
+    rating_noise: float  # spread of the judge's error, on the same scale
+    challengers_per_part: int  # how many new subjects, and bodies, the writer brings in a run
+
+
+@dataclass(frozen=True)
 class Settings:
     start_sizes: tuple[int, ...]
     already_paying_share: float
@@ -103,6 +126,8 @@ class Settings:
     loop: LoopSettings
     offers: OfferSettings
     replays: int
+    fact_sheet: FactSheet
+    writer: WriterSettings
     entries: tuple[Setting, ...]
 
 
@@ -116,7 +141,9 @@ def load_settings(path: Path) -> Settings:
     with (path.parent / "prewritten.toml").open("rb") as f:
         prewritten = tomllib.load(f)
     with (path.parent / "fact_sheet.toml").open("rb") as f:
-        offer_lines = tomllib.load(f)["offers"]
+        fact_sheet = tomllib.load(f)
+    offer_lines = fact_sheet["offers"]
+    models = raw.pop("models")  # names, not numbers, so they sit outside the numbered settings
     entries = {s.key: s for s in _entries(raw)}
 
     def value(key: str) -> float:
@@ -159,6 +186,19 @@ def load_settings(path: Path) -> Settings:
             lines={Offer.NONE: "", Offer.EXTENSION: offer_lines["extension"], Offer.DISCOUNT: offer_lines["discount"]},
         ),
         replays=int(value("replays.count")),
+        fact_sheet=FactSheet(
+            facts=tuple(str(v) for name, section in fact_sheet.items() if name not in ("rules", "offers") for v in section.values()),
+            banned_phrases=tuple(fact_sheet["rules"]["banned_phrases"]),
+        ),
+        writer=WriterSettings(
+            writer_model=models["writer"],
+            judge_model=models["judge"],
+            max_attempts=int(value("writer.max_attempts")),
+            subject_max_characters=int(value("writer.subject_max_characters")),
+            quality_per_point=value("writer.quality_per_point"),
+            rating_noise=value("writer.rating_noise"),
+            challengers_per_part=int(value("writer.challengers_per_part")),
+        ),
         entries=tuple(entries.values()),
     )
 
