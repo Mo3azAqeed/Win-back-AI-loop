@@ -1,321 +1,482 @@
 <!doctype html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Win-back AI loop</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<title>Win-back Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  tailwind.config = {
+    darkMode: "class",
+    theme: { extend: {
+      colors: {
+        canvas: "#08090A", shell: "#0D0E11", card: "#121316", elevated: "#17181C",
+        ink: "#F7F8F8", soft: "#8A8F98", faint: "#5E626A",
+        hair: "rgba(255,255,255,0.07)", edge: "rgba(255,255,255,0.16)",
+        win: "#3FB950", amber: "#F59E0B", indigo: "#5E6AD2", none: "#71717A",
+      },
+      fontFamily: { sans: ["Inter", "sans-serif"], mono: ["JetBrains Mono", "monospace"] },
+    } },
+  };
+</script>
 <style>
-  :root {
-    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #5f6b7a; --line: #e3e7ed;
-    --none: #9ca3af; --hand: #f59e0b; --ai: #2563eb; --good: #15803d; --bad: #b91c1c; --soft: #eef3ff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0f1419; --card: #182029; --ink: #e6e9ee; --muted: #9aa5b4; --line: #2a3542;
-      --soft: #1c2a44;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0; }
-  .sub { color: var(--muted); margin: 4px 0 0; }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 8px 16px 40px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
-  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
-  .stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 700px) { .stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .stage .title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-  .stage .bar { height: 18px; }
-  .stage .count { font-size: 12px; color: var(--muted); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; min-width: 0; }
-  .card h2 { font-size: 17px; margin: 0 0 8px; }
-  .card h3 { font-size: 15px; margin: 16px 0 8px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
-  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); padding: 8px 12px; background: var(--card); color: var(--ink); }
-  button.primary { background: var(--ai); border-color: var(--ai); color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-  .buttons { display: grid; gap: 8px; margin-top: 10px; }
-  .status { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 1.5em; }
-  .runs { list-style: none; margin: 0; padding: 0; }
-  .runs li { border-top: 1px solid var(--line); }
-  .runs li:first-child { border-top: 0; }
-  .runs a { display: block; padding: 10px 4px; color: inherit; text-decoration: none; }
-  .runs a:hover, .runs a.active { background: var(--soft); border-radius: 8px; }
-  .runs .when { font-weight: 600; }
-  .runs .meta { font-size: 12px; color: var(--muted); }
-  .pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-  .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .pill.win { color: var(--good); border-color: var(--good); }
-  .pill.lose { color: var(--muted); }
-  .pill.running { color: var(--ai); border-color: var(--ai); }
-  .summary p { margin: 6px 0; }
-  .tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
-  .tabs button.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
-  .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
-  .kpi { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
-  .kpi .v { font-size: 20px; font-weight: 650; }
-  .kpi .l { font-size: 12px; color: var(--muted); }
-  .two { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; }
-  @media (max-width: 700px) { .two, .kpis { grid-template-columns: 1fr; } }
-  .chart { position: relative; height: 240px; }
-  .funnel .row { margin: 10px 0; }
-  .funnel .name { font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
-  .bar { height: 14px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 3px; }
-  .bar > span { display: block; height: 100%; }
-  .legend { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
-  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; border-top: 0; }
-  td.num, th.num { text-align: right; white-space: nowrap; }
-  .scroll { overflow-x: auto; }
-  .email { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
-  .email .subj { font-weight: 650; }
-  .email .cta { display: inline-block; margin-top: 8px; background: var(--ai); color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 13px; }
-  .emails { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 900px) { .emails { grid-template-columns: 1fr; } }
-  .status-retired { color: var(--muted); }
-  .status-leading { color: var(--good); font-weight: 600; }
-  .note { font-size: 13px; color: var(--muted); }
-  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
-  a { color: var(--ai); }
+  body { font-feature-settings: "tnum" 1; }
+  .fade-up { animation: fadeUp .45s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 1.4s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .grow { transform-origin: left; animation: grow .9s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .orbit { animation: orbit 4s linear infinite; transform-origin: 160px 110px; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  .pulse-dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .added { background: rgba(63,185,80,.16); color: #7ee2a8; border-radius: 3px; padding: 0 2px; animation: fadeUp .5s both; }
+  .removed { color: #8A8F98; text-decoration: line-through; opacity: .7; }
+  .chip { background: rgba(94,106,210,.16); color: #bdc2ff; border-radius: 4px; padding: 0 4px; font-family: "JetBrains Mono", monospace; font-size: .85em; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .draw { stroke-dashoffset: 0; } }
+  textarea, input { color-scheme: dark; }
 </style>
 </head>
-<body>
-<header>
-  <h1>Win-back AI loop</h1>
-  <p class="sub">Each run plays out 13 weeks of merchants many times over, comparing no email, the hand-written email and the AI loop on the same merchants. Every number is simulated from placeholder assumptions.</p>
-</header>
-<div class="wrap">
-  <aside>
-    <div class="card">
-      <h2>Start a run</h2>
-      <label for="code">Access code</label>
-      <input id="code" type="password" autocomplete="off" placeholder="Needed to start a run">
-      <div class="buttons">
-        <button id="run-quick" class="primary">Quick run · 20 replays (about a minute)</button>
-        <button id="run-full">Full run · 200 replays (a few minutes)</button>
-      </div>
-      <div class="status" id="run-status"></div>
-    </div>
-    <div class="card">
-      <h2>Runs</h2>
-      <ul class="runs" id="runs"><li class="empty">Loading…</li></ul>
-    </div>
+<body class="bg-canvas text-ink font-sans antialiased selection:bg-indigo selection:text-white">
+<div class="min-h-screen md:grid md:grid-cols-[232px_minmax(0,1fr)]">
+  <aside class="hidden md:flex flex-col border-r border-hair bg-shell sticky top-0 h-screen">
+    <a href="#/compose" class="flex items-center gap-2 px-4 h-14 border-b border-hair">
+      <span class="grid place-items-center w-7 h-7 rounded-md bg-indigo/20 text-indigo">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v4h-4"/><rect x="8" y="9.5" width="8" height="5.5" rx="1"/><path d="m8 10 4 2.8L16 10"/></svg>
+      </span>
+      <span class="font-semibold">Win-back Lab</span>
+    </a>
+    <nav class="p-2 text-sm space-y-1" id="nav">
+      <a data-nav="compose" href="#/compose" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Compose</a>
+      <a data-nav="running" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Simulation run</a>
+      <a data-nav="run" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Results &amp; versions</a>
+      <a data-nav="runs" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Run history</a>
+    </nav>
+    <div class="px-5 mt-4 text-[11px] tracking-widest text-faint font-mono">STAGES</div>
+    <ul class="px-5 py-2 space-y-2 text-sm font-mono text-soft">
+      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber"></span>Idle</li>
+      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-indigo"></span>Drafter</li>
+      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-win"></span>Trialist</li>
+    </ul>
+    <p class="mt-auto p-4 text-[11px] leading-relaxed text-faint">Every number is simulated from placeholder assumptions. No real email is sent.</p>
   </aside>
-  <main id="detail"><div class="card empty">Pick a run, or start one.</div></main>
+  <div class="min-w-0">
+    <header class="sticky top-0 z-20 h-14 flex items-center gap-3 px-4 md:px-8 border-b border-hair bg-canvas/80 backdrop-blur">
+      <a href="#/compose" class="md:hidden font-semibold">Win-back Lab</a>
+      <span class="text-soft text-sm hidden md:inline">Win-back Lab</span><span class="text-faint hidden md:inline">/</span>
+      <span id="crumb" class="text-sm font-medium truncate"></span>
+      <nav class="ml-auto flex gap-1 md:hidden text-xs">
+        <a href="#/compose" class="px-2 py-1 rounded border border-hair">Compose</a>
+        <a href="#/runs" class="px-2 py-1 rounded border border-hair">Runs</a>
+      </nav>
+    </header>
+    <main id="view" class="px-4 md:px-8 py-6 md:py-8 max-w-[1280px]"></main>
+  </div>
 </div>
 <script>
-const COLOURS = { no_email: "#9ca3af", hand_written: "#f59e0b", ai_loop: "#2563eb" };
-const LABELS = { no_email: "No email", hand_written: "Hand-written email", ai_loop: "AI loop" };
-let charts = [];
-let current = null;
+"use strict";
+const STAGES = { idle: { label: "Idle", dot: "bg-amber", goal: "start a draft" }, drafter: { label: "Drafter", dot: "bg-indigo", goal: "publish" }, trialist: { label: "Trialist", dot: "bg-win", goal: "pay" } };
+const COLOUR = { no_email: "#71717A", hand_written: "#F59E0B", ai_loop: "#5E6AD2" };
+const NAME = { no_email: "No email", hand_written: "Your email", ai_loop: "AI loop" };
+const SEND_AFTER = ["1 hour", "2 days", "5 days"];
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const view = document.getElementById("view");
+let timers = [];
 
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") node.className = v; else if (k === "style") node.style.cssText = v; else node.setAttribute(k, v);
+// ---------- small helpers ----------
+function h(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? "" : v);
   }
-  for (const c of children.flat()) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return node;
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
 }
-const pts = v => (v >= 0 ? "+" : "") + v.toFixed(1);
+function svg(tag, attrs = {}, ...kids) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  for (const k of kids.flat()) if (k) n.append(k);
+  return n;
+}
+const pts = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(1);
+const pct = v => v == null ? "–" : (100 * v).toFixed(1) + "%";
 const money = v => "$" + Math.round(v).toLocaleString("en-US");
-const pct = (a, b) => b ? (100 * a / b).toFixed(1) + "%" : "–";
+const num = v => Number(v).toLocaleString("en-US");
 const day = iso => new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-
-function remembered() { try { return localStorage.getItem("winback-code") || ""; } catch { return ""; } }
-function remember(code) { try { localStorage.setItem("winback-code", code); } catch {} }
-
+// A card; an optional plain object after the classes holds extra attributes (such as an animation delay).
+const card = (cls, ...kids) => {
+  const attrs = kids[0] && kids[0].constructor === Object ? kids.shift() : {};
+  return h("section", { ...attrs, class: "bg-card border border-hair rounded-xl fade-up " + (cls || "") }, ...kids);
+};
+const label = text => h("div", { class: "text-[11px] tracking-widest uppercase text-faint font-mono" }, text);
+function store(key, value) { try { if (value === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(value)); } catch { return null; } }
 async function api(path, options) {
-  const response = await fetch(path, options);
-  const text = await response.text();
-  let body; try { body = JSON.parse(text); } catch { body = text; }
-  if (!response.ok) throw new Error((body && body.error) || ("Error " + response.status));
-  return body;
+  const r = await fetch(path, options);
+  const t = await r.text();
+  let b; try { b = JSON.parse(t); } catch { b = t; }
+  if (!r.ok) throw new Error((b && b.error) || "Something went wrong (" + r.status + ")");
+  return b;
 }
-
-async function loadRuns() {
-  const list = document.getElementById("runs");
-  let data;
-  try { data = await api("/api/runs"); } catch (e) { list.replaceChildren(el("li", { class: "empty" }, e.message)); return; }
-  const items = [];
-  for (const r of data.running) {
-    items.push(el("li", {}, el("div", { style: "padding:10px 4px" },
-      el("div", { class: "when" }, "Running now"),
-      el("div", { class: "meta" }, `${r.replays} replays · asked ${new Date(r.requested).toLocaleTimeString()}`),
-      el("div", { class: "pills" }, el("span", { class: "pill running" }, "results on the way")))));
+function countUp(el, to, fmt) {
+  if (reduced) { el.textContent = fmt(to); return; }
+  const start = performance.now();
+  const tick = now => { const p = Math.min(1, (now - start) / 900); el.textContent = fmt(to * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+// Text with {placeholders} shown as chips; all text goes in as text, never as markup.
+function withChips(text) {
+  return text.split(/(\{[a-z_]+\})/g).filter(Boolean).map(part => /^\{[a-z_]+\}$/.test(part) ? h("span", { class: "chip" }, part) : part);
+}
+// Word-level difference between two texts: kept words plain, new words highlighted, removed words struck.
+function diffWords(before, after) {
+  const a = before.split(/(\s+)/), b = after.split(/(\s+)/);
+  const m = a.length, n = b.length, L = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  // Mostly rewritten: word-by-word marks would be noise, so show the new words whole and the old ones below.
+  const words = s => s.filter(w => !/^\s+$/.test(w)).length;
+  if (L[0][0] / 2 < 0.4 * Math.max(words(a), words(b))) {
+    return [h("span", { class: "added" }, withChips(after)), h("span", { class: "block mt-1 text-xs removed" }, before)];
   }
-  for (const r of data.runs) {
-    const pills = (r.headline && r.headline[0] ? r.headline[0].segments : []).map(s =>
-      el("span", { class: "pill " + (s.ai_did_better ? "win" : "lose") }, `${s.label} ${s.ai_did_better ? "AI ahead" : "no gain"}`));
-    const link = el("a", { href: "#" + r.run, class: r.run === current ? "active" : "" },
-      el("div", { class: "when" }, day(r.created)),
-      el("div", { class: "meta" }, `seed ${r.seed} · ${r.replays} replays`),
-      el("div", { class: "pills" }, pills));
-    items.push(el("li", {}, link));
+  const out = []; let i = 0, j = 0;
+  while (i < m || j < n) {
+    if (i < m && j < n && a[i] === b[j]) { out.push(h("span", {}, withChips(b[j]))); i++; j++; }
+    else if (j < n && (i >= m || L[i][j + 1] >= L[i + 1][j])) { out.push(/^\s+$/.test(b[j]) ? b[j] : h("span", { class: "added" }, withChips(b[j]))); j++; }
+    else { if (!/^\s+$/.test(a[i])) out.push(h("span", { class: "removed" }, a[i]), " "); i++; }
   }
-  list.replaceChildren(...(items.length ? items : [el("li", { class: "empty" }, "No runs yet. Start one.")]));
-  document.getElementById("run-quick").disabled = document.getElementById("run-full").disabled = data.running.length > 0;
-  if (data.running.length) setTimeout(loadRuns, 10000);
-  return data;
+  return out;
 }
-
-async function startRun(replays) {
-  const code = document.getElementById("code").value.trim();
-  const status = document.getElementById("run-status");
-  remember(code);
-  status.textContent = "Starting…";
-  try {
-    const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, replays }) });
-    status.textContent = `Started. Results appear in the list when ready (${started.run}).`;
-    loadRuns();
-  } catch (e) { status.textContent = e.message; }
+function delta(v, unit = " pts") {
+  if (v == null) return h("span", { class: "text-faint" }, "–");
+  const cls = v > 0.05 ? "text-win" : v < -0.05 ? "text-soft" : "text-soft";
+  return h("span", { class: "font-mono " + cls }, pts(v) + unit);
 }
+function setNav(name, crumb) {
+  document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("bg-elevated", a.dataset.nav === name));
+  document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("text-ink", a.dataset.nav === name));
+  document.getElementById("crumb").textContent = crumb;
+}
+function clearTimers() { timers.forEach(clearInterval); timers = []; }
 
-function timeline(segment) {
-  const canvas = el("canvas");
-  const box = el("div", { class: "chart" }, canvas);
-  const weeks = segment.weekly.ai_loop.map((_, i) => "Week " + (i + 1));
-  // Weeks before any result is known have nothing to show, not a lift of zero.
-  const known = segment.weekly.ai_loop.findIndex((v, i) => v !== 0 || segment.weekly.hand_written[i] !== 0);
-  const series = a => segment.weekly[a].map((v, i) => (known === -1 || i < known ? null : v));
-  requestAnimationFrame(() => {
-    if (!window.Chart) { box.replaceChildren(el("p", { class: "note" }, "Charts need an internet connection.")); return; }
-    charts.push(new Chart(canvas, {
-      type: "line",
-      data: { labels: weeks, datasets: Object.keys(LABELS).map(a => ({ label: LABELS[a], data: series(a), borderColor: COLOURS[a], backgroundColor: COLOURS[a], pointRadius: 0, borderWidth: a === "no_email" ? 1.5 : 2.5, tension: 0.25 })) },
-      options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${pts(c.parsed.y)} pts` } } },
-        scales: { y: { title: { display: true, text: "True lift so far (pts)" } }, x: { ticks: { maxTicksLimit: 8 } } } }
+// ---------- Compose ----------
+async function showCompose() {
+  setNav("compose", "Write your emails");
+  view.replaceChildren(h("div", { class: "text-soft" }, "Loading your drafts…"));
+  let emails = store("winback-emails");
+  if (!emails) { try { emails = (await api("/api/drafts")).emails; } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; } }
+  const settings = store("winback-run") || { replays: 20 };
+  const save = () => store("winback-emails", emails);
+
+  const editor = (email, index) => {
+    const stage = STAGES[email.segment];
+    const preview = h("div");
+    const render = () => preview.replaceChildren(
+      h("div", { class: "font-semibold text-ink truncate" }, withChips(email.subject || " ")),
+      h("div", { class: "text-soft text-sm mt-1 leading-relaxed" }, withChips(email.body || " ")),
+      h("span", { class: "inline-block mt-3 text-sm px-3 py-1.5 rounded-md bg-ink text-canvas font-medium" }, email.cta || " ", " →"));
+    render();
+    const field = (key, area) => {
+      const attrs = { class: "w-full bg-shell border border-hair rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-indigo/70 focus:ring-2 focus:ring-indigo/20 transition", value: email[key], "aria-label": key };
+      const input = area ? h("textarea", { ...attrs, rows: 6 }) : h("input", attrs);
+      if (area) input.value = email[key];
+      input.addEventListener("input", () => { email[key] = input.value; save(); render(); });
+      return input;
+    };
+    const timing = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-xs" }, SEND_AFTER.map(t => {
+      const b = h("button", { class: "px-2.5 py-1 rounded-md transition " + (email.send_after === t ? "bg-elevated text-ink" : "text-soft hover:text-ink"), type: "button" }, t);
+      b.onclick = () => { email.send_after = t; save(); showCompose(); };
+      return b;
     }));
-  });
-  return box;
+    return card("flex flex-col overflow-hidden", { style: `animation-delay:${index * 70}ms` },
+      h("div", { class: "flex items-center justify-between gap-2 px-5 py-4 border-b border-hair" },
+        h("div", { class: "flex items-center gap-2 font-mono text-sm" }, h("span", { class: `w-2 h-2 rounded-full ${stage.dot}` }), stage.label),
+        h("span", { class: "text-xs px-2 py-0.5 rounded border border-hair text-soft" }, "Goal: " + stage.goal)),
+      h("div", { class: "p-5 space-y-4 flex-1" },
+        h("div", { class: "flex items-center justify-between gap-3" }, h("span", { class: "text-sm text-soft" }, "Send after"), timing),
+        h("div", {}, label("Subject line"), h("div", { class: "mt-1.5" }, field("subject"))),
+        h("div", {}, label("Body"), h("div", { class: "mt-1.5" }, field("body", true))),
+        h("div", {}, label("Button"), h("div", { class: "mt-1.5" }, field("cta")))),
+      h("div", { class: "px-5 py-4 border-t border-hair bg-shell/60" }, label("Inbox preview"), h("div", { class: "mt-2 p-4 rounded-lg bg-elevated border border-hair" }, preview)));
+  };
+
+  const code = h("input", { type: "password", autocomplete: "off", placeholder: "Access code", value: store("winback-code") || "", class: "bg-shell border border-hair rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:border-indigo/70" });
+  const size = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-xs" }, [[20, "Quick · 20 replays"], [200, "Full · 200 replays"]].map(([n, t]) => {
+    const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md " + (settings.replays === n ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, t);
+    b.onclick = () => { store("winback-run", { replays: n }); showCompose(); };
+    return b;
+  }));
+  const status = h("span", { class: "text-sm text-soft", role: "status" });
+  const go = h("button", { type: "button", class: "px-5 py-2.5 rounded-lg bg-indigo hover:bg-indigo/90 text-white font-medium shadow-lg shadow-indigo/20 transition" }, "Simulate 13 weeks");
+  go.onclick = async () => {
+    store("winback-code", code.value.trim());
+    go.disabled = true; status.textContent = "Starting…";
+    try {
+      const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: code.value.trim(), replays: settings.replays, emails }) });
+      location.hash = "#/running/" + started.run;
+    } catch (e) { status.textContent = e.message; go.disabled = false; }
+  };
+  const reset = h("button", { type: "button", class: "text-sm text-soft hover:text-ink underline-offset-4 hover:underline" }, "Reset to the saved drafts");
+  reset.onclick = () => { store("winback-emails", null); try { localStorage.removeItem("winback-emails"); } catch {} showCompose(); };
+
+  view.replaceChildren(
+    h("div", { class: "fade-up flex flex-col md:flex-row md:items-end gap-4 justify-between" },
+      h("div", {}, h("h1", { class: "text-3xl md:text-4xl font-semibold tracking-tight" }, "Write your emails"),
+        h("p", { class: "text-soft mt-2 max-w-2xl" }, "One email per stage. The simulation sends yours to the same merchants as an AI loop that starts from your words and keeps rewriting them, then shows every version and how it did against yours.")),
+      reset),
+    h("div", { class: "grid gap-4 mt-6 lg:grid-cols-3" }, emails.map(editor)),
+    card("mt-6 p-4 flex flex-col md:flex-row md:items-center gap-3 sticky bottom-4 shadow-2xl shadow-black/40 bg-elevated/95 backdrop-blur",
+      h("div", { class: "text-sm text-soft flex-1" }, "Your words are what gets sent and compared. How appealing they are is a placeholder until the AI judge reads them (planned); the send time you pick changes results now."),
+      size, code, go, status));
 }
 
-function funnel(segment) {
-  const most = Math.max(...Object.values(segment.funnel).map(f => f.merchants));
-  return el("div", { class: "funnel" }, Object.keys(LABELS).map(a => {
-    const f = segment.funnel[a];
-    return el("div", { class: "row" },
-      el("div", { class: "name" }, el("span", {}, LABELS[a]), el("span", {}, `${f.reached.toLocaleString()} of ${f.merchants.toLocaleString()} ${segment.done} · ${pct(f.reached, f.merchants)}`)),
-      el("div", { class: "bar" }, el("span", { style: `width:${100 * f.merchants / most}%;background:${COLOURS[a]};opacity:.25` })),
-      el("div", { class: "bar" }, el("span", { style: `width:${100 * f.reached / most}%;background:${COLOURS[a]}` })));
-  }), el("p", { class: "note" }, "Light bar: merchants in this stage (holdout aside). Dark bar: those who took the next step within the horizon. First replay."));
+// ---------- Running ----------
+async function showRunning(name) {
+  setNav("running", "Simulation running");
+  const startedAt = Date.now();
+  const elapsed = h("span", { class: "font-mono text-soft" }, "0:00");
+  const loop = svg("svg", { viewBox: "0 0 320 220", class: "w-full max-w-sm mx-auto", "aria-hidden": "true" },
+    svg("circle", { cx: 160, cy: 110, r: 70, fill: "none", stroke: "rgba(255,255,255,.08)", "stroke-dasharray": "3 6" }),
+    svg("g", { class: "orbit" }, ...[0, 72, 144, 216, 288].map((a, i) => svg("rect", { x: 152, y: 34, width: 16, height: 11, rx: 2, fill: ["#F59E0B", "#5E6AD2", "#3FB950", "#5E6AD2", "#F59E0B"][i], transform: `rotate(${a} 160 110)`, opacity: .9 }))),
+    svg("rect", { x: 138, y: 92, width: 44, height: 36, rx: 6, fill: "#17181C", stroke: "rgba(255,255,255,.16)" }),
+    svg("path", { d: "M146 104h28M146 112h20M146 120h24", stroke: "#8A8F98", "stroke-width": 2, "stroke-linecap": "round" }));
+  const steps = ["Merchants arrive", "Emails go out", "Results come back"].map((t, i) => h("div", { class: "flex items-center gap-2 text-sm text-soft", "data-step": i }, h("span", { class: "w-2 h-2 rounded-full bg-faint" }), t));
+  view.replaceChildren(card("max-w-xl mx-auto mt-6 md:mt-16 p-8 text-center",
+    loop,
+    h("h1", { class: "text-2xl font-semibold mt-6" }, "Playing out 13 weeks, many times over"),
+    h("p", { class: "text-soft mt-2" }, "Comparing no email, your email and the AI loop on the same merchants. A quick run takes about a minute, a full one a few minutes."),
+    h("div", { class: "mt-6 h-0.5 bg-hair rounded overflow-hidden" }, h("div", { class: "h-full w-1/3 bg-indigo pulse-dot" })),
+    h("div", { class: "mt-4 flex justify-between items-center" }, h("div", { class: "flex gap-4 flex-wrap" }, steps), elapsed)));
+  clearTimers();
+  timers.push(setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    elapsed.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const active = Math.min(2, Math.floor(s / 8) % 3);
+    steps.forEach((el, i) => { el.firstChild.className = "w-2 h-2 rounded-full " + (i === active ? "bg-indigo pulse-dot" : i < active ? "bg-win" : "bg-faint"); el.classList.toggle("text-ink", i === active); });
+  }, 1000));
+  timers.push(setInterval(async () => {
+    try { const runs = await api("/api/runs"); if (runs.runs.some(r => r.run === name)) location.hash = "#/run/" + name; } catch {}
+  }, 5000));
 }
 
-function segmentCard(segment, replays) {
-  const by = Object.fromEntries(segment.approaches.map(a => [a.approach, a]));
-  return el("div", { class: "card" },
-    el("h2", {}, `${segment.label}: ${segment.goal}`),
-    el("div", { class: "kpis" },
-      el("div", { class: "kpi" }, el("div", { class: "v", style: "color:var(--ai)" }, pts(by.ai_loop.average)), el("div", { class: "l" }, `AI loop, true lift (pts) · middle 90% ${pts(by.ai_loop.low)} to ${pts(by.ai_loop.high)}`)),
-      el("div", { class: "kpi" }, el("div", { class: "v", style: "color:var(--hand)" }, pts(by.hand_written.average)), el("div", { class: "l" }, `Hand-written email · middle 90% ${pts(by.hand_written.low)} to ${pts(by.hand_written.high)}`)),
-      el("div", { class: "kpi" }, el("div", { class: "v" }, `${segment.ai_ahead} / ${replays}`), el("div", { class: "l" }, `replays where the AI loop was ahead${segment.ties ? ` (${segment.ties} tied)` : ""}${segment.ahead_from_week ? ` · ahead from week ${segment.ahead_from_week}` : ""}`))),
-    el("div", { class: "two" },
-      el("div", {}, el("h3", {}, "Timeline: true lift so far, week by week"), timeline(segment),
-        el("div", { class: "legend" }, Object.keys(LABELS).map(a => el("span", {}, el("span", { class: "dot", style: `background:${COLOURS[a]}` }), LABELS[a])))),
-      el("div", {}, el("h3", {}, "Funnel"), funnel(segment))));
-}
-
-function variantsTable(title, rows) {
-  return el("div", { class: "scroll" }, el("h3", {}, title), el("table", {},
-    el("tr", {}, el("th", {}, "Words"), el("th", { class: "num" }, "Hidden quality"), el("th", { class: "num" }, "Sends"), el("th", { class: "num" }, "Human clicks"), el("th", {}, "Now")),
-    rows.map((v, i) => el("tr", {},
-      el("td", {}, v.text, v.cta ? el("strong", {}, ` [${v.cta}]`) : "", i === 0 ? el("span", { class: "note" }, " (your first draft)") : ""),
-      el("td", { class: "num" }, v.quality), el("td", { class: "num" }, v.sends.toLocaleString()), el("td", { class: "num" }, pct(v.clicks, v.sends)),
-      el("td", { class: "status-" + v.status.replace(" ", "-") }, v.status)))));
-}
-
-function emailsCard(data, start) {
-  const loop = start.loop;
-  return el("div", { class: "card" },
-    el("h2", {}, "The emails"),
-    el("h3", {}, "Your first drafts (the hand-written email)"),
-    el("div", { class: "emails" }, data.first_drafts.map(d => el("div", { class: "email" },
-      el("div", { class: "note" }, `${d.label} · sent ${d.send_after_days} days in`), el("div", { class: "subj" }, d.subject), el("div", {}, d.body), el("span", { class: "cta" }, d.cta)))),
-    el("p", { class: "note" }, "From here on: what the AI loop tested in the first replay. Hidden quality is visible only because this is a simulation: 100 is your first draft."),
-    variantsTable("Idle subjects", loop.subjects),
-    variantsTable("Idle bodies", loop.bodies),
-    el("div", { class: "scroll" }, el("h3", {}, `Drafter and Trialist emails (carry-over from Idle: ${Math.round(loop.carry_over * 100)}%)`), el("table", {},
-      el("tr", {}, el("th", {}, "Segment"), el("th", {}, "Email"), el("th", { class: "num" }, "Sends"), el("th", { class: "num" }, "Human clicks")),
-      loop.segment_copy.map(c => el("tr", {}, el("td", {}, c.label), el("td", {}, el("strong", {}, c.subject), " ", c.body, el("strong", {}, ` [${c.cta}]`)), el("td", { class: "num" }, c.sends.toLocaleString()), el("td", { class: "num" }, pct(c.clicks, c.sends)))))),
-    el("div", { class: "scroll" }, el("h3", {}, "Timing"), el("table", {},
-      el("tr", {}, el("th", {}, "Segment"), el("th", {}, "Timing"), el("th", { class: "num" }, "Merchants judged"), el("th", { class: "num" }, "Reached the goal"), el("th", {}, "Now")),
-      loop.timings.map(t => el("tr", {}, el("td", {}, t.label), el("td", {}, t.timing), el("td", { class: "num" }, t.assigned.toLocaleString()), el("td", { class: "num" }, pct(t.reached, t.assigned)), el("td", { class: t.leading ? "status-leading" : "" }, t.leading ? "ahead so far" : ""))))),
-    el("div", { class: "scroll" }, el("h3", {}, "Trialist offers"), el("table", {},
-      el("tr", {}, el("th", {}, "Offer"), el("th", {}, "Line added to the email"), el("th", { class: "num" }, "Emails sent"), el("th", { class: "num" }, "Revenue per Trialist"), el("th", {}, "Now")),
-      loop.offers.map(o => el("tr", {}, el("td", {}, o.label), el("td", {}, o.line || "–"), el("td", { class: "num" }, o.sent.toLocaleString()), el("td", { class: "num" }, o.revenue_per_trialist == null ? "–" : "$" + o.revenue_per_trialist.toFixed(2)), el("td", { class: o.leading ? "status-leading" : "" }, o.leading ? "ahead so far" : ""))))),
-    el("p", { class: "note" }, `${loop.discounted_payers} Trialists paid with the discount; ${loop.would_have_paid_anyway} of them would have paid the full price with no email.`));
-}
-
-function journeyCard(start) {
-  // Idle merchants, then how many took each next step. Existing merchants join at their own stage, so a
-  // later stage can hold merchants who never passed through the earlier ones.
-  const [idle, drafter, trialist] = start.segments;
-  const stages = [
-    ["Signed up, no draft yet", a => idle.funnel[a].merchants],
-    ["Started a draft", a => idle.funnel[a].reached],
-    ["Published", a => drafter.funnel[a].reached],
-    ["Paid", a => trialist.funnel[a].reached],
+// ---------- History ----------
+async function showRuns() {
+  setNav("runs", "Run history");
+  view.replaceChildren(h("div", { class: "text-soft" }, "Loading runs…"));
+  let data; try { data = await api("/api/runs"); } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; }
+  const row = (cells, link, i) => h(link ? "a" : "div", { href: link, class: "grid grid-cols-1 md:grid-cols-[1.2fr_2fr_auto] gap-3 items-center px-5 py-4 border-t border-hair hover:bg-elevated/60 transition fade-up", style: `animation-delay:${i * 40}ms` }, cells);
+  const rows = [
+    ...data.running.map((r, i) => row([
+      h("div", { class: "flex items-center gap-2" }, h("span", { class: "w-2 h-2 rounded-full bg-indigo pulse-dot" }), h("span", { class: "font-medium" }, "Running now"), h("span", { class: "text-soft text-sm" }, `${r.replays} replays`)),
+      h("div", { class: "text-soft text-sm" }, "Results on the way"), h("span", { class: "text-xs font-mono px-2 py-1 rounded bg-indigo/15 text-indigo" }, "RUNNING")], "#/running/" + r.run, i)),
+    ...data.runs.map((r, i) => {
+      const first = (r.headline || [])[0];
+      return row([
+        h("div", {}, h("div", { class: "font-medium" }, day(r.created)), h("div", { class: "text-xs font-mono text-faint" }, `seed ${r.seed} · ${r.replays} replays`)),
+        h("div", { class: "flex flex-wrap gap-2" }, (first ? first.segments : []).map(s => h("span", { class: "text-xs font-mono px-2 py-1 rounded border " + (s.ai_did_better ? "border-win/40 text-win" : "border-hair text-soft") }, `${s.label} ${pts(s.ai)} vs ${pts(s.hand)}`))),
+        h("span", { class: "text-soft" }, "→")], "#/run/" + r.run, i + data.running.length);
+    }),
   ];
-  return el("div", { class: "card" }, el("h2", {}, "The journey: how many merchants took each step"),
-    el("div", { class: "stages" }, stages.map(([title, count]) => {
-      const most = Math.max(...Object.keys(LABELS).map(count));
-      return el("div", { class: "stage" }, el("div", { class: "title" }, title),
-        Object.keys(LABELS).map(a => el("div", {},
-          el("div", { class: "bar" }, el("span", { style: `width:${most ? 100 * count(a) / most : 0}%;background:${COLOURS[a]}` })),
-          el("div", { class: "count" }, `${LABELS[a]}: ${count(a).toLocaleString()}`))));
-    })),
-    el("p", { class: "note" }, "First replay, holdout aside. Existing merchants join at their own stage: some start as Drafters or Trialists."));
+  const fresh = h("a", { href: "#/compose", class: "px-4 py-2 rounded-lg bg-ink text-canvas text-sm font-medium" }, "New simulation");
+  view.replaceChildren(
+    h("div", { class: "flex items-end justify-between gap-4 fade-up" }, h("div", {}, h("h1", { class: "text-3xl font-semibold tracking-tight" }, "Runs"), h("p", { class: "text-soft mt-1" }, "Every simulation, weekly runs included. AI loop against your email, in points of true lift.")), fresh),
+    card("mt-6 overflow-hidden", rows.length ? rows : h("div", { class: "p-10 text-center text-soft" }, "No runs yet. Write your emails and press Simulate.")));
 }
 
-function revenueCard(start) {
-  const most = Math.max(...Object.values(start.revenue));
-  return el("div", { class: "card" }, el("h2", {}, "Trialist first-month revenue, average per replay"),
-    el("div", { class: "funnel" }, Object.keys(LABELS).map(a => el("div", { class: "row" },
-      el("div", { class: "name" }, el("span", {}, LABELS[a]), el("span", {}, money(start.revenue[a]))),
-      el("div", { class: "bar" }, el("span", { style: `width:${100 * start.revenue[a] / most}%;background:${COLOURS[a]}` }))))));
+// ---------- Results ----------
+function lineChart(weekly, upTo) {
+  const W = 640, H = 220, pad = { l: 36, r: 12, t: 12, b: 26 };
+  const series = Object.keys(NAME).map(a => weekly[a].map(v => v));
+  const all = series.flat().filter(v => v != null), max = Math.max(0.5, ...all), min = Math.min(0, ...all);
+  const n = series[0].length, x = i => pad.l + (W - pad.l - pad.r) * i / (n - 1), y = v => pad.t + (H - pad.t - pad.b) * (1 - (v - min) / (max - min));
+  const known = weekly.ai_loop.findIndex((v, i) => v !== 0 || weekly.hand_written[i] !== 0);
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "w-full h-auto", role: "img", "aria-label": "True lift so far, week by week, for no email, your email and the AI loop" });
+  for (let k = 0; k <= 4; k++) { const v = min + (max - min) * k / 4; s.append(svg("line", { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), stroke: "rgba(255,255,255,.06)" }), svg("text", { x: 4, y: y(v) + 4, fill: "#5E626A", "font-size": 10, "font-family": "JetBrains Mono" }, document.createTextNode(v.toFixed(1)))); }
+  for (let i = 0; i < n; i += 2) s.append(svg("text", { x: x(i), y: H - 6, fill: "#5E626A", "font-size": 10, "text-anchor": "middle", "font-family": "JetBrains Mono" }, document.createTextNode("W" + (i + 1))));
+  Object.keys(NAME).forEach((a, idx) => {
+    const from = a === "no_email" ? 0 : Math.max(0, known);
+    const d = series[idx].map((v, i) => [i, v]).filter(([i]) => i >= from).map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v ?? 0).toFixed(1)}`).join(" ");
+    const p = svg("path", { d, fill: "none", stroke: COLOUR[a], "stroke-width": a === "no_email" ? 1.5 : 2.5, "stroke-linejoin": "round", class: "draw", style: "--len:2000" });
+    s.append(p);
+  });
+  if (upTo != null) s.append(svg("line", { x1: x(upTo), x2: x(upTo), y1: pad.t, y2: H - pad.b, stroke: "rgba(255,255,255,.35)", "stroke-dasharray": "3 3" }));
+  return s;
 }
 
-function renderStart(data, index) {
-  charts.forEach(c => c.destroy()); charts = [];
-  const start = data.starts[index];
-  const body = document.getElementById("start-body");
-  body.replaceChildren(journeyCard(start), ...start.segments.map(s => segmentCard(s, data.replays)), revenueCard(start), emailsCard(data, start));
-  document.querySelectorAll(".tabs button").forEach((b, i) => b.classList.toggle("on", i === index));
+function journey(start) {
+  const [idle, drafter, trialist] = start.segments;
+  const steps = ["Signed up", "Started a draft", "Published", "Paid"];
+  const count = { no_email: [], hand_written: [], ai_loop: [] };
+  for (const a of Object.keys(NAME)) count[a] = [idle.funnel[a].merchants, idle.funnel[a].reached, drafter.funnel[a].reached, trialist.funnel[a].reached];
+  const W = 900, H = 260, colX = i => 60 + i * (W - 120) / 3;
+  const top = Math.max(...Object.values(count).map(c => c[0]));
+  const y = (a, v) => 40 + ({ ai_loop: 0, hand_written: 62, no_email: 124 })[a] + 50 * (1 - v / top);
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "w-full h-auto", role: "img", "aria-label": "Merchants at each step of the journey for each approach" });
+  steps.forEach((t, i) => s.append(svg("text", { x: colX(i), y: 18, fill: "#8A8F98", "font-size": 12, "text-anchor": "middle" }, document.createTextNode(t))));
+  for (const a of ["no_email", "hand_written", "ai_loop"]) {
+    const d = count[a].map((v, i) => `${i ? "L" : "M"}${colX(i)},${y(a, v)}`).join(" ");
+    s.append(svg("path", { d, fill: "none", stroke: COLOUR[a], "stroke-width": 10, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .85, class: "draw", style: "--len:1400" }));
+    count[a].forEach((v, i) => { if (i) s.append(svg("text", { x: colX(i), y: y(a, v) - 10, fill: COLOUR[a], "font-size": 12, "font-family": "JetBrains Mono", "text-anchor": "middle" }, document.createTextNode(num(v)))); });
+  }
+  return { svg: s, count };
+}
+
+function emailCard(title, colour, email, compareTo, stats, tags) {
+  return h("div", { class: "rounded-xl border border-hair bg-shell p-5 h-full flex flex-col" },
+    h("div", { class: "flex items-center justify-between gap-2 mb-3" }, h("div", { class: "flex items-center gap-2 font-medium" }, h("span", { class: "w-2 h-2 rounded-full", style: `background:${colour}` }), title), h("div", { class: "flex gap-1 flex-wrap justify-end" }, tags || [])),
+    label("Subject"), h("div", { class: "mt-1 font-semibold leading-snug" }, compareTo ? diffWords(compareTo.subject, email.subject) : withChips(email.subject)),
+    h("div", { class: "mt-3" }, label("Body")), h("div", { class: "mt-1 text-[15px] text-soft leading-relaxed" }, compareTo ? diffWords(compareTo.body, email.body) : withChips(email.body)),
+    h("span", { class: "self-start mt-4 text-sm px-3 py-1.5 rounded-md text-white font-medium", style: `background:${colour}` }, email.cta, " →"),
+    stats ? h("div", { class: "mt-auto pt-4 text-xs font-mono text-soft flex flex-wrap gap-x-4 gap-y-1 border-t border-hair mt-4" }, stats) : null);
+}
+const tag = (text, cls) => h("span", { class: "text-[11px] font-mono px-1.5 py-0.5 rounded " + cls }, text);
+
+function weekPlayer(seg, yourEmail) {
+  const weeks = seg.weeks;
+  let index = Math.min(weeks.length - 1, Math.max(0, (seg.ahead_from_week || 2) - 1)), playing = null;
+  const chartBox = h("div"), body = h("div", { class: "grid gap-4 md:grid-cols-2 mt-4" }), changes = h("div", { class: "mt-4" });
+  const strip = h("div", { class: "flex gap-1 overflow-x-auto pb-1", role: "tablist", "aria-label": "Week" });
+  const play = h("button", { type: "button", class: "px-3 py-1.5 rounded-md bg-indigo text-white text-sm font-medium shrink-0" }, "▶ Play");
+  const render = () => {
+    const w = weeks[index], prev = index ? weeks[index - 1].ai.leading : null;
+    chartBox.replaceChildren(lineChart(seg.weekly, index));
+    strip.querySelectorAll("button").forEach((b, i) => b.className = "px-2.5 py-1 rounded-md text-xs font-mono shrink-0 transition " + (i === index ? "bg-indigo text-white" : weeks[i].ai.written.length || weeks[i].ai.dropped.length ? "bg-elevated text-ink" : "text-soft hover:text-ink"));
+    const rate = t => t.sent ? `${num(t.sent)} sent · ${pct(t.clicks / t.sent)} clicked · ${num(t.goal_actions)} went on to ${seg.goal}` : "nothing sent this week";
+    const changed = prev && (prev.subject !== w.ai.leading.subject || prev.body !== w.ai.leading.body);
+    const offers = Object.entries(w.ai.offers || {});
+    body.replaceChildren(
+      emailCard("Your email", COLOUR.hand_written, yourEmail, null, rate(w.hand), [tag("never changes", "border border-hair text-soft")]),
+      emailCard(`AI loop · week ${w.week}`, COLOUR.ai_loop, w.ai.leading, changed ? prev : yourEmail, [rate(w.ai), offers.length ? " · offers: " + offers.map(([k, v]) => `${k} ${v}`).join(", ") : ""],
+        [changed ? tag("changed this week", "bg-win/15 text-win") : tag(index ? "same as last week" : "starting point", "border border-hair text-soft"), tag(changed ? "vs last week" : "vs your email", "text-faint")]));
+    const list = (title, items, cls) => h("div", {}, h("div", { class: "text-sm font-medium mb-2" }, title),
+      items.length ? h("ul", { class: "space-y-2" }, items.map(c => h("li", { class: "text-sm rounded-lg border border-hair px-3 py-2 " + cls },
+        h("span", { class: "text-faint font-mono text-xs mr-2" }, c.part), withChips(c.text), c.cta ? h("strong", { class: "text-soft" }, ` [${c.cta}]`) : "",
+        c.sends ? h("span", { class: "block text-xs font-mono text-faint mt-1" }, `${num(c.sends)} sends · ${pct(c.clicks / c.sends)} clicked`) : h("span", { class: "block text-xs font-mono text-faint mt-1" }, "by " + c.by)))) : h("p", { class: "text-sm text-faint" }, "Nothing this week."));
+    changes.replaceChildren(seg.segment === "idle"
+      ? h("div", { class: "grid gap-4 md:grid-cols-2" }, list("Written this week", w.ai.written, "border-win/30"), list("Dropped this week", w.ai.dropped, "opacity-80 line-through decoration-faint"))
+      : h("p", { class: "text-sm text-soft" }, `${STAGES[seg.segment].label} keeps your words; the AI loop changes only the send time` + (seg.segment === "trialist" ? " and the offer." : ".")));
+  };
+  weeks.forEach((w, i) => { const b = h("button", { type: "button", role: "tab", "aria-label": "Week " + w.week }, "W" + w.week); b.onclick = () => { index = i; stop(); render(); }; strip.append(b); });
+  const stop = () => { if (playing) { clearInterval(playing); playing = null; play.textContent = "▶ Play"; } };
+  play.onclick = () => {
+    if (playing) return stop();
+    if (index === weeks.length - 1) index = 0;
+    play.textContent = "❚❚ Pause";
+    playing = setInterval(() => { if (index >= weeks.length - 1) return stop(); index++; render(); }, reduced ? 2000 : 1200);
+    timers.push(playing);
+  };
+  strip.addEventListener("keydown", e => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { index = Math.max(0, Math.min(weeks.length - 1, index + (e.key === "ArrowRight" ? 1 : -1))); render(); } });
+  render();
+  return h("div", {},
+    h("div", { class: "flex items-center gap-3" }, play, strip),
+    h("div", { class: "mt-4" }, chartBox,
+      h("div", { class: "flex gap-4 text-xs text-soft mt-1" }, Object.keys(NAME).map(a => h("span", { class: "flex items-center gap-1.5" }, h("span", { class: "w-2.5 h-0.5 rounded", style: `background:${COLOUR[a]}` }), NAME[a]))),
+      h("p", { class: "text-xs text-faint mt-1" }, "True lift so far, in points against no email, averaged over every replay. The emails and counts below are the first replay, week by week.")),
+    body, changes);
+}
+
+function versionsTable(seg, run) {
+  const v = seg.versions;
+  const head = ["Version", "By", "Weeks", "Sends", "Clicked", `Went on to ${seg.goal}`, "Clicks vs yours", "Now"];
+  const rows = [
+    h("tr", { class: "bg-amber/5" }, h("td", { class: "p-3" }, h("div", { class: "font-medium" }, "Your email"), h("div", { class: "text-xs text-soft" }, withChips(run.first_drafts.find(d => d.segment === seg.segment).subject))),
+      h("td", { class: "p-3 text-soft" }, "you"), h("td", { class: "p-3 font-mono text-soft" }, "all"), h("td", { class: "p-3 font-mono text-right" }, num(v.yours.sends)), h("td", { class: "p-3 font-mono text-right" }, pct(v.yours.click_rate)), h("td", { class: "p-3 font-mono text-right" }, pct(v.yours.goal_rate)),
+      h("td", { class: "p-3 text-right text-faint" }, "reference"), h("td", { class: "p-3" }, tag("baseline", "border border-amber/40 text-amber"))),
+    ...v.ai.map(x => h("tr", { class: "border-t border-hair" + (x.status === "dropped" ? " opacity-70" : "") },
+      h("td", { class: "p-3 max-w-md" }, h("div", { class: "text-faint font-mono text-[11px]" }, x.part), h("div", {}, withChips(x.text), x.cta ? h("span", { class: "text-soft" }, ` [${x.cta}]`) : "")),
+      h("td", { class: "p-3 text-soft whitespace-nowrap" }, x.by), h("td", { class: "p-3 font-mono text-soft whitespace-nowrap" }, `W${x.written_week}` + (x.dropped_week ? `–W${x.dropped_week}` : "–")),
+      h("td", { class: "p-3 font-mono text-right" }, num(x.sends)), h("td", { class: "p-3 font-mono text-right" }, pct(x.click_rate)), h("td", { class: "p-3 font-mono text-right" }, pct(x.goal_rate)),
+      h("td", { class: "p-3 text-right" }, delta(x.click_rate_vs_yours)),
+      h("td", { class: "p-3" }, tag(x.status, x.status === "leading" ? "bg-win/15 text-win" : x.status === "dropped" ? "border border-hair text-faint" : "border border-indigo/40 text-indigo")))),
+    ...v.offers.map(o => h("tr", { class: "border-t border-hair" },
+      h("td", { class: "p-3" }, h("div", { class: "text-faint font-mono text-[11px]" }, "offer"), o.label), h("td", { class: "p-3 text-soft" }, "AI loop"), h("td", { class: "p-3" }),
+      h("td", { class: "p-3 font-mono text-right" }, num(o.sends)), h("td", { class: "p-3 font-mono text-right" }, pct(o.click_rate)), h("td", { class: "p-3 font-mono text-right" }, pct(o.goal_rate)),
+      h("td", { class: "p-3 text-right" }, delta(o.click_rate_vs_yours)), h("td", { class: "p-3" }))),
+  ];
+  return h("div", { class: "overflow-x-auto" }, h("table", { class: "w-full text-sm min-w-[860px]" },
+    h("thead", {}, h("tr", { class: "text-left text-faint text-[11px] uppercase tracking-wider font-mono" }, head.map((t, i) => h("th", { class: "p-3 font-medium" + (i >= 3 && i <= 6 ? " text-right" : "") }, t)))),
+    h("tbody", {}, rows)));
 }
 
 async function showRun(name) {
-  current = name;
-  document.querySelectorAll(".runs a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + name));
-  const detail = document.getElementById("detail");
-  detail.replaceChildren(el("div", { class: "card empty" }, "Loading…"));
-  let data;
-  try { data = await api("/api/runs/" + encodeURIComponent(name)); } catch (e) { detail.replaceChildren(el("div", { class: "card empty" }, e.message)); return; }
-  const summary = el("div", { class: "card summary" },
-    el("h2", {}, `Run of ${day(data.created)} · seed ${data.seed} · ${data.replays} replays`),
-    data.summary.map(line => {
-      const p = el("p");
-      line.split("**").forEach((part, i) => p.append(i % 2 ? el("strong", {}, part) : part));
-      return p;
-    }),
-    el("p", { class: "note" }, el("a", { href: `/api/runs/${name}/report`, target: "_blank", rel: "noopener" }, "Full report (Markdown)"), ` · ${data.placeholders} placeholder settings`));
-  const tabs = el("div", { class: "tabs" }, data.starts.map((s, i) => { const b = el("button", {}, `From ${s.merchants.toLocaleString()} merchants`); b.onclick = () => renderStart(data, i); return b; }));
-  detail.replaceChildren(summary, tabs, el("div", { id: "start-body" }));
-  renderStart(data, 0);
+  setNav("run", "Results");
+  view.replaceChildren(h("div", { class: "text-soft" }, "Loading results…"));
+  let run; try { run = await api("/api/runs/" + encodeURIComponent(name)); } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; }
+  let startIndex = 0, stageIndex = 0;
+  const body = h("div");
+  const render = () => {
+    clearTimers();
+    const start = run.starts[startIndex], seg = start.segments[stageIndex];
+    const yourEmail = run.first_drafts.find(d => d.segment === seg.segment);
+    const verdicts = h("div", { class: "grid gap-4 md:grid-cols-3" }, start.segments.map((s, i) => {
+      const ai = s.approaches.find(a => a.approach === "ai_loop"), hand = s.approaches.find(a => a.approach === "hand_written");
+      const big = h("span", { class: "text-4xl font-semibold tracking-tight " + (s.ai_did_better ? "text-win" : "text-ink") });
+      countUp(big, ai.average, v => pts(v));
+      return card("p-5", { style: `animation-delay:${i * 80}ms` },
+        h("div", { class: "flex items-center justify-between" }, h("div", { class: "flex items-center gap-2 font-mono text-sm text-soft" }, h("span", { class: `w-2 h-2 rounded-full ${STAGES[s.segment].dot}` }), s.label), tag(s.ai_did_better ? "AI ahead" : "no gain", s.ai_did_better ? "bg-win/15 text-win" : "border border-hair text-soft")),
+        h("div", { class: "mt-3 flex items-baseline gap-2" }, big, h("span", { class: "text-soft" }, "pts vs your " + pts(hand.average))),
+        h("div", { class: "text-xs text-soft mt-2" }, `AI loop ahead in ${num(s.ai_ahead)} of ${num(run.replays)} replays` + (s.ties ? ` (${num(s.ties)} tied)` : "") + ` · middle 90%: ${pts(ai.low)} to ${pts(ai.high)}`),
+        s.segment === "trialist" ? h("div", { class: "text-xs text-soft mt-1" }, `Revenue: ${money(start.revenue.ai_loop)} vs your ${money(start.revenue.hand_written)} per replay`) : null);
+    }));
+    const j = journey(start);
+    const stageTabs = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-sm" }, start.segments.map((s, i) => {
+      const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md " + (i === stageIndex ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, s.label);
+      b.onclick = () => { stageIndex = i; render(); };
+      return b;
+    }));
+    const last = seg.weeks[seg.weeks.length - 1].ai.leading;
+    const overall = seg.versions.ai_overall;
+    body.replaceChildren(
+      verdicts,
+      card("mt-6 p-5 md:p-6",
+        h("div", { class: "flex flex-wrap items-end justify-between gap-3" }, h("div", {}, label("Journey"), h("h2", { class: "text-xl font-semibold mt-1" }, "How many merchants took each step")),
+          h("div", { class: "flex gap-4 text-xs text-soft" }, ["ai_loop", "hand_written", "no_email"].map(a => h("span", { class: "flex items-center gap-1.5" }, h("span", { class: "w-2.5 h-2.5 rounded-full", style: `background:${COLOUR[a]}` }), NAME[a])))),
+        h("div", { class: "mt-4" }, j.svg),
+        h("p", { class: "text-xs text-faint mt-2" }, "First replay, holdout aside. Existing merchants join at their own stage.")),
+      card("mt-6 p-5 md:p-6",
+        h("div", { class: "flex flex-wrap items-end justify-between gap-3" }, h("div", {}, label("What made the difference"), h("h2", { class: "text-xl font-semibold mt-1" }, `${seg.label}: your email against the AI loop's`)), stageTabs),
+        h("div", { class: "grid gap-4 md:grid-cols-2 mt-5" },
+          emailCard("Your email", COLOUR.hand_written, yourEmail, null, `${num(seg.versions.yours.sends)} sent · ${pct(seg.versions.yours.click_rate)} clicked · ${pct(seg.versions.yours.goal_rate)} went on to ${seg.goal}`, [tag("sent " + (yourEmail.send_after_days < 1 ? "1 hour" : yourEmail.send_after_days + " days") + " in", "border border-hair text-soft")]),
+          emailCard("AI loop, where it ended", COLOUR.ai_loop, last, yourEmail, h("span", {}, `${num(overall.sends)} sent · ${pct(overall.click_rate)} clicked · `, delta(overall.click_rate_vs_yours), " clicks vs yours"), [tag("vs your email", "text-faint")]))),
+      card("mt-6 p-5 md:p-6", h("div", {}, label("Week by week"), h("h2", { class: "text-xl font-semibold mt-1 mb-4" }, `${seg.label}: what the AI loop wrote, sent and dropped each week`)), weekPlayer(seg, yourEmail)),
+      card("mt-6 p-5 md:p-6",
+        h("div", { class: "flex flex-wrap items-end justify-between gap-3 mb-4" }, h("div", {}, label("Every version"), h("h2", { class: "text-xl font-semibold mt-1" }, `${seg.label}: every version and how it did against yours`)),
+          h("a", { href: `/api/runs/${encodeURIComponent(name)}/versions.csv`, download: `${name}-versions.csv`, class: "text-sm px-3 py-1.5 rounded-md border border-hair hover:border-edge" }, "Download every version (CSV)")),
+        versionsTable(seg, run),
+        h("p", { class: "text-xs text-faint mt-3 max-w-4xl" }, "First replay. \"Clicks vs yours\" is a version's click rate minus your email's, in points: the fair test of the words. \"Went on to\" also counts merchants who would have acted anyway, and depends on when the email went out, so compare approaches by true lift above, not by this column. Each version's appeal is a placeholder until the AI judge reads the words (planned)."))
+    );
+  };
+  const startTabs = run.starts.length > 1 ? h("div", { class: "flex rounded-lg border border-hair p-0.5 text-sm" }, run.starts.map((s, i) => {
+    const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md text-soft" }, `${num(s.merchants)} merchants`);
+    b.onclick = () => { startIndex = i; stageIndex = 0; startTabs.querySelectorAll("button").forEach((x, k) => x.className = "px-3 py-1.5 rounded-md " + (k === i ? "bg-elevated text-ink" : "text-soft")); render(); };
+    if (i === 0) b.className = "px-3 py-1.5 rounded-md bg-elevated text-ink";
+    return b;
+  })) : null;
+  view.replaceChildren(
+    h("div", { class: "fade-up flex flex-col md:flex-row md:items-end justify-between gap-4" },
+      h("div", {}, h("div", { class: "text-xs font-mono text-faint" }, `${day(run.created)} · seed ${run.seed} · ${num(run.replays)} replays`),
+        h("h1", { class: "text-3xl md:text-4xl font-semibold tracking-tight mt-1" }, run.summary[1] ? run.summary[1].replace(/\*\*/g, "") : "Results")),
+      h("div", { class: "flex gap-2 items-center" }, startTabs, h("a", { href: `/api/runs/${encodeURIComponent(name)}/report`, target: "_blank", rel: "noopener", class: "text-sm px-3 py-1.5 rounded-md border border-hair hover:border-edge" }, "Full report"))),
+    h("ul", { class: "mt-4 mb-6 space-y-1 text-sm text-soft max-w-4xl fade-up" }, run.summary.slice(2).filter(s => s.startsWith("In ")).slice(0, 3).map(s => h("li", {}, s))),
+    body);
+  render();
 }
 
-document.getElementById("code").value = remembered();
-document.getElementById("run-quick").onclick = () => startRun(20);
-document.getElementById("run-full").onclick = () => startRun(200);
-window.addEventListener("hashchange", () => location.hash && showRun(location.hash.slice(1)));
-loadRuns().then(data => {
-  const first = location.hash.slice(1) || (data && data.runs.length ? data.runs[0].run : "");
-  if (first) showRun(first);
-});
+// ---------- routing ----------
+function route() {
+  clearTimers();
+  const [, page, arg] = (location.hash || "#/compose").split("/");
+  if (page === "run" && arg) showRun(arg);
+  else if (page === "running" && arg) showRunning(arg);
+  else if (page === "runs") showRuns();
+  else showCompose();
+  window.scrollTo({ top: 0 });
+}
+addEventListener("hashchange", route);
+route();
 </script>
 </body>
 </html>

@@ -106,11 +106,11 @@ def test_the_app_serves_a_runs_data_and_its_report_and_nothing_else(saved: FakeB
         assert call(saved, "GET", path)[0] == 404
 
 
-def test_the_app_page_has_a_run_button() -> None:
+def test_the_app_page_lets_you_write_your_emails_and_simulate() -> None:
     status, page, _ = call(FakeBucket(), "GET", "/")
 
     assert status == 200
-    assert "<title>" in page and 'id="run-quick"' in page and 'id="run-full"' in page
+    assert "<title>Win-back Lab</title>" in page and "Simulate 13 weeks" in page and "/api/drafts" in page
 
 
 def test_a_run_starts_only_with_the_right_access_code() -> None:
