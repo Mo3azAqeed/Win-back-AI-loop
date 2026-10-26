@@ -23,10 +23,11 @@ In codebase-design terms: the seam is already in the right place. The command an
 ![Milestone 1 on AWS](diagrams/aws-poc.drawio.svg)
 
 1. You merge to `main`. GitHub Actions runs the tests and mypy, signs in to AWS through an IAM role (OIDC, so no AWS keys are stored in GitHub), and runs `sam deploy`.
-2. CloudFormation creates or updates everything inside the AWS box from [`template.yaml`](../template.yaml). The one exception is the OpenRouter key: CloudFormation cannot create a SecureString parameter, so you add it once by hand (see the setup guide).
+2. CloudFormation creates or updates everything inside the AWS box from [`template.yaml`](../template.yaml). The two exceptions are the OpenRouter key and the web app's access code: CloudFormation cannot create SecureString parameters, so you add them once by hand (see the setup guide).
 3. EventBridge Scheduler starts the Lambda every week. You can also start it from the console at any time.
-4. The Lambda runs the simulation and saves `runs/<date>-seed<n>.md` and `latest.md` to S3.
+4. The Lambda runs the simulation, with the stand-in writer or, when the run asks for it, the AI writer and judge on OpenRouter, and saves the report and its data to S3 (`runs/<run>.md` and `.json`, `index/`, `latest.md`).
 5. SNS emails you a "report ready" message with the link. It also emails you if a run fails or AWS spending passes $5 in a month.
+6. The web app is a second Lambda behind a public link (a function URL). Anyone with the link can read the runs; starting one needs the access code, and the web app then starts the simulation Lambda with your emails.
 
 ## Milestone 2: real emails to real merchants
 
@@ -36,8 +37,8 @@ The engine stays the same. What changes is the world around it:
 
 - Our Shopify app sends lifecycle events (signup, draft saved, publish, paid) to API Gateway.
 - The lifecycle Lambda keeps each merchant's segment, puts 8% in the holdout for life, picks a timing, and schedules the send. Holdout merchants get a ghost send, with nothing actually sent.
-- At send time, the send Lambda picks the subject, body and offer, and Amazon SES sends the email.
-- SES reports deliveries, clicks, bounces and complaints. The outcome Lambda scores each send and drops clicks that SES flags as likely bots (`isBotEvent`).
+- At send time, the send Lambda sends the champion or, for its share, the challenger, with the timing and offer the loop picked, and Amazon SES sends the email.
+- SES reports deliveries, clicks, bounces and complaints. The outcome Lambda counts each send for its version, drops clicks that SES flags as likely bots (`isBotEvent`), and writes each week's verdict to the playbook. There is no judge in production: real clicks decide.
 - Once a week, the writer Lambda asks OpenRouter for new variants, checks them, and updates the lessons.
 
 DynamoDB is the proposed store because it costs almost nothing at our volume and needs no server. That choice gets its own decision record when milestone 2 starts.
