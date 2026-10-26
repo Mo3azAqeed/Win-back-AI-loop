@@ -4,6 +4,9 @@
 # placeholder = true means the number is made up for the simulation and
 # should be replaced with real data when we have it.
 
+[replays]
+count = { value = 200, placeholder = false, note = "The same weeks are replayed this many times with different luck, so one lucky run can't fool us." }
+
 [merchants]
 start = { value = 1000, placeholder = false, note = "Merchants today (founder's figure)." }
 start_alternative = { value = 1500, placeholder = false, note = "Second starting size the simulation also runs (founder's figure)." }

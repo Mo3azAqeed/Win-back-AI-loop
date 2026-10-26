@@ -96,6 +96,7 @@ class Settings:
     prewritten_bodies: tuple[Variant, ...]
     loop: LoopSettings
     offers: OfferSettings
+    replays: int
     entries: tuple[Setting, ...]
 
 
@@ -147,6 +148,7 @@ def load_settings(path: Path) -> Settings:
             pay_lift={Offer.NONE: 0.0, Offer.EXTENSION: value("offers.extension_pay_lift"), Offer.DISCOUNT: value("offers.discount_pay_lift")},
             lines={Offer.NONE: "", Offer.EXTENSION: offer_lines["extension"], Offer.DISCOUNT: offer_lines["discount"]},
         ),
+        replays=int(value("replays.count")),
         entries=tuple(entries.values()),
     )
 

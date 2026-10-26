@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from winback import report
 from winback.lifecycle import Approach, EmailResult, Journey, OfferSummary, SegmentOutcome, StayResult, offer_summary, run_calendar, segment_outcomes
 from winback.loop import LoopReport
+from winback.replays import Replays, replay_seed, replay_stats
 from winback.settings import Settings
 from winback.segments import Segment
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
@@ -32,14 +33,26 @@ class StartResult:
 
 @dataclass(frozen=True)
 class RunResult:
-    by_start: dict[int, StartResult]
+    by_start: dict[int, StartResult]  # the first replay in full: the seed itself
+    replays: dict[int, Replays]  # every replay, summed up
     report: str
 
 
-def run_simulation(settings: Settings, seed: int) -> RunResult:
-    """Run the simulation once for each starting size in the settings and write one report."""
-    by_start = {start: _run_from(settings, start, seed) for start in settings.start_sizes}
-    return RunResult(by_start=by_start, report=report.render(settings, seed, by_start))
+def run_simulation(settings: Settings, seed: int, replays: int = 1) -> RunResult:
+    """Replay the weeks this many times with different luck, from each starting size in the settings, and
+    write one report: what happened across the replays, then the first replay in full."""
+    seeds = [replay_seed(seed, i) for i in range(replays)]
+    by_start: dict[int, StartResult] = {}
+    summed: dict[int, Replays] = {}
+    for start in settings.start_sizes:
+        stats = []
+        for i, replay in enumerate(seeds):
+            result = _run_from(settings, start, replay)
+            if i == 0:
+                by_start[start] = result
+            stats.append(replay_stats(result, settings.weeks))  # only the summary is kept, so memory stays flat
+        summed[start] = Replays(seeds, stats)
+    return RunResult(by_start=by_start, replays=summed, report=report.render(settings, seed, by_start, summed))
 
 
 def _run_from(settings: Settings, start: int, seed: int) -> StartResult:

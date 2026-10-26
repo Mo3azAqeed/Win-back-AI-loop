@@ -32,16 +32,18 @@ def handler(event: Mapping[str, object], context: object) -> dict[str, str]:
 def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Path, put: Callable[[str, str], None]) -> str:
     """Run the simulation the event asks for, put its report under its own key and as the latest, and return its key.
 
-    The event may hold a seed and one starting size. Without a seed the date is used, so weekly runs differ."""
+    The event may hold a seed, one starting size and a number of replays. Without a seed the date is used, so
+    weekly runs differ; without a number of replays the settings decide (200)."""
     seed = _whole_number(event, "seed")
     if seed is None:
         seed = int(today.strftime("%Y%m%d"))
     start = _whole_number(event, "start")
+    replays = _whole_number(event, "replays")
     settings = load_settings(settings_path)
     if start is not None:
         settings = dataclasses.replace(settings, start_sizes=(start,))
     key = f"runs/{today.isoformat()}-seed{seed}" + (f"-start{start}" if start is not None else "") + ".md"
-    report = run_simulation(settings, seed).report
+    report = run_simulation(settings, seed, replays if replays is not None else settings.replays).report
     put(key, report)
     put(LATEST, report)
     return key

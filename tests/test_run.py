@@ -105,7 +105,7 @@ def test_one_command_writes_the_report(tmp_path: Path) -> None:
     from winback.cli import main
 
     out = tmp_path / "report.md"
-    main(["--settings", str(SETTINGS), "--seed", "3", "--out", str(out)])
+    main(["--settings", str(SETTINGS), "--seed", "3", "--replays", "1", "--out", str(out)])
 
     report = out.read_text()
     assert "## Starting from 1,000 merchants" in report and "## Starting from 1,500 merchants" in report
@@ -233,7 +233,7 @@ def test_the_command_can_run_a_single_starting_size(tmp_path: Path) -> None:
     from winback.cli import main
 
     out = tmp_path / "report.md"
-    main(["--settings", str(SETTINGS), "--start", "1500", "--out", str(out)])
+    main(["--settings", str(SETTINGS), "--start", "1500", "--replays", "1", "--out", str(out)])
 
     report = out.read_text()
     assert "## Starting from 1,500 merchants" in report

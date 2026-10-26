@@ -26,9 +26,9 @@ class FakeBucket:
 def test_a_run_puts_the_same_report_the_simulation_returns() -> None:
     bucket = FakeBucket()
 
-    key = run_and_save({"seed": 7}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
+    key = run_and_save({"seed": 7, "replays": 2}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
 
-    report = run_simulation(load_settings(SETTINGS), seed=7).report
+    report = run_simulation(load_settings(SETTINGS), seed=7, replays=2).report
     assert key == "runs/2026-10-22-seed7.md"
     assert bucket.objects == {key: report, "latest.md": report}
 
@@ -36,7 +36,7 @@ def test_a_run_puts_the_same_report_the_simulation_returns() -> None:
 def test_a_scheduled_run_without_a_seed_uses_the_date_so_each_week_differs() -> None:
     bucket = FakeBucket()
 
-    key = run_and_save({}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
+    key = run_and_save({"replays": 1}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
 
     assert key == "runs/2026-10-22-seed20261022.md"
     assert bucket.objects[key] == run_simulation(load_settings(SETTINGS), seed=20261022).report
@@ -45,14 +45,27 @@ def test_a_scheduled_run_without_a_seed_uses_the_date_so_each_week_differs() -> 
 def test_a_run_can_ask_for_one_starting_size_only() -> None:
     bucket = FakeBucket()
 
-    key = run_and_save({"seed": 7, "start": 1000}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
+    key = run_and_save({"seed": 7, "start": 1000, "replays": 1}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
 
     only_1000 = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
     assert key == "runs/2026-10-22-seed7-start1000.md"
     assert bucket.objects[key] == run_simulation(only_1000, seed=7).report
 
 
-@pytest.mark.parametrize("event", [{"seed": "7"}, {"seed": 7.5}, {"seed": True}, {"start": "1000"}])
+def test_without_a_number_of_replays_a_run_replays_as_many_times_as_the_settings_say(tmp_path: Path) -> None:
+    for name in ("settings.toml", "first_drafts.toml", "prewritten.toml"):
+        (tmp_path / name).write_text((ROOT / name).read_text())
+    settings_file = tmp_path / "settings.toml"
+    settings_file.write_text(settings_file.read_text().replace("count = { value = 200,", "count = { value = 2,"))
+    bucket = FakeBucket()
+
+    key = run_and_save({"seed": 7, "start": 1000}, today=TODAY, settings_path=settings_file, put=bucket.put)
+
+    assert load_settings(settings_file).replays == 2
+    assert "## Across 2 replays" in bucket.objects[key]
+
+
+@pytest.mark.parametrize("event", [{"seed": "7"}, {"seed": 7.5}, {"seed": True}, {"start": "1000"}, {"replays": "2"}])
 def test_a_run_refuses_a_seed_or_start_that_is_not_a_whole_number(event: dict[str, object]) -> None:
     bucket = FakeBucket()
 
@@ -77,7 +90,7 @@ def test_the_lambda_package_finds_its_bundled_settings(tmp_path: Path) -> None:
         "from datetime import date\n"
         "from winback.aws import BUNDLED_SETTINGS, run_and_save\n"
         "put = lambda key, text: print(key) if key != 'latest.md' else None\n"
-        "run_and_save({'seed': 7}, today=date(2026, 10, 22), settings_path=BUNDLED_SETTINGS, put=put)\n"
+        "run_and_save({'seed': 7, 'replays': 1}, today=date(2026, 10, 22), settings_path=BUNDLED_SETTINGS, put=put)\n"
     )
 
     ran = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env={"PYTHONPATH": str(package)}, capture_output=True, text=True)
@@ -105,7 +118,7 @@ def test_the_lambda_handler_saves_to_the_bucket_and_emails_the_alerts_topic(monk
     monkeypatch.setenv("ALERTS_TOPIC_ARN", "arn:aws:sns:eu-west-1:123456789012:winback-alerts")
     monkeypatch.setenv("AWS_REGION", "eu-west-1")
 
-    result = aws.handler({"seed": 7}, None)
+    result = aws.handler({"seed": 7, "replays": 1}, None)
 
     report = run_simulation(load_settings(SETTINGS), seed=7).report
     key = result["report"].removeprefix("s3://winback-reports/")
