@@ -5,6 +5,7 @@ import pytest
 
 from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
 from winback.lifecycle import EmailFate, Journey
+from winback.offers import Offer
 
 SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 
@@ -325,12 +326,14 @@ def test_the_report_shows_each_segments_results_and_every_first_draft() -> None:
 
 
 def test_trialists_only_pay_inside_their_seven_day_trial() -> None:
-    # Slow payers and slow responders: many would pay after day 7 if the trial allowed it.
+    # Slow payers and slow responders: many would pay after day 7 if the trial allowed it. An AI loop
+    # email offering more trial days is the exception (tests/test_offers.py).
     settings = with_segments(trialist={**CERTAIN_EMAIL, "organic_share": 0.5, "organic_mean_days": 20, "response_mean_days": 20})
     for approach in Approach:
         trialist_stays = [
             stay for j in run_simulation(settings, seed=1).by_start[1000].journeys[approach]
             for stay in j.stays if stay.segment is Segment.TRIALIST and stay.left is not None
+            and not (stay.offer is Offer.EXTENSION and stay.email is EmailFate.SENT)
         ]
         assert trialist_stays
         assert all(stay.left - stay.entered <= 7 for stay in trialist_stays if stay.left is not None)
@@ -466,9 +469,10 @@ def test_a_draft_started_after_the_miss_window_is_a_miss_even_inside_the_horizon
 
 
 def test_every_trialist_who_pays_brings_40_dollars_of_first_month_revenue(run: RunResult) -> None:
+    # The AI loop's discount offer is the exception (tests/test_offers.py).
     trialists = run.by_start[1000].outcomes[Segment.TRIALIST]
 
-    for approach in Approach:
+    for approach in (Approach.NO_EMAIL, Approach.HAND_WRITTEN):
         assert trialists[approach].reached > 0
         assert trialists[approach].first_month_revenue == 40 * trialists[approach].reached
     assert run.by_start[1000].outcomes[Segment.IDLE][Approach.HAND_WRITTEN].first_month_revenue == 0

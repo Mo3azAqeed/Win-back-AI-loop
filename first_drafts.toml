@@ -15,3 +15,8 @@ cta = "Publish my store"
 subject = "Keep {store_name} live after your trial"
 body = "Hi {first_name}, {store_name} is live. Your free trial ends on {trial_end_date}. Keep your store and the section builder for $40/month."
 cta = "Keep my store live"
+
+# Added to the Trialist first draft only when the AI loop picks that offer (#8).
+[trialist.offer_lines]
+extension = "Need more time? We've added 7 more days to your trial."
+discount = "Your first month is $20 instead of $40."

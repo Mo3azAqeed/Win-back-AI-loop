@@ -2,8 +2,9 @@
 
 from typing import TYPE_CHECKING, NamedTuple
 
-from winback.lifecycle import Approach, SegmentOutcome
+from winback.lifecycle import Approach, OfferSummary, SegmentOutcome
 from winback.loop import LoopReport, VariantRecord
+from winback.offers import Offer
 from winback.settings import Settings
 from winback.segments import Segment
 
@@ -73,7 +74,9 @@ def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]") ->
         ]
         for segment in SEGMENT_TEXT:
             lines += _segment_section(settings, segment, result.outcomes[segment], result.pushed[segment], result.baselines[segment])
-        lines += _loop_section(result.loop)
+            if segment is Segment.TRIALIST:
+                lines += _offers_section(settings, result.offers)
+        lines += _loop_section(settings, result.loop)
     lines += [
         "## Placeholders",
         "",
@@ -149,8 +152,34 @@ def _segment_section(
     return lines
 
 
-def _loop_section(loop: LoopReport) -> list[str]:
-    """What the AI loop has tried, what leads now, and which timing each segment favours."""
+def _offer_labels(settings: Settings) -> dict[Offer, str]:
+    offers = settings.offers
+    return {
+        Offer.NONE: "No offer",
+        Offer.EXTENSION: f"{offers.extra_trial_days:g} more trial days",
+        Offer.DISCOUNT: f"First month {1 - offers.discount_price_share:.0%} off",
+    }
+
+
+def _offers_section(settings: Settings, offers: OfferSummary) -> list[str]:
+    """The offers the AI loop's Trialist emails carried, and what the discount cost."""
+    labels, price = _offer_labels(settings), settings.monthly_price
+    return [
+        "Each AI loop Trialist email carries one offer, added as a line to your Trialist first draft. "
+        "The hand-written email never carries one.",
+        "",
+        "| Offer | Line added to the email | Emails sent |",
+        "|---|---|---|",
+        *(f"| {labels[o]} | {settings.offers.lines[o] or '–'} | {offers.sent[o]:,} |" for o in Offer),
+        "",
+        f"{offers.discounted_payers:,} Trialists paid with the discount; {offers.would_have_paid_anyway:,} of them "
+        f"would have paid the full ${price:,.0f} with no email.",
+        "",
+    ]
+
+
+def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
+    """What the AI loop has tried, what leads now, and which timing and offer each segment favours."""
 
     def variants(heading: str, records: list[VariantRecord]) -> list[str]:
         out = [f"| {heading} | Hidden quality | Sends | Human clicks | Now |", "|---|---|---|---|---|"]
@@ -194,6 +223,21 @@ def _loop_section(loop: LoopReport) -> list[str]:
     for segment, timings in loop.timings.items():
         for t in timings:
             lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'ahead so far' if t.leading else ''} |")
+    labels = _offer_labels(settings)
+    lines += [
+        "",
+        "Trialist offers learn the same way, from the first-month revenue of every emailed Trialist assigned "
+        "them, so a discounted payment counts as half.",
+        "",
+        "| Offer | Trialists judged | First-month revenue per Trialist | Now |",
+        "|---|---|---|---|",
+        *(
+            f"| {labels[o.offer]} | {o.assigned:,} | "
+            + (f"${o.revenue_share * settings.monthly_price / o.assigned:,.2f}" if o.assigned else "–")
+            + f" | {'ahead so far' if o.leading else ''} |"
+            for o in loop.offers
+        ),
+    ]
     return lines + [""]
 
 

@@ -94,8 +94,11 @@ _Avoid_: Transfer, spillover
 One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; the loop decides which one each merchant gets.
 
 **Offer**:
-An incentive in a Trialist's email: none, a 7-day trial extension, or the first month at 50% off. Only Trialists receive offers.
+An incentive in a Trialist's email: none, a 7-day trial extension, or the first month at 50% off. Only the AI loop's Trialist emails carry one; it adds one line to the Trialist first draft. An extension lets the merchant pay until day 14, including a merchant who would have paid on its own just after day 7. A discount email that arrives before the payment halves it, even for a merchant who would have paid anyway.
 _Avoid_: Promo, deal
+
+**Would have paid anyway**:
+A merchant who paid with the discount but, with no email at all, would have paid the full price within its Trialist horizon. Known only in a simulation, by looking at the same merchant in the no-email run; it is what a discount costs.
 
 **Lesson**:
 A written finding about what works for a segment, stored with the evidence behind it. Lessons from one segment can seed the others.

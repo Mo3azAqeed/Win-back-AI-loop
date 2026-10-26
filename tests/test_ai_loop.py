@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
-from winback.lifecycle import EmailFate
+from winback import Approach, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
+from winback.lifecycle import EmailFate, SegmentOutcome
 
 ROOT = Path(__file__).resolve().parent.parent
 SETTINGS = ROOT / "settings.toml"
@@ -178,7 +178,11 @@ def test_changing_the_carry_over_never_changes_idle_results() -> None:
     settings = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
     none, full = (run_simulation(with_carry_over(settings, c), seed=1).by_start[1000] for c in (0.0, 1.0))
 
-    assert none.outcomes[Segment.IDLE] == full.outcomes[Segment.IDLE]
+    # Paying within 30 days of signing up depends on the Trialist email that comes later, so it may change.
+    def idle(start: StartResult) -> dict[Approach, SegmentOutcome]:
+        return {a: dataclasses.replace(o, paid_in_window=0) for a, o in start.outcomes[Segment.IDLE].items()}
+
+    assert idle(none) == idle(full)
     assert (none.loop.subjects, none.loop.bodies, none.loop.timings[Segment.IDLE]) == (full.loop.subjects, full.loop.bodies, full.loop.timings[Segment.IDLE])
     assert none.outcomes[Segment.TRIALIST] != full.outcomes[Segment.TRIALIST]
 

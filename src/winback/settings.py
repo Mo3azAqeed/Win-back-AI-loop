@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from winback.offers import Offer
 from winback.segments import Segment
 
 
@@ -65,6 +66,17 @@ class LoopSettings:
 
 
 @dataclass(frozen=True)
+class OfferSettings:
+    """What each Trialist offer gives, the line it adds to the Trialist first draft, and (hidden truth)
+    how much more likely it makes a Trialist who clicks to pay."""
+
+    extra_trial_days: float
+    discount_price_share: float  # the share of the first month's price a Trialist pays with the discount
+    pay_lift: dict[Offer, float]  # 0.3 means 30% more likely to pay after clicking
+    lines: dict[Offer, str]  # empty for no offer
+
+
+@dataclass(frozen=True)
 class Settings:
     start_sizes: tuple[int, ...]
     already_paying_share: float
@@ -83,6 +95,7 @@ class Settings:
     prewritten_subjects: tuple[Variant, ...]
     prewritten_bodies: tuple[Variant, ...]
     loop: LoopSettings
+    offers: OfferSettings
     entries: tuple[Setting, ...]
 
 
@@ -91,7 +104,9 @@ def load_settings(path: Path) -> Settings:
     with path.open("rb") as f:
         raw = tomllib.load(f)
     with (path.parent / "first_drafts.toml").open("rb") as f:
-        drafts = {segment: Email(d["subject"], d["body"], d["cta"]) for segment, d in tomllib.load(f).items()}
+        raw_drafts = tomllib.load(f)
+    drafts = {segment: Email(d["subject"], d["body"], d["cta"]) for segment, d in raw_drafts.items()}
+    offer_lines = raw_drafts["trialist"]["offer_lines"]
     with (path.parent / "prewritten.toml").open("rb") as f:
         prewritten = tomllib.load(f)
     entries = {s.key: s for s in _entries(raw)}
@@ -125,6 +140,12 @@ def load_settings(path: Path) -> Settings:
             retire_confidence=value("ai_loop.retire_confidence"),
             prior_sends=value("ai_loop.prior_sends"),
             carry_over=value("ai_loop.carry_over"),
+        ),
+        offers=OfferSettings(
+            extra_trial_days=value("offers.extra_trial_days"),
+            discount_price_share=value("offers.discount_price_share"),
+            pay_lift={Offer.NONE: 0.0, Offer.EXTENSION: value("offers.extension_pay_lift"), Offer.DISCOUNT: value("offers.discount_pay_lift")},
+            lines={Offer.NONE: "", Offer.EXTENSION: offer_lines["extension"], Offer.DISCOUNT: offer_lines["discount"]},
         ),
         entries=tuple(entries.values()),
     )

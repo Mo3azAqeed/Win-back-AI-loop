@@ -1,6 +1,6 @@
-"""The AI loop's scorer: Thompson sampling over subjects, bodies and timing, with a stand-in writer.
+"""The AI loop's scorer: Thompson sampling over subjects, bodies, timing and Trialist offers, with a stand-in writer.
 
-Every choice the loop can make (a subject, a body, a timing for one segment) has a Beta posterior
+Every choice the loop can make (a subject, a body, a timing for one segment, an offer) has a Beta posterior
 over how often it is rewarded. To choose, the loop draws once from each posterior and takes the highest
 draw, so choices that look better get more traffic while uncertain ones still get tried.
 """
@@ -10,6 +10,7 @@ import random
 from dataclasses import dataclass, field
 from typing import TypeVar
 
+from winback.offers import Offer
 from winback.segments import Segment
 from winback.settings import SegmentSettings, Settings, Variant
 
@@ -41,12 +42,13 @@ def _logit(p: float) -> float:
 
 @dataclass
 class _Posterior:
-    """A Beta posterior, and the real outcomes it has seen."""
+    """A Beta posterior, and the real outcomes it has seen. A reward is usually 0 or 1; an offer's is the
+    share of the full price a payment brought, so a discounted payment counts as half."""
 
     a: float = 1.0
     b: float = 1.0
     tries: int = 0
-    rewards: int = 0
+    rewards: float = 0.0
 
     @property
     def mean(self) -> float:
@@ -57,9 +59,9 @@ class _Posterior:
         n = self.a + self.b
         return self.a * self.b / (n * n * (n + 1))
 
-    def learn(self, rewarded: bool) -> None:
-        self.a, self.b = self.a + rewarded, self.b + (not rewarded)
-        self.tries, self.rewards = self.tries + 1, self.rewards + rewarded
+    def learn(self, reward: float) -> None:
+        self.a, self.b = self.a + reward, self.b + (1 - reward)
+        self.tries, self.rewards = self.tries + 1, self.rewards + reward
 
 
 @dataclass
@@ -105,6 +107,14 @@ class TimingRecord:
 
 
 @dataclass(frozen=True)
+class OfferRecord:
+    offer: Offer
+    assigned: int  # emailed Trialists judged at the horizon
+    revenue_share: float  # their first-month revenue, in full prices: a discounted payment counts as half
+    leading: bool
+
+
+@dataclass(frozen=True)
 class SegmentCopyRecord:
     """The first draft a Drafter or Trialist email goes out with, and how its sends went."""
 
@@ -125,6 +135,7 @@ class LoopReport:
     segment_copy: dict[Segment, SegmentCopyRecord]
     carry_over: float
     timings: dict[Segment, list[TimingRecord]]
+    offers: list[OfferRecord]
 
 
 class AiLoop:
@@ -139,7 +150,8 @@ class AiLoop:
     - Drafters and Trialists get their own first drafts, plus the carry-over share of the edge the
       Idle leader has over your Idle first draft.
     - Every segment learns timing from the goal action of every merchant assigned that timing,
-      judged when the horizon closes.
+      judged when the horizon closes. Trialist offers learn the same way, from the revenue each
+      Trialist brought, so a discounted payment counts as half.
 
     Each segment draws from its own random stream, so what happens in one segment never changes the
     luck of another's choices."""
@@ -164,9 +176,13 @@ class AiLoop:
             for d in [settings.first_drafts[s.value]]
         }
         self.timings = {s: {t: _Posterior() for t in TIMINGS} for s in Segment}
+        self.offers = {o: _Posterior() for o in Offer}
 
     def choose_timing(self, segment: Segment) -> Timing:
         return self._draw_best(segment, self.timings[segment])
+
+    def choose_offer(self) -> Offer:
+        return self._draw_best(Segment.TRIALIST, self.offers)
 
     def choose_copy(self, segment: Segment) -> Copy:
         """The words for one email: an Idle subject and body drawn from those in play, or the segment's
@@ -190,23 +206,29 @@ class AiLoop:
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
 
+    def learn_offer(self, offer: Offer, revenue_share: float) -> None:
+        """A Trialist assigned this offer reached its horizon having brought this share of the full price."""
+        self.offers[offer].learn(revenue_share)
+
     def report(self) -> LoopReport:
         def records(slot: str) -> list[VariantRecord]:
             leader = self._leader(slot)
             return [
-                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, v.posterior.rewards, v.retired, v is leader)
+                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, int(v.posterior.rewards), v.retired, v is leader)
                 for v in self.variants[slot]
             ]
 
         timings = {}
         for segment, posteriors in self.timings.items():
             best = max(posteriors, key=lambda t: posteriors[t].mean)
-            timings[segment] = [TimingRecord(t.label, p.tries, p.rewards, t is best) for t, p in posteriors.items()]
+            timings[segment] = [TimingRecord(t.label, p.tries, int(p.rewards), t is best) for t, p in posteriors.items()]
+        best_offer = max(self.offers, key=lambda o: self.offers[o].mean)
+        offers = [OfferRecord(o, p.tries, p.rewards, o is best_offer) for o, p in self.offers.items()]
         segment_copy = {
-            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.rewards)
+            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, int(body.posterior.rewards))
             for segment, (subject, body) in self.own_first_drafts.items()
         }
-        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings)
+        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers)
 
     def _add(self, slot: str, variant: Variant, prior: _Posterior) -> None:
         reference = self.read_rate if slot == "subject" else self.click_rate
