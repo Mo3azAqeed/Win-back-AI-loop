@@ -152,16 +152,19 @@ flowchart TD
     T13 --> T14
     T17["#17 Run on AWS<br/>(independent)"]
     T5 --> T19["#19 Same-merchant lift<br/>(found in review)"]
+    T19 --> T22["#22 Own words per segment<br/>(founder decision)"]
+    T11 --> T23["#23 Action report<br/>(founder decision)"]
 ```
 
 The graph is a straight line through #7, then fans out. That was intentional: everything before the AI loop is foundation and has to be right in order; after it, five tickets can be worked in parallel.
 
 ### Tickets that weren't in the original plan
 
-Two tickets came out of reviews, not the spec. That is normal and healthy. The skill is to make them visible tickets, rather than quietly widening the one in progress.
+Two tickets came out of reviews, and two from founder decisions, not the spec. That is normal and healthy. The skill is to make them visible tickets, rather than quietly widening the one in progress.
 
 - **#16 (one shared calendar):** after #4, review showed the engine played out each merchant's whole life one at a time. Fine for one hand-written email, fatal for an AI loop that must only learn from results that already happened. It also cut off the 30-day payment window at a fixed run end. I made it a ticket and put it in front of #5.
 - **#19 (same-merchant lift):** the whole-codebase review found that later segments compared different groups of merchants, which could show the email "hurting" when it helped. It became a ticket instead of a silent fix, because it changes what the headline number means.
+- **#22 (own words per segment)** and **#23 (action report):** both came from a questionnaire of open decisions after #19. #22 stops the simulation assuming an Idle winner works just as well for Drafters and Trialists; I recommended carry-over 0 so any win there is earned, and the founder agreed. #23 adds measured lift against the holdout and a keep/retire/wait line per segment: a scope change, so it waited for the founder's yes.
 
 ---
 
@@ -310,6 +313,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Four decisions answered: carry-over of Idle's edge defaults to 0, so Drafter and Trialist wins must be earned (opened [#22](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/22)); opened the action report as its own ticket [#23](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/23); ship #19 once CI is green; delete the shared doc, so the notes file is the single source. |
 | 2026-10-25 | Second planted-bug audit after #19: 75 of 77 caught, including every new #19 bug; the 2 left can't change any result. |
 | 2026-10-25 | Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
 | 2026-10-25 | First successful deploy to AWS: stack `winback` live in eu-north-1, weekly runs on. |

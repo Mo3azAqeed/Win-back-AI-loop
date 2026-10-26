@@ -33,7 +33,7 @@ All three stay available as settings, so the others can still be run as what-if 
 
 _Why this matters: it decides whether the report's Drafter and Trialist results are something the loop earned or something the simulation assumed._
 
->
+> **0** (answered 2026-10-26). Ticket [#22](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/22).
 
 ### Should I open a ticket for an "action report": measured lift, how sure each finding is, and what to do next?
 
@@ -51,7 +51,7 @@ It would sit next to #11 (200 replays and the full report), as its own ticket so
 
 _Why this matters: it's the difference between a report that says what happened and one that says what to do next._
 
->
+> **Yes, its own ticket** (answered 2026-10-26). Ticket [#23](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/23).
 
 ## Shipping
 
@@ -63,7 +63,7 @@ _Why this matters: it's the difference between a report that says what happened 
 - **Yes, but I'll merge it myself:** open it and leave the merge to me.
 - **Hold:** wait until another ticket is done and ship them together.
 
->
+> **Yes, merge when CI is green** (answered 2026-10-26).
 
 ## Documentation
 
@@ -75,10 +75,10 @@ I started a shared doc, "Win-back AI loop: milestone 1 so far", before you asked
 - **Delete it:** the notes file is the single source.
 - **Leave it for now:** decide later.
 
->
+> **Delete it** (answered 2026-10-26).
 
 ## Anything else?
 
 Anything I didn't ask that I should know, or a decision you'd rather make differently from all the options above?
 
->
+> Nothing else.
