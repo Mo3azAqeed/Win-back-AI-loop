@@ -52,15 +52,15 @@
     </a>
     <nav class="p-2 text-sm space-y-1" id="nav">
       <a data-nav="compose" href="#/compose" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Compose</a>
-      <a data-nav="running" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Simulation run</a>
-      <a data-nav="run" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Results &amp; versions</a>
+      <a data-nav="running" href="#/latest/running" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Simulation run</a>
+      <a data-nav="run" href="#/latest/run" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Decision brief</a>
       <a data-nav="runs" href="#/runs" class="block px-3 py-2 rounded-md text-soft hover:text-ink hover:bg-elevated">Run history</a>
     </nav>
     <div class="px-5 mt-4 text-[11px] tracking-widest text-faint font-mono">STAGES</div>
     <ul class="px-5 py-2 space-y-2 text-sm font-mono text-soft">
-      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber"></span>Idle</li>
-      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-indigo"></span>Drafter</li>
-      <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-win"></span>Trialist</li>
+      <li class="flex items-center gap-2 cursor-pointer hover:text-ink" role="button" tabindex="0" data-stage="idle"><span class="w-1.5 h-1.5 rounded-full bg-amber"></span>STG-01 Idle<span data-delta class="ml-auto"></span></li>
+      <li class="flex items-center gap-2 cursor-pointer hover:text-ink" role="button" tabindex="0" data-stage="drafter"><span class="w-1.5 h-1.5 rounded-full bg-indigo"></span>STG-02 Drafter<span data-delta class="ml-auto"></span></li>
+      <li class="flex items-center gap-2 cursor-pointer hover:text-ink" role="button" tabindex="0" data-stage="trialist"><span class="w-1.5 h-1.5 rounded-full bg-win"></span>STG-03 Trialist<span data-delta class="ml-auto"></span></li>
     </ul>
     <p class="mt-auto p-4 text-[11px] leading-relaxed text-faint">Every number is simulated from placeholder assumptions. No real email is sent.</p>
   </aside>
@@ -69,6 +69,7 @@
       <a href="#/compose" class="md:hidden font-semibold">Win-back Lab</a>
       <span class="text-soft text-sm hidden md:inline">Win-back Lab</span><span class="text-faint hidden md:inline">/</span>
       <span id="crumb" class="text-sm font-medium truncate"></span>
+      <div id="actions" class="ml-auto hidden md:flex items-center gap-2"></div>
       <nav class="ml-auto flex gap-1 md:hidden text-xs">
         <a href="#/compose" class="px-2 py-1 rounded border border-hair">Compose</a>
         <a href="#/runs" class="px-2 py-1 rounded border border-hair">Runs</a>
@@ -156,6 +157,8 @@ function delta(v, unit = " pts") {
   return h("span", { class: "font-mono " + cls }, pts(v) + unit);
 }
 function setNav(name, crumb) {
+  document.getElementById("actions").replaceChildren();
+  if (name !== "run") document.querySelectorAll("[data-delta]").forEach(el => el.textContent = "");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("bg-elevated", a.dataset.nav === name));
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("text-ink", a.dataset.nav === name));
   document.getElementById("crumb").textContent = crumb;
@@ -174,16 +177,17 @@ async function showCompose() {
   const editor = (email, index) => {
     const stage = STAGES[email.segment];
     const preview = h("div");
-    const render = () => preview.replaceChildren(
+    const words = h("span", { class: "text-[11px] font-mono text-faint" });
+    const render = () => (words.textContent = `${(email.body.match(/\S+/g) || []).length} words`, preview.replaceChildren(
       h("div", { class: "font-semibold text-ink truncate" }, withChips(email.subject || " ")),
       h("div", { class: "text-soft text-sm mt-1 leading-relaxed" }, withChips(email.body || " ")),
-      h("span", { class: "inline-block mt-3 text-sm px-3 py-1.5 rounded-md bg-ink text-canvas font-medium" }, email.cta || " ", " →"));
+      h("span", { class: "inline-block mt-3 text-sm px-3 py-1.5 rounded-md bg-ink text-canvas font-medium" }, email.cta || " ", " →")));
     render();
     const field = (key, area) => {
       const attrs = { class: "w-full bg-shell border border-hair rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-indigo/70 focus:ring-2 focus:ring-indigo/20 transition", value: email[key], "aria-label": key };
       const input = area ? h("textarea", { ...attrs, rows: 6 }) : h("input", attrs);
       if (area) input.value = email[key];
-      input.addEventListener("input", () => { email[key] = input.value; save(); render(); });
+      input.addEventListener("input", () => { email[key] = input.value; save(); render(); ready(); });
       return input;
     };
     const timing = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-xs" }, SEND_AFTER.map(t => {
@@ -191,71 +195,120 @@ async function showCompose() {
       b.onclick = () => { email.send_after = t; save(); showCompose(); };
       return b;
     }));
-    return card("flex flex-col overflow-hidden", { style: `animation-delay:${index * 70}ms` },
+    return card("flex flex-col overflow-hidden scroll-mt-20", { id: "email-" + email.segment, style: `animation-delay:${index * 70}ms` },
       h("div", { class: "flex items-center justify-between gap-2 px-5 py-4 border-b border-hair" },
         h("div", { class: "flex items-center gap-2 font-mono text-sm" }, h("span", { class: `w-2 h-2 rounded-full ${stage.dot}` }), stage.label),
         h("span", { class: "text-xs px-2 py-0.5 rounded border border-hair text-soft" }, "Goal: " + stage.goal)),
       h("div", { class: "p-5 space-y-4 flex-1" },
         h("div", { class: "flex items-center justify-between gap-3" }, h("span", { class: "text-sm text-soft" }, "Send after"), timing),
         h("div", {}, label("Subject line"), h("div", { class: "mt-1.5" }, field("subject"))),
-        h("div", {}, label("Body"), h("div", { class: "mt-1.5" }, field("body", true))),
+        h("div", {}, h("div", { class: "flex justify-between" }, label("Body"), words), h("div", { class: "mt-1.5" }, field("body", true))),
         h("div", {}, label("Button"), h("div", { class: "mt-1.5" }, field("cta")))),
       h("div", { class: "px-5 py-4 border-t border-hair bg-shell/60" }, label("Inbox preview"), h("div", { class: "mt-2 p-4 rounded-lg bg-elevated border border-hair" }, preview)));
   };
 
-  const code = h("input", { type: "password", autocomplete: "off", placeholder: "Access code", value: store("winback-code") || "", class: "bg-shell border border-hair rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:border-indigo/70" });
-  const size = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-xs" }, [[20, "Quick · 20 replays"], [200, "Full · 200 replays"]].map(([n, t]) => {
-    const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md " + (settings.replays === n ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, t);
-    b.onclick = () => { store("winback-run", { replays: n }); showCompose(); };
+  const code = h("input", { type: "password", autocomplete: "off", placeholder: "Access code", "aria-label": "Access code", value: store("winback-code") || "", class: "bg-shell border border-hair rounded px-2.5 h-8 text-sm w-36 font-mono focus:outline-none focus:border-edge" });
+  const size = h("div", { class: "flex rounded border border-hair p-0.5 text-xs font-mono" }, [[20, "20 replays"], [200, "200 replays"]].map(([n, t]) => {
+    const b = h("button", { type: "button", title: n === 20 ? "Quick: about a minute" : "Full: a few minutes", class: "px-2.5 h-7 rounded " + (settings.replays === n ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, t);
+    b.onclick = () => { settings.replays = n; store("winback-run", { replays: n }); size.querySelectorAll("button").forEach((x, i) => x.className = "px-2.5 h-7 rounded " + ([20, 200][i] === n ? "bg-elevated text-ink" : "text-soft hover:text-ink")); };
     return b;
   }));
   const status = h("span", { class: "text-sm text-soft", role: "status" });
-  const go = h("button", { type: "button", class: "px-5 py-2.5 rounded-lg bg-indigo hover:bg-indigo/90 text-white font-medium shadow-lg shadow-indigo/20 transition" }, "Simulate 13 weeks");
-  go.onclick = async () => {
+  const simulate = async button => {
     store("winback-code", code.value.trim());
-    go.disabled = true; status.textContent = "Starting…";
+    if (!code.value.trim()) { status.textContent = "Enter the access code first."; code.focus(); return; }
+    document.querySelectorAll("[data-go]").forEach(b => b.disabled = true); status.textContent = "Starting…";
     try {
       const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: code.value.trim(), replays: settings.replays, emails }) });
       location.hash = "#/running/" + started.run;
-    } catch (e) { status.textContent = e.message; go.disabled = false; }
+    } catch (e) { status.textContent = e.message; document.querySelectorAll("[data-go]").forEach(b => b.disabled = false); }
   };
-  const reset = h("button", { type: "button", class: "text-sm text-soft hover:text-ink underline-offset-4 hover:underline" }, "Reset to the saved drafts");
-  reset.onclick = () => { store("winback-emails", null); try { localStorage.removeItem("winback-emails"); } catch {} showCompose(); };
+  const goTop = h("button", { type: "button", "data-go": true, class: "h-8 px-3 rounded bg-ink text-canvas text-sm font-medium hover:bg-ink/90 disabled:opacity-50" }, "Simulate 13 weeks ↵");
+  goTop.onclick = simulate;
+  const go = h("button", { type: "button", "data-go": true, class: "h-9 px-4 rounded bg-indigo hover:bg-indigo/90 text-white text-sm font-medium disabled:opacity-50" }, "Simulate 13 weeks");
+  go.onclick = simulate;
+  const reset = h("button", { type: "button", class: "h-8 px-3 rounded border border-hair text-xs text-soft hover:text-ink hover:border-edge" }, "Reset to saved drafts");
+  reset.onclick = () => { try { localStorage.removeItem("winback-emails"); } catch {} showCompose(); };
+  const readyText = h("span", { class: "text-sm text-soft" });
+  const ready = () => {
+    const complete = emails.filter(e => e.subject.trim() && e.body.trim() && e.cta.trim()).length;
+    readyText.textContent = `${complete}/3 emails complete · ${settings.replays === 200 ? "full run, a few minutes" : "quick run, about a minute"}`;
+  };
+  ready();
+  const variables = new Set(emails.flatMap(e => (e.subject + " " + e.body).match(/\{[a-z_]+\}/g) || []));
+  document.getElementById("actions").replaceChildren(size, code, goTop);
+  // On a phone the top bar is hidden, so the bottom bar carries every control.
+  const phoneControls = h("div", { class: "flex md:hidden flex-wrap gap-2" }, size.cloneNode(true), code.cloneNode(true));
+  phoneControls.querySelectorAll("button").forEach((b, i) => b.onclick = () => size.querySelectorAll("button")[i].click());
+  phoneControls.querySelector("input").addEventListener("input", e => { code.value = e.target.value; });
 
   view.replaceChildren(
-    h("div", { class: "fade-up flex flex-col md:flex-row md:items-end gap-4 justify-between" },
-      h("div", {}, h("h1", { class: "text-3xl md:text-4xl font-semibold tracking-tight" }, "Write your emails"),
-        h("p", { class: "text-soft mt-2 max-w-2xl" }, "One email per stage. The simulation sends yours to the same merchants as an AI loop that starts from your words and keeps rewriting them, then shows every version and how it did against yours.")),
-      reset),
-    h("div", { class: "grid gap-4 mt-6 lg:grid-cols-3" }, emails.map(editor)),
+    h("div", { class: "fade-up flex flex-col lg:flex-row lg:items-start gap-4 justify-between" },
+      h("div", {}, h("h1", { class: "text-3xl font-medium tracking-tight" }, "Your win-back emails"),
+        h("p", { class: "text-soft mt-2 max-w-2xl" }, "Write one email per stalled stage. The simulation sends yours to the same merchants as an AI loop that starts from your words and keeps rewriting them, across 13 weeks.")),
+      h("div", { class: "flex gap-2 items-center" }, tag("Auto-saved in this browser", "border border-hair text-soft py-1"), tag(`${variables.size} variables`, "border border-win/30 text-win py-1"), reset)),
+    h("div", { class: "mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-mono text-soft fade-up" },
+      h("span", { class: "flex items-center gap-2" }, h("span", { class: "w-2 h-2 rounded-full bg-win" }), "Simulated merchants: 1,000 and 1,500 today, plus 13 weeks of signups"),
+      h("span", { class: "md:ml-auto flex gap-3" }, Object.entries(STAGES).map(([k, v], i) => h("span", { class: "flex items-center gap-1.5" }, h("span", { class: `w-1.5 h-1.5 rounded-full ${v.dot}` }), `STG-0${i + 1} (${v.label})`)))),
+    h("div", { class: "grid gap-4 mt-5 lg:grid-cols-3" }, emails.map(editor)),
     card("mt-6 p-4 flex flex-col md:flex-row md:items-center gap-3 sticky bottom-4 shadow-2xl shadow-black/40 bg-elevated/95 backdrop-blur",
-      h("div", { class: "text-sm text-soft flex-1" }, "Your words are what gets sent and compared. How appealing they are is a placeholder until the AI judge reads them (planned); the send time you pick changes results now."),
-      size, code, go, status));
+      h("div", { class: "flex items-center gap-3 flex-1" }, h("span", { class: "font-medium" }, "Ready for simulation"), h("span", { class: "text-faint" }, "|"), readyText),
+      phoneControls, status, go),
+    h("p", { class: "mt-3 text-xs text-faint" }, "Your words are what gets sent and compared. How appealing they are is a placeholder until the AI judge reads them (#13); the send time you pick changes results now."));
 }
 
 // ---------- Running ----------
 async function showRunning(name) {
-  setNav("running", "Simulation running");
+  setNav("running", "Simulation run");
   const startedAt = Date.now();
-  const elapsed = h("span", { class: "font-mono text-soft" }, "0:00");
-  const loop = svg("svg", { viewBox: "0 0 320 220", class: "w-full max-w-sm mx-auto", "aria-hidden": "true" },
-    svg("circle", { cx: 160, cy: 110, r: 70, fill: "none", stroke: "rgba(255,255,255,.08)", "stroke-dasharray": "3 6" }),
-    svg("g", { class: "orbit" }, ...[0, 72, 144, 216, 288].map((a, i) => svg("rect", { x: 152, y: 34, width: 16, height: 11, rx: 2, fill: ["#F59E0B", "#5E6AD2", "#3FB950", "#5E6AD2", "#F59E0B"][i], transform: `rotate(${a} 160 110)`, opacity: .9 }))),
-    svg("rect", { x: 138, y: 92, width: 44, height: 36, rx: 6, fill: "#17181C", stroke: "rgba(255,255,255,.16)" }),
-    svg("path", { d: "M146 104h28M146 112h20M146 120h24", stroke: "#8A8F98", "stroke-width": 2, "stroke-linecap": "round" }));
-  const steps = ["Merchants arrive", "Emails go out", "Results come back"].map((t, i) => h("div", { class: "flex items-center gap-2 text-sm text-soft", "data-step": i }, h("span", { class: "w-2 h-2 rounded-full bg-faint" }), t));
-  view.replaceChildren(card("max-w-xl mx-auto mt-6 md:mt-16 p-8 text-center",
-    loop,
-    h("h1", { class: "text-2xl font-semibold mt-6" }, "Playing out 13 weeks, many times over"),
-    h("p", { class: "text-soft mt-2" }, "Comparing no email, your email and the AI loop on the same merchants. A quick run takes about a minute, a full one a few minutes."),
-    h("div", { class: "mt-6 h-0.5 bg-hair rounded overflow-hidden" }, h("div", { class: "h-full w-1/3 bg-indigo pulse-dot" })),
-    h("div", { class: "mt-4 flex justify-between items-center" }, h("div", { class: "flex gap-4 flex-wrap" }, steps), elapsed)));
+  let replays = 20;
+  try { const runs = await api("/api/runs"); const mine = runs.running.find(r => r.run === name); if (mine) replays = mine.replays; } catch {}
+  const expected = replays >= 100 ? 300 : 75; // seconds a run usually takes on AWS Lambda
+  const elapsed = h("span", { class: "font-mono text-soft text-sm" }, "0:00 elapsed");
+  const bar = h("div", { class: "h-full bg-indigo transition-all duration-1000", style: "width:2%" });
+  const progress = h("span", { class: "font-mono text-sm text-soft" }, "Starting");
+  const node = (x, y, w, label, sub, colour) => svg("g", {},
+    svg("rect", { x, y, width: w, height: 40, rx: 5, fill: "#121316", stroke: colour }),
+    svg("circle", { cx: x + 16, cy: y + 20, r: 3.5, fill: colour }),
+    svg("text", { x: x + 28, y: y + 17, fill: colour, "font-size": 10, "font-family": "JetBrains Mono" }, document.createTextNode(label)),
+    svg("text", { x: x + 28, y: y + 30, fill: "#F7F8F8", "font-size": 11, "font-family": "Inter" }, document.createTextNode(sub)));
+  const diagram = svg("svg", { viewBox: "0 0 480 190", class: "w-full", "aria-hidden": "true" },
+    svg("path", { d: "M190 40 C110 50 100 80 100 112", fill: "none", stroke: "#5E626A", "stroke-dasharray": "4 4", class: "draw", style: "--len:300" }),
+    svg("path", { d: "M240 60 L240 112", fill: "none", stroke: "#5E6AD2", "stroke-dasharray": "4 4", class: "draw", style: "--len:300" }),
+    svg("path", { d: "M290 40 C370 50 380 80 380 112", fill: "none", stroke: "#3FB950", "stroke-dasharray": "4 4", class: "draw", style: "--len:300" }),
+    svg("rect", { x: 160, y: 20, width: 160, height: 40, rx: 5, fill: "#17181C", stroke: "rgba(255,255,255,.16)" }),
+    svg("text", { x: 176, y: 45, fill: "#8A8F98", "font-size": 10, "font-family": "JetBrains Mono" }, document.createTextNode("BASE")),
+    svg("text", { x: 214, y: 45, fill: "#F7F8F8", "font-size": 12, "font-family": "Inter", "font-weight": 500 }, document.createTextNode("Your merchants")),
+    node(40, 112, 120, "STG-01", "Idle", "#F59E0B"), node(180, 112, 120, "STG-02", "Drafter", "#5E6AD2"), node(320, 112, 120, "STG-03", "Trialist", "#3FB950"),
+    svg("text", { x: 240, y: 178, fill: "#5E626A", "font-size": 10, "font-family": "JetBrains Mono", "text-anchor": "middle", class: "pulse-dot" }, document.createTextNode("↻ win-back feedback loop")));
+  const step = (text, state) => h("div", { class: "flex items-center gap-2 font-mono text-[12px] " + (state === "done" ? "text-soft" : state === "now" ? "text-ink" : "text-faint") },
+    state === "done" ? h("span", { class: "text-win" }, "✓") : h("span", { class: "w-1.5 h-1.5 rounded-full " + (state === "now" ? "bg-indigo pulse-dot" : "bg-faint") }), text);
+  const log = h("div", { class: "rounded-md border border-hair bg-canvas p-3 space-y-2" });
+  const render = s => log.replaceChildren(
+    step("Run requested, with your three emails", "done"),
+    step(`Simulating ${num(replays)} replays of 13 weeks on AWS Lambda`, s < expected * 0.9 ? "now" : "done"),
+    step("Saving the report and every version", s < expected * 0.9 ? "next" : "now"));
+  render(0);
+  view.replaceChildren(h("div", { class: "min-h-[70vh] grid place-items-center", style: "background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:22px 22px" },
+    h("section", { class: "w-full max-w-xl bg-card border border-hair rounded-lg shadow-2xl shadow-black/50 fade-up" },
+      h("div", { class: "flex items-center justify-between px-5 py-3 border-b border-hair" },
+        h("div", { class: "flex items-center gap-2 font-medium" }, h("span", { class: "grid place-items-center w-6 h-6 rounded-full bg-indigo/25" }, h("span", { class: "w-2 h-2 rounded-full bg-indigo pulse-dot" })), "Simulation running"), elapsed),
+      h("div", { class: "p-6" }, diagram,
+        h("h1", { class: "text-2xl font-medium tracking-tight text-center mt-4" }, `Playing out 13 weeks, ${num(replays)} times`),
+        h("p", { class: "text-soft text-center mt-2" }, "Comparing no email, your email and the AI loop on the same merchants."),
+        h("div", { class: "mt-6 h-0.5 bg-hair rounded overflow-hidden" }, bar),
+        h("div", { class: "mt-3 flex justify-between" }, progress, h("span", { class: "font-mono text-sm text-indigo" }, `usually ~${Math.round(expected / 60)} min`)),
+        h("div", { class: "mt-4" }, log)),
+      h("div", { class: "flex items-center justify-between px-5 py-3 border-t border-hair text-sm text-soft" },
+        h("span", {}, "You can leave this page; the run keeps going."),
+        h("a", { href: "#/runs", class: "px-3 py-1.5 rounded border border-hair hover:border-edge text-ink" }, "Run history →")))));
   clearTimers();
   timers.push(setInterval(() => {
     const s = Math.floor((Date.now() - startedAt) / 1000);
-    elapsed.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-    const active = Math.min(2, Math.floor(s / 8) % 3);
-    steps.forEach((el, i) => { el.firstChild.className = "w-2 h-2 rounded-full " + (i === active ? "bg-indigo pulse-dot" : i < active ? "bg-win" : "bg-faint"); el.classList.toggle("text-ink", i === active); });
+    elapsed.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} elapsed`;
+    bar.style.width = Math.min(95, 2 + 93 * s / expected) + "%";
+    progress.textContent = s < expected ? `About ${Math.max(1, Math.round((expected - s) / 60 * 10) / 10)} min to go` : "Nearly there";
+    render(s);
   }, 1000));
   timers.push(setInterval(async () => {
     try { const runs = await api("/api/runs"); if (runs.runs.some(r => r.run === name)) location.hash = "#/run/" + name; } catch {}
@@ -264,26 +317,47 @@ async function showRunning(name) {
 
 // ---------- History ----------
 async function showRuns() {
-  setNav("runs", "Run history");
+  setNav("runs", "Simulation history");
   view.replaceChildren(h("div", { class: "text-soft" }, "Loading runs…"));
   let data; try { data = await api("/api/runs"); } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; }
-  const row = (cells, link, i) => h(link ? "a" : "div", { href: link, class: "grid grid-cols-1 md:grid-cols-[1.2fr_2fr_auto] gap-3 items-center px-5 py-4 border-t border-hair hover:bg-elevated/60 transition fade-up", style: `animation-delay:${i * 40}ms` }, cells);
-  const rows = [
-    ...data.running.map((r, i) => row([
-      h("div", { class: "flex items-center gap-2" }, h("span", { class: "w-2 h-2 rounded-full bg-indigo pulse-dot" }), h("span", { class: "font-medium" }, "Running now"), h("span", { class: "text-soft text-sm" }, `${r.replays} replays`)),
-      h("div", { class: "text-soft text-sm" }, "Results on the way"), h("span", { class: "text-xs font-mono px-2 py-1 rounded bg-indigo/15 text-indigo" }, "RUNNING")], "#/running/" + r.run, i)),
-    ...data.runs.map((r, i) => {
-      const first = (r.headline || [])[0];
-      return row([
-        h("div", {}, h("div", { class: "font-medium" }, day(r.created)), h("div", { class: "text-xs font-mono text-faint" }, `seed ${r.seed} · ${r.replays} replays`)),
-        h("div", { class: "flex flex-wrap gap-2" }, (first ? first.segments : []).map(s => h("span", { class: "text-xs font-mono px-2 py-1 rounded border " + (s.ai_did_better ? "border-win/40 text-win" : "border-hair text-soft") }, `${s.label} ${pts(s.ai)} vs ${pts(s.hand)}`))),
-        h("span", { class: "text-soft" }, "→")], "#/run/" + r.run, i + data.running.length);
-    }),
-  ];
-  const fresh = h("a", { href: "#/compose", class: "px-4 py-2 rounded-lg bg-ink text-canvas text-sm font-medium" }, "New simulation");
+  let filter = store("winback-runs-filter") || "all";
+  const table = h("div");
+  const stageChip = s => h("span", { class: "inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded border bg-elevated " + (s.ai_did_better ? "border-win/30" : "border-hair") },
+    h("span", { class: "w-1.5 h-1.5 rounded-full " + (s.ai_did_better ? "bg-win" : "bg-faint") }),
+    h("span", { class: "text-soft" }, s.label.slice(0, 3)), h("span", { class: s.ai_did_better ? "text-win" : "text-ink" }, pts(s.ai)), h("span", { class: "text-faint" }, "vs"), h("span", { class: "text-amber" }, pts(s.hand)));
+  const draw = () => {
+    store("winback-runs-filter", filter);
+    const rows = [];
+    if (filter !== "completed") data.running.forEach(r => rows.push(h("a", { href: "#/running/" + r.run, class: "grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_auto] gap-3 items-center px-5 py-3 border-t border-hair bg-indigo/5 hover:bg-elevated" },
+      h("div", { class: "flex items-center gap-3" }, h("span", { class: "w-4 h-4 rounded-full border-2 border-indigo border-t-transparent animate-spin" }), h("div", {}, h("div", { class: "font-mono text-sm" }, r.run), h("div", { class: "text-xs text-soft" }, `Running now · ${num(r.replays)} replays · 13 weeks`))),
+      h("div", { class: "font-mono text-[12px] text-indigo" }, "Simulating…"),
+      tag("RUNNING", "bg-indigo/20 text-indigo"))));
+    if (filter !== "running") data.runs.forEach(r => (r.headline || []).forEach((start, k) => rows.push(h("a", { href: "#/run/" + r.run, class: "grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_auto] gap-3 items-center px-5 py-3 border-t border-hair hover:bg-elevated/70 transition" },
+      h("div", { class: "flex items-center gap-3 min-w-0" }, h("span", { class: "text-win" }, "✓"),
+        h("div", { class: "min-w-0" }, h("div", { class: "font-mono text-sm truncate" }, r.run), h("div", { class: "text-xs text-soft truncate" }, `${num(start.merchants)} merchants · ${num(r.replays)} replays`))),
+      h("div", { class: "flex flex-wrap gap-1.5" }, start.segments.map(stageChip)),
+      h("div", { class: "flex items-center gap-3 justify-end" }, tag(`${start.segments.filter(s => s.ai_did_better).length}/3 stages`, "border border-hair text-soft"), h("span", { class: "text-xs font-mono text-faint whitespace-nowrap" }, day(r.created)))))));
+    table.replaceChildren(rows.length ? h("div", {}, rows) : h("div", { class: "p-10 text-center text-soft" }, filter === "all" ? "No runs yet. Write your emails and press Simulate." : "Nothing here."));
+    tabs.querySelectorAll("button").forEach(b => b.className = "px-3 py-1 rounded text-sm " + (b.dataset.f === filter ? "bg-elevated text-ink" : "text-soft hover:text-ink"));
+  };
+  const total = data.runs.reduce((n, r) => n + r.replays * (r.headline || []).length, 0);
+  const tabs = h("div", { class: "flex items-center gap-1" }, [["all", "All runs", data.runs.length + data.running.length], ["completed", "Completed", data.runs.length], ["running", "In progress", data.running.length]].map(([f, t, n]) => {
+    const b = h("button", { type: "button", "data-f": f }, t, " ", h("span", { class: "font-mono text-faint ml-1" }, n));
+    b.onclick = () => { filter = f; draw(); };
+    return b;
+  }));
   view.replaceChildren(
-    h("div", { class: "flex items-end justify-between gap-4 fade-up" }, h("div", {}, h("h1", { class: "text-3xl font-semibold tracking-tight" }, "Runs"), h("p", { class: "text-soft mt-1" }, "Every simulation, weekly runs included. AI loop against your email, in points of true lift.")), fresh),
-    card("mt-6 overflow-hidden", rows.length ? rows : h("div", { class: "p-10 text-center text-soft" }, "No runs yet. Write your emails and press Simulate.")));
+    h("div", { class: "flex flex-wrap items-center justify-between gap-3 fade-up" },
+      h("div", { class: "flex items-center gap-2" }, h("h1", { class: "text-2xl font-medium tracking-tight" }, "Simulation history")),
+      h("a", { href: "#/compose", class: "px-3 py-1.5 rounded bg-ink text-canvas text-sm font-medium" }, "New simulation ↵")),
+    card("mt-5 overflow-hidden",
+      h("div", { class: "flex flex-wrap items-center justify-between gap-3 px-5 py-3" }, tabs,
+        h("div", { class: "text-xs font-mono text-soft" }, "Total simulated: ", h("span", { class: "text-ink" }, num(total) + " replays"))),
+      h("div", { class: "hidden md:grid grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_auto] gap-3 px-5 py-2 border-t border-hair text-[11px] font-mono uppercase tracking-wider text-faint" },
+        h("span", {}, "Run & configuration"), h("span", {}, "Stage lift: AI loop vs your email (pts)"), h("span", { class: "text-right" }, "Status & date")),
+      table,
+      h("div", { class: "px-5 py-3 border-t border-hair text-xs font-mono text-faint" }, "Showing every run, weekly runs included. Lift is true lift in points against no email, averaged over the run's replays.")));
+  draw();
 }
 
 // ---------- Results ----------
@@ -306,22 +380,46 @@ function lineChart(weekly, upTo) {
   return s;
 }
 
-function journey(start) {
+// The merchants at each step of the journey for each approach (first replay, holdout aside).
+function journeyCounts(start) {
   const [idle, drafter, trialist] = start.segments;
-  const steps = ["Signed up", "Started a draft", "Published", "Paid"];
-  const count = { no_email: [], hand_written: [], ai_loop: [] };
+  const count = {};
   for (const a of Object.keys(NAME)) count[a] = [idle.funnel[a].merchants, idle.funnel[a].reached, drafter.funnel[a].reached, trialist.funnel[a].reached];
-  const W = 900, H = 260, colX = i => 60 + i * (W - 120) / 3;
-  const top = Math.max(...Object.values(count).map(c => c[0]));
-  const y = (a, v) => 40 + ({ ai_loop: 0, hand_written: 62, no_email: 124 })[a] + 50 * (1 - v / top);
-  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "w-full h-auto", role: "img", "aria-label": "Merchants at each step of the journey for each approach" });
-  steps.forEach((t, i) => s.append(svg("text", { x: colX(i), y: 18, fill: "#8A8F98", "font-size": 12, "text-anchor": "middle" }, document.createTextNode(t))));
+  return count;
+}
+const STEPS = ["Signed up", "Started draft", "Published store", "Paid"];
+
+// Three ribbons, one per approach, narrowing as merchants drop out; green labels mark the AI loop's gain over your email.
+function ribbon(count) {
+  const W = 960, H = 300, x = i => 70 + i * (W - 170) / 3, top = count.ai_loop[0] || 1;
+  const lane = { ai_loop: 80, hand_written: 160, no_email: 230 }, thick = v => 4 + 26 * v / top;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "w-full h-auto", role: "img", "aria-label": "Merchants at each step for the AI loop, your email and no email" });
+  for (let i = 0; i < 4; i++) s.append(svg("line", { x1: x(i), x2: x(i), y1: 40, y2: H - 20, stroke: "rgba(255,255,255,.05)" }));
   for (const a of ["no_email", "hand_written", "ai_loop"]) {
-    const d = count[a].map((v, i) => `${i ? "L" : "M"}${colX(i)},${y(a, v)}`).join(" ");
-    s.append(svg("path", { d, fill: "none", stroke: COLOUR[a], "stroke-width": 10, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .85, class: "draw", style: "--len:1400" }));
-    count[a].forEach((v, i) => { if (i) s.append(svg("text", { x: colX(i), y: y(a, v) - 10, fill: COLOUR[a], "font-size": 12, "font-family": "JetBrains Mono", "text-anchor": "middle" }, document.createTextNode(num(v)))); });
+    const c = count[a], yy = i => i === 0 ? 150 : lane[a];
+    let d = `M${x(0)},${yy(0)}`;
+    for (let i = 1; i < 4; i++) { const mx = (x(i - 1) + x(i)) / 2; d += ` C${mx},${yy(i - 1)} ${mx},${yy(i)} ${x(i)},${yy(i)}`; }
+    s.append(svg("path", { d, fill: "none", stroke: COLOUR[a], "stroke-width": thick(c[1]), "stroke-linecap": "round", opacity: a === "ai_loop" ? .95 : .8, class: "draw", style: "--len:1600" }));
   }
-  return { svg: s, count };
+  // Markers and numbers go on top of every ribbon, just above their own, so no band hides them.
+  for (const a of ["no_email", "hand_written", "ai_loop"]) {
+    const c = count[a];
+    for (let i = 1; i < 4; i++) {
+      const y = lane[a], above = y - thick(c[1]) / 2 - 6;
+      s.append(svg("rect", { x: x(i) - 5, y: y - 9, width: 10, height: 18, rx: 2, fill: "#121316", stroke: COLOUR[a] }));
+      s.append(svg("text", { x: x(i) + 10, y: above, fill: a === "ai_loop" ? "#F7F8F8" : COLOUR[a], "font-size": 11, "font-family": "JetBrains Mono", "paint-order": "stroke", stroke: "#08090A", "stroke-width": 3 }, document.createTextNode(`${num(c[i])} (${(100 * c[i] / c[0]).toFixed(1)}%)`)));
+    }
+  }
+  for (let i = 1; i < 4; i++) {
+    const gain = count.ai_loop[i] - count.hand_written[i];
+    const text = `${gain >= 0 ? "+" : "−"}${Math.abs(gain)} ${["", "drafts", "live stores", "paid"][i]}`;
+    s.append(svg("rect", { x: x(i) - 52, y: 34, width: 104, height: 20, rx: 3, fill: gain > 0 ? "rgba(63,185,80,.14)" : "#17181C", stroke: gain > 0 ? "rgba(63,185,80,.5)" : "rgba(255,255,255,.1)" }));
+    s.append(svg("text", { x: x(i), y: 48, fill: gain > 0 ? "#3FB950" : "#8A8F98", "font-size": 11, "font-family": "JetBrains Mono", "text-anchor": "middle" }, document.createTextNode(text)));
+  }
+  s.append(svg("rect", { x: x(0) - 6, y: 110, width: 12, height: 80, rx: 2, fill: "#5E6AD2" }));
+  s.append(svg("text", { x: x(0), y: 102, fill: "#F7F8F8", "font-size": 12, "font-family": "JetBrains Mono", "text-anchor": "middle" }, document.createTextNode(num(count.ai_loop[0]))));
+  s.append(svg("text", { x: x(0), y: 208, fill: "#8A8F98", "font-size": 10, "text-anchor": "middle" }, document.createTextNode("All signed up")));
+  return s;
 }
 
 function emailCard(title, colour, email, compareTo, stats, tags) {
@@ -401,75 +499,181 @@ function versionsTable(seg, run) {
     h("tbody", {}, rows)));
 }
 
+function playbookTable(loop) {
+  if (!loop.playbook.length) return h("p", { class: "text-sm text-faint" }, "No test has ended yet.");
+  return h("div", { class: "overflow-x-auto" }, h("table", { class: "w-full text-sm min-w-[860px]" },
+    h("thead", {}, h("tr", { class: "text-left text-faint text-[11px] uppercase tracking-wider font-mono" }, ["Test", "Weeks", "Versions", "Hypothesis", "Ending", "Conclusion"].map(t => h("th", { class: "p-3 font-medium" }, t)))),
+    h("tbody", {}, loop.playbook.map(e => h("tr", { class: "border-t border-hair align-top" },
+      h("td", { class: "p-3 font-mono text-soft" }, "#" + e.test),
+      h("td", { class: "p-3 font-mono text-soft whitespace-nowrap" }, `W${e.started_week}–W${e.ended_week}`),
+      h("td", { class: "p-3 font-mono whitespace-nowrap" }, `v${e.champion} vs v${e.challenger}`),
+      h("td", { class: "p-3 text-soft max-w-xs" }, e.hypothesis),
+      h("td", { class: "p-3" }, tag(e.ending, e.ending === "challenger won" ? "bg-win/15 text-win" : e.ending === "champion won" ? "bg-amber/10 text-amber" : "border border-hair text-soft")),
+      h("td", { class: "p-3 text-soft max-w-md" }, e.conclusion))))));
+}
+
 async function showRun(name) {
-  setNav("run", "Results");
+  setNav("run", "Decision brief");
   view.replaceChildren(h("div", { class: "text-soft" }, "Loading results…"));
   let run; try { run = await api("/api/runs/" + encodeURIComponent(name)); } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; }
   let startIndex = 0, stageIndex = 0;
   const body = h("div");
+  const panel = (kicker, title, sub, ...kids) => card("mt-6 p-5 md:p-7",
+    h("div", { class: "pb-4 mb-5 border-b border-hair" },
+      h("div", { class: "flex flex-wrap items-center gap-2" }, h("span", { class: "font-mono text-[10px] uppercase tracking-wider text-faint px-2 py-0.5 bg-elevated rounded border border-hair" }, kicker), h("h2", { class: "text-[17px] font-semibold" }, title)),
+      sub ? h("p", { class: "text-[13px] text-soft mt-1" }, sub) : null),
+    ...kids);
+  const collapsible = (title, sub, content, open) => {
+    const inner = h("div", { class: "px-5 md:px-7 pb-6" + (open ? "" : " hidden") }, content);
+    const chevron = h("span", { class: "text-soft transition" }, open ? "▴" : "▾");
+    const head = h("button", { type: "button", class: "w-full flex items-center justify-between gap-3 px-5 md:px-7 py-4 text-left" },
+      h("div", {}, h("div", { class: "font-semibold" }, title), h("div", { class: "text-[13px] text-soft" }, sub)), chevron);
+    head.onclick = () => { inner.classList.toggle("hidden"); chevron.textContent = inner.classList.contains("hidden") ? "▾" : "▴"; };
+    return card("mt-6 overflow-hidden", head, inner);
+  };
   const render = () => {
     clearTimers();
-    const start = run.starts[startIndex], seg = start.segments[stageIndex];
+    const start = run.starts[startIndex], seg = start.segments[stageIndex], loop = start.loop;
     const yourEmail = run.first_drafts.find(d => d.segment === seg.segment);
-    const verdicts = h("div", { class: "grid gap-4 md:grid-cols-3" }, start.segments.map((s, i) => {
-      const ai = s.approaches.find(a => a.approach === "ai_loop"), hand = s.approaches.find(a => a.approach === "hand_written");
-      const big = h("span", { class: "text-4xl font-semibold tracking-tight " + (s.ai_did_better ? "text-win" : "text-ink") });
-      countUp(big, ai.average, v => pts(v));
-      return card("p-5", { style: `animation-delay:${i * 80}ms` },
-        h("div", { class: "flex items-center justify-between" }, h("div", { class: "flex items-center gap-2 font-mono text-sm text-soft" }, h("span", { class: `w-2 h-2 rounded-full ${STAGES[s.segment].dot}` }), s.label), tag(s.ai_did_better ? "AI ahead" : "no gain", s.ai_did_better ? "bg-win/15 text-win" : "border border-hair text-soft")),
-        h("div", { class: "mt-3 flex items-baseline gap-2" }, big, h("span", { class: "text-soft" }, "pts vs your " + pts(hand.average))),
-        h("div", { class: "text-xs text-soft mt-2" }, `AI loop ahead in ${num(s.ai_ahead)} of ${num(run.replays)} replays` + (s.ties ? ` (${num(s.ties)} tied)` : "") + ` · middle 90%: ${pts(ai.low)} to ${pts(ai.high)}`),
-        s.segment === "trialist" ? h("div", { class: "text-xs text-soft mt-1" }, `Revenue: ${money(start.revenue.ai_loop)} vs your ${money(start.revenue.hand_written)} per replay`) : null);
-    }));
-    const j = journey(start);
-    const stageTabs = h("div", { class: "flex rounded-lg border border-hair p-0.5 text-sm" }, start.segments.map((s, i) => {
-      const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md " + (i === stageIndex ? "bg-elevated text-ink" : "text-soft hover:text-ink") }, s.label);
+    const count = journeyCounts(start);
+    const paidGain = count.ai_loop[3] - count.hand_written[3];
+    const won = start.segments.filter(s => s.ai_did_better);
+    const revenueGain = start.revenue.ai_loop - start.revenue.hand_written;
+    document.querySelectorAll("[data-stage]").forEach(li => {
+      const s = start.segments.find(x => x.segment === li.dataset.stage), ai = s.approaches.find(a => a.approach === "ai_loop"), hand = s.approaches.find(a => a.approach === "hand_written");
+      li.querySelector("[data-delta]").textContent = s.ai_did_better ? pts(ai.average - hand.average) : "tie";
+      li.querySelector("[data-delta]").className = "ml-auto font-mono text-[11px] " + (s.ai_did_better ? "text-win" : "text-faint");
+    });
+
+    // 1. The decision brief
+    const big = (value, fmt, cls) => { const el = h("span", { class: "text-4xl font-medium tracking-tight " + cls }); countUp(el, value, fmt); return el; };
+    const kpi = (labelText, chip, value, unit, foot) => h("div", { class: "p-5 border-hair md:border-r last:border-r-0" },
+      h("div", { class: "flex items-center justify-between gap-2" }, h("span", { class: "text-[11px] font-mono uppercase tracking-wider text-faint" }, labelText), chip),
+      h("div", { class: "mt-3 flex items-baseline gap-2" }, value, h("span", { class: "text-soft text-sm" }, unit)),
+      h("div", { class: "mt-4 pt-3 border-t border-hair text-[12px] font-mono text-soft" }, foot));
+    const idle = start.segments[0];
+    const brief = card("p-5 md:p-7",
+      h("div", { class: "flex flex-wrap gap-2" }, tag("EXECUTIVE DECISION BRIEF", "border border-hair text-faint"),
+        tag(`AI loop ahead in ${won.length} of 3 stages`, won.length >= 2 ? "bg-win/15 text-win" : "border border-hair text-soft")),
+      h("h1", { class: "text-3xl md:text-[32px] font-medium tracking-tight mt-3" },
+        paidGain > 0 ? `The AI loop won ${num(paidGain)} more paying merchants than your email` : paidGain === 0 ? "The AI loop and your email won the same number of paying merchants" : `Your email won ${num(-paidGain)} more paying merchants than the AI loop`),
+      h("p", { class: "text-soft mt-2 max-w-3xl" }, `${num(count.ai_loop[3])} merchants paid with the AI loop, ${num(count.hand_written[3])} with your email and ${num(count.no_email[3])} with no email, from ${num(start.merchants)} merchants today plus 13 weeks of signups (first replay).`),
+      h("div", { class: "mt-6 grid md:grid-cols-3 rounded-lg border border-hair bg-shell" },
+        kpi("Paid stores won", tag(count.hand_written[3] ? `${pts(100 * paidGain / count.hand_written[3])}%` : "–", paidGain > 0 ? "bg-win/15 text-win" : "border border-hair text-soft"),
+          big(paidGain, v => (v >= 0 ? "+" : "−") + Math.abs(Math.round(v)), paidGain > 0 ? "text-win" : "text-ink"), "stores",
+          h("span", {}, "Breakdown: ", h("span", { class: "text-indigo" }, num(count.ai_loop[3]) + " AI"), " vs ", h("span", { class: "text-amber" }, num(count.hand_written[3]) + " yours"))),
+        kpi("Trialist revenue", tag("first month", "bg-win/10 text-win"),
+          big(revenueGain, v => (v >= 0 ? "+$" : "−$") + Math.abs(Math.round(v)).toLocaleString("en-US"), revenueGain > 0 ? "text-ink" : "text-soft"), "per replay",
+          `${money(start.revenue.ai_loop)} AI vs ${money(start.revenue.hand_written)} yours, average of ${num(run.replays)} replays`),
+        kpi("Idle win rate", tag("replays", "bg-indigo/15 text-indigo"),
+          big(100 * idle.ai_ahead / run.replays, v => v.toFixed(1) + "%", "text-indigo"), "ahead",
+          `Replays won: ${num(idle.ai_ahead)} of ${num(run.replays)} in Idle, where the AI rewrites the email`)),
+      h("div", { class: "mt-6 pt-5 border-t border-hair flex flex-wrap items-center justify-between gap-3 text-[13px]" },
+        h("span", { class: "text-soft" }, h("strong", { class: "text-ink font-medium" }, "Recommended next step: "),
+          won.length >= 2 ? "worth a real-world test against a holdout. Every number here is simulated from placeholder assumptions." : "keep your email for now and test new versions; the simulated gain is too small to act on."),
+        h("a", { href: `/api/runs/${encodeURIComponent(name)}/report`, target: "_blank", rel: "noopener", class: "h-8 px-3.5 inline-flex items-center rounded bg-indigo hover:bg-indigo/90 text-white font-medium text-[12px]" }, "Open the full report ↗")));
+
+    // 2. Where did the improvement come from?
+    const stepCard = i => {
+      const ai = count.ai_loop[i], yours = count.hand_written[i], gain = ai - yours;
+      return h("div", { class: "rounded-md border bg-shell p-4 " + (i === 3 ? "border-indigo/40" : "border-hair") },
+        h("div", { class: "flex items-center justify-between text-[11px] font-mono text-faint" }, h("span", {}, `${i + 1} · STEP`), i ? tag(`${gain >= 0 ? "+" : "−"}${Math.abs(gain)}`, gain > 0 ? "bg-win/15 text-win" : "border border-hair text-soft") : h("span", {}, "start")),
+        h("div", { class: "font-medium mt-1" }, STEPS[i]),
+        h("div", { class: "mt-2 flex items-baseline gap-2 font-mono" }, h("span", { class: "text-2xl text-indigo" }, num(ai)), i ? h("span", { class: "text-faint text-xs" }, "vs " + num(yours)) : null,
+          i && yours ? h("span", { class: "ml-auto text-xs " + (gain > 0 ? "text-win" : "text-faint") }, pts(100 * gain / yours) + "%") : null),
+        h("div", { class: "mt-3 h-1 rounded bg-hair overflow-hidden flex" }, h("div", { class: "grow", style: `width:${100 * ai / count.ai_loop[0]}%;background:#5E6AD2` })));
+    };
+    const gains = [1, 2, 3].map(i => count.ai_loop[i] - count.hand_written[i]);
+    const best = gains.indexOf(Math.max(...gains)) + 1;
+    const journeyPanel = panel("Journey stream", "Where did the improvement come from?", `How the merchants moved through the four steps with each approach (first replay, holdout aside).`,
+      h("div", { class: "flex flex-wrap gap-3 text-[11px] font-mono mb-4" }, ["no_email", "hand_written", "ai_loop"].map(a => h("span", { class: "flex items-center gap-1.5 text-soft" }, h("span", { class: "w-2.5 h-2.5 rounded-sm", style: `background:${COLOUR[a]}` }), NAME[a])), h("span", { class: "flex items-center gap-1.5 text-win" }, h("span", { class: "w-2.5 h-2.5 rounded-sm bg-win" }), "Gain over your email")),
+      h("div", { class: "grid gap-3 grid-cols-2 lg:grid-cols-4" }, [0, 1, 2, 3].map(stepCard)),
+      h("div", { class: "mt-4 rounded-md border border-hair bg-canvas p-3" }, ribbon(count)),
+      gains[best - 1] > 0 ? h("div", { class: "mt-4 rounded-md border border-indigo/30 bg-indigo/5 p-4 text-[13px]" },
+        h("div", { class: "font-medium" }, "Biggest gain: " + STEPS[best].toLowerCase()),
+        h("p", { class: "text-soft mt-1" }, `The AI loop moved ${num(gains[best - 1])} more merchants than your email to "${STEPS[best].toLowerCase()}". A gain at an early step carries on down the journey, so later steps include it.`)) : null);
+
+    // 3. What made the difference?
+    const stageTabs = h("div", { class: "flex rounded border border-hair p-0.5 text-[12px] font-mono" }, start.segments.map((s, i) => {
+      const b = h("button", { type: "button", class: "px-3 py-1.5 rounded " + (i === stageIndex ? "bg-indigo text-white" : "text-soft hover:text-ink") }, `STG-0${i + 1} ${s.label}`);
       b.onclick = () => { stageIndex = i; render(); };
       return b;
     }));
-    const last = seg.weeks[seg.weeks.length - 1].ai.leading;
-    const overall = seg.versions.ai_overall;
+    const lastWeek = seg.weeks[seg.weeks.length - 1].ai.leading;
+    const overall = seg.versions.ai_overall, yours = seg.versions.yours;
+    const timing = loop.timings.find(t => t.segment === seg.segment && t.leading);
+    const champion = seg.segment === "idle" ? loop.versions.find(v => v.status === "champion") : null;
+    const offer = seg.segment === "trialist" ? loop.offers.find(o => o.leading) : null;
+    const mechanism = champion && champion.number > 0
+      ? [h("strong", { class: "text-ink" }, `v${champion.number}`), ` changed the ${champion.changed}: ${champion.hypothesis} It won its test${champion.crowned_week ? ` in week ${champion.crowned_week}` : ""}.`]
+      : seg.segment === "idle"
+        ? ["No version beat your email clearly enough to replace it, so the AI loop kept sending your words; its edge, if any, comes from send time."]
+        : [`${seg.label} keeps your words; the AI loop changes only the send time` + (offer ? ` and the offer (now favouring "${offer.label}").` : ".")];
+    const differencePanel = panel("Deep dive", "What made the difference?", "Your email against the email the AI loop ended up sending, with what changed highlighted.",
+      h("div", { class: "flex justify-end -mt-2 mb-4" }, stageTabs),
+      h("div", { class: "grid gap-4 md:grid-cols-2" },
+        emailCard("Your email", COLOUR.hand_written, yourEmail, null,
+          [h("span", {}, `Timing: ${yourEmail.send_after_days < 1 ? "1 hour" : yourEmail.send_after_days + " days"} in`), h("span", {}, `${num(yours.sends)} sent · ${pct(yours.click_rate)} clicked`)], [tag("fixed", "bg-amber/10 text-amber")]),
+        h("div", { class: "rounded-xl ring-1 ring-indigo/40" }, emailCard(champion ? `AI loop champion · v${champion.number}` : "AI loop, where it ended", COLOUR.ai_loop, lastWeek, yourEmail,
+          [h("span", {}, `Timing: ${timing ? timing.timing + " (ahead so far)" : "learned"}`), h("span", {}, `${num(overall.sends)} sent · ${pct(overall.click_rate)} clicked`)],
+          [overall.click_rate_vs_yours != null ? tag(`${pts(overall.click_rate_vs_yours)} pts clicks vs yours`, overall.click_rate_vs_yours > 0 ? "bg-win/15 text-win" : "border border-hair text-soft") : null]))),
+      h("div", { class: "mt-4 rounded-md border border-hair bg-canvas p-4 text-[13px]" }, h("div", { class: "font-medium" }, "Why it changed"), h("p", { class: "text-soft mt-1" }, mechanism)),
+      seg.segment === "idle" ? h("details", { class: "mt-4 group" }, h("summary", { class: "cursor-pointer text-[13px] text-soft hover:text-ink font-mono" }, `View the playbook (${loop.playbook.length} tests, ${loop.versions.length} versions)`),
+        h("div", { class: "mt-4" }, playbookTable(loop))) : null);
+
+    // 4. Timeline, every version, technical details
     body.replaceChildren(
-      verdicts,
-      card("mt-6 p-5 md:p-6",
-        h("div", { class: "flex flex-wrap items-end justify-between gap-3" }, h("div", {}, label("Journey"), h("h2", { class: "text-xl font-semibold mt-1" }, "How many merchants took each step")),
-          h("div", { class: "flex gap-4 text-xs text-soft" }, ["ai_loop", "hand_written", "no_email"].map(a => h("span", { class: "flex items-center gap-1.5" }, h("span", { class: "w-2.5 h-2.5 rounded-full", style: `background:${COLOUR[a]}` }), NAME[a])))),
-        h("div", { class: "mt-4" }, j.svg),
-        h("p", { class: "text-xs text-faint mt-2" }, "First replay, holdout aside. Existing merchants join at their own stage.")),
-      card("mt-6 p-5 md:p-6",
-        h("div", { class: "flex flex-wrap items-end justify-between gap-3" }, h("div", {}, label("What made the difference"), h("h2", { class: "text-xl font-semibold mt-1" }, `${seg.label}: your email against the AI loop's`)), stageTabs),
-        h("div", { class: "grid gap-4 md:grid-cols-2 mt-5" },
-          emailCard("Your email", COLOUR.hand_written, yourEmail, null, `${num(seg.versions.yours.sends)} sent · ${pct(seg.versions.yours.click_rate)} clicked · ${pct(seg.versions.yours.goal_rate)} went on to ${seg.goal}`, [tag("sent " + (yourEmail.send_after_days < 1 ? "1 hour" : yourEmail.send_after_days + " days") + " in", "border border-hair text-soft")]),
-          emailCard("AI loop, where it ended", COLOUR.ai_loop, last, yourEmail, h("span", {}, `${num(overall.sends)} sent · ${pct(overall.click_rate)} clicked · `, delta(overall.click_rate_vs_yours), " clicks vs yours"), [tag("vs your email", "text-faint")]))),
-      card("mt-6 p-5 md:p-6", h("div", {}, label("Week by week"), h("h2", { class: "text-xl font-semibold mt-1 mb-4" }, `${seg.label}: what the AI loop wrote, sent and dropped each week`)), weekPlayer(seg, yourEmail)),
-      card("mt-6 p-5 md:p-6",
-        h("div", { class: "flex flex-wrap items-end justify-between gap-3 mb-4" }, h("div", {}, label("Every version"), h("h2", { class: "text-xl font-semibold mt-1" }, `${seg.label}: every version and how it did against yours`)),
-          h("a", { href: `/api/runs/${encodeURIComponent(name)}/versions.csv`, download: `${name}-versions.csv`, class: "text-sm px-3 py-1.5 rounded-md border border-hair hover:border-edge" }, "Download every version (CSV)")),
+      brief, journeyPanel, differencePanel,
+      collapsible(`Explore the simulation timeline (W1–W${seg.weeks.length})`, `${seg.label}: what the AI loop sent, wrote and dropped each week, and true lift so far.`, weekPlayer(seg, yourEmail), true),
+      collapsible("Every version", `${seg.label}: every version and how it did against yours.`, h("div", {},
+        h("div", { class: "flex justify-end mb-3" }, h("a", { href: `/api/runs/${encodeURIComponent(name)}/versions.csv`, download: `${name}-versions.csv`, class: "text-sm px-3 py-1.5 rounded border border-hair hover:border-edge" }, "Export CSV")),
         versionsTable(seg, run),
-        h("p", { class: "text-xs text-faint mt-3 max-w-4xl" }, "First replay. \"Clicks vs yours\" is a version's click rate minus your email's, in points: the fair test of the words. \"Went on to\" also counts merchants who would have acted anyway, and depends on when the email went out, so compare approaches by true lift above, not by this column. Each version's appeal is a placeholder until the AI judge reads the words (planned)."))
-    );
+        h("p", { class: "text-xs text-faint mt-3 max-w-4xl" }, "First replay. \"Clicks vs yours\" is a version's click rate minus your email's, in points: the fair test of the words. \"Went on to\" also counts merchants who would have acted anyway. Each version's appeal is a placeholder until the AI judge reads the words (planned).")), false),
+      collapsible("Technical simulation details", "Seed, replays and assumptions.", h("div", { class: "grid gap-3 sm:grid-cols-2 lg:grid-cols-4" },
+        [["Seed", String(run.seed)], ["Replays", `${num(run.replays)} completed`], ["Merchants today", num(start.merchants)], ["Placeholder settings", `${num(run.placeholders)} made-up numbers`]].map(([k, v]) =>
+          h("div", { class: "rounded-md border border-hair bg-shell p-3" }, h("div", { class: "text-[10px] font-mono uppercase tracking-wider text-faint" }, k), h("div", { class: "font-mono mt-1" }, v)))), false));
   };
-  const startTabs = run.starts.length > 1 ? h("div", { class: "flex rounded-lg border border-hair p-0.5 text-sm" }, run.starts.map((s, i) => {
-    const b = h("button", { type: "button", class: "px-3 py-1.5 rounded-md text-soft" }, `${num(s.merchants)} merchants`);
-    b.onclick = () => { startIndex = i; stageIndex = 0; startTabs.querySelectorAll("button").forEach((x, k) => x.className = "px-3 py-1.5 rounded-md " + (k === i ? "bg-elevated text-ink" : "text-soft")); render(); };
-    if (i === 0) b.className = "px-3 py-1.5 rounded-md bg-elevated text-ink";
+  const onStage = e => { if (!view.contains(body)) return document.removeEventListener("stage", onStage); stageIndex = Math.max(0, run.starts[startIndex].segments.findIndex(s => s.segment === e.detail)); render(); body.children[2]?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  document.addEventListener("stage", onStage);
+  const startTabs = run.starts.length > 1 ? h("div", { class: "flex rounded border border-hair p-0.5 text-[12px] font-mono" }, run.starts.map((s, i) => {
+    const b = h("button", { type: "button", class: "px-3 py-1.5 rounded " + (i === 0 ? "bg-elevated text-ink" : "text-soft") }, `${num(s.merchants)} merchants`);
+    b.onclick = () => { startIndex = i; stageIndex = 0; startTabs.querySelectorAll("button").forEach((x, k) => x.className = "px-3 py-1.5 rounded " + (k === i ? "bg-elevated text-ink" : "text-soft")); render(); };
     return b;
   })) : null;
   view.replaceChildren(
-    h("div", { class: "fade-up flex flex-col md:flex-row md:items-end justify-between gap-4" },
-      h("div", {}, h("div", { class: "text-xs font-mono text-faint" }, `${day(run.created)} · seed ${run.seed} · ${num(run.replays)} replays`),
-        h("h1", { class: "text-3xl md:text-4xl font-semibold tracking-tight mt-1" }, run.summary[1] ? run.summary[1].replace(/\*\*/g, "") : "Results")),
-      h("div", { class: "flex gap-2 items-center" }, startTabs, h("a", { href: `/api/runs/${encodeURIComponent(name)}/report`, target: "_blank", rel: "noopener", class: "text-sm px-3 py-1.5 rounded-md border border-hair hover:border-edge" }, "Full report"))),
-    h("ul", { class: "mt-4 mb-6 space-y-1 text-sm text-soft max-w-4xl fade-up" }, run.summary.slice(2).filter(s => s.startsWith("In ")).slice(0, 3).map(s => h("li", {}, s))),
+    h("div", { class: "flex flex-wrap items-center justify-between gap-3 mb-5 fade-up" },
+      h("div", { class: "flex flex-wrap items-center gap-2 text-sm" }, h("a", { href: "#/runs", class: "text-soft hover:text-ink" }, "Simulations"), h("span", { class: "text-faint" }, "/"), tag(name, "border border-indigo/40 text-indigo"), tag(`● Completed (${num(run.replays)} replays)`, "bg-win/10 text-win")),
+      h("div", { class: "flex flex-wrap gap-2 items-center" }, startTabs,
+        h("a", { href: `/api/runs/${encodeURIComponent(name)}/versions.csv`, download: `${name}-versions.csv`, class: "text-sm px-3 py-1.5 rounded border border-hair hover:border-edge" }, "Export CSV"),
+        h("a", { href: "#/compose", class: "text-sm px-3 py-1.5 rounded border border-hair hover:border-edge" }, "New simulation"))),
     body);
   render();
 }
 
 // ---------- routing ----------
+// The sidebar's "Simulation run" and "Decision brief" open the run going now, or the newest results.
+async function showLatest(kind) {
+  view.replaceChildren(h("div", { class: "text-soft" }, "Finding the latest run…"));
+  let data; try { data = await api("/api/runs"); } catch (e) { view.replaceChildren(h("p", { class: "text-soft" }, e.message)); return; }
+  if (kind === "running" && data.running.length) location.replace("#/running/" + data.running[0].run);
+  else if (data.runs.length) location.replace("#/run/" + data.runs[0].run);
+  else { setNav(kind === "running" ? "running" : "run", "No runs yet"); view.replaceChildren(card("p-10 text-center", h("p", { class: "text-soft" }, "No simulation has run yet."), h("a", { href: "#/compose", class: "inline-block mt-4 px-4 py-2 rounded bg-indigo text-white text-sm font-medium" }, "Write your emails and simulate"))); }
+}
+// A stage in the sidebar opens that stage in the results, or its email on Compose.
+document.querySelectorAll("[data-stage]").forEach(li => {
+  const open = () => {
+    const page = (location.hash || "").split("/")[1];
+    if (page === "run") document.dispatchEvent(new CustomEvent("stage", { detail: li.dataset.stage }));
+    else { location.hash = "#/compose"; setTimeout(() => document.getElementById("email-" + li.dataset.stage)?.scrollIntoView({ behavior: "smooth", block: "start" }), 300); }
+  };
+  li.addEventListener("click", open);
+  li.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+});
 function route() {
   clearTimers();
   const [, page, arg] = (location.hash || "#/compose").split("/");
-  if (page === "run" && arg) showRun(arg);
+  if (page === "latest") showLatest(arg);
+  else if (page === "run" && arg) showRun(arg);
   else if (page === "running" && arg) showRunning(arg);
   else if (page === "runs") showRuns();
   else showCompose();
