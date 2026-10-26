@@ -11,12 +11,13 @@ import pytest
 from winback import Approach, Offer, RunResult, Segment, Settings, load_settings, run_simulation
 from winback.cli import main
 
-SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
+from conftest import SETTINGS, copy_settings, only
+
 REPLAYS = 4
 
 
 def only_1000(settings: Settings) -> Settings:
-    return dataclasses.replace(settings, start_sizes=(1000,))
+    return only(settings, 1000)
 
 
 @pytest.fixture(scope="module")
@@ -196,9 +197,7 @@ def test_the_summary_compares_the_ai_loops_edge_at_both_starting_sizes() -> None
 
 
 def test_without_a_number_of_replays_the_command_replays_as_many_times_as_the_settings_say(tmp_path: Path) -> None:
-    for name in ("settings.toml", "first_drafts.toml", "prewritten.toml"):
-        (tmp_path / name).write_text((SETTINGS.parent / name).read_text())
-    settings_file = tmp_path / "settings.toml"
+    settings_file = copy_settings(tmp_path)
     settings_file.write_text(settings_file.read_text().replace("count = { value = 200,", "count = { value = 2,"))
     out = tmp_path / "report.md"
 

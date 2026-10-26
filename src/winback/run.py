@@ -3,11 +3,12 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, EmailResult, Journey, OfferSummary, SegmentOutcome, StayResult, offer_summary, run_calendar, segment_outcomes
+from winback.lifecycle import Approach, EmailResult, Journey, StayResult, run_calendar
 from winback.loop import LoopReport
+from winback.outcomes import OfferSummary, SegmentOutcome, offer_summary, segment_outcomes
 from winback.replays import Replays, replay_seed, replay_stats
-from winback.settings import Settings
 from winback.segments import Segment
+from winback.settings import Settings
 from winback.world import Merchant, already_paying, existing_by_segment, merchants, weekly_signups
 
 
@@ -38,9 +39,12 @@ class RunResult:
     report: str
 
 
-def run_simulation(settings: Settings, seed: int, replays: int = 1) -> RunResult:
+def run_simulation(settings: Settings, seed: int, replays: int | None = 1) -> RunResult:
     """Replay the weeks this many times with different luck, from each starting size in the settings, and
-    write one report: what happened across the replays, then the first replay in full."""
+    write one report: what happened across the replays, then the first replay in full. `None` replays as
+    many times as the settings say; the default of one is the quick run tests use."""
+    if replays is None:
+        replays = settings.replays
     if replays < 1:
         raise ValueError(f"A run needs at least one replay, not {replays}")
     seeds = [replay_seed(seed, i) for i in range(replays)]
@@ -52,7 +56,7 @@ def run_simulation(settings: Settings, seed: int, replays: int = 1) -> RunResult
             result = _run_from(settings, start, this_seed)
             if i == 0:
                 by_start[start] = result
-            stats.append(replay_stats(result, settings))  # only the summary is kept, so memory stays flat
+            stats.append(replay_stats(result.outcomes, result.results, settings))  # only the summary is kept, so memory stays flat
         replayed[start] = Replays(seeds, stats)
     return RunResult(by_start=by_start, replays=replayed, report=report.render(settings, seed, by_start, replayed))
 
@@ -80,7 +84,7 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         pushed=outcomes.pushed,
         baselines=outcomes.baselines,
         loop=_loop_report(calendars[Approach.AI_LOOP].loop),
-        offers=offer_summary(calendars, settings.monthly_price),
+        offers=offer_summary(calendars),
     )
 
 

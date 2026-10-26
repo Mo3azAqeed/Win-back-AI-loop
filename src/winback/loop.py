@@ -10,9 +10,9 @@ import random
 from dataclasses import dataclass, field
 from typing import TypeVar
 
-from winback.offers import Offer
 from winback.segments import Segment
 from winback.settings import SegmentSettings, Settings, Variant
+from winback.trialist import Offer
 
 
 K = TypeVar("K")
@@ -49,6 +49,7 @@ class _Posterior:
     b: float = 1.0
     tries: int = 0
     rewards: float = 0.0
+    full_rewards: int = 0  # rewards of exactly 1: clicks, or merchants who reached the goal
 
     @property
     def mean(self) -> float:
@@ -61,7 +62,7 @@ class _Posterior:
 
     def learn(self, reward: float) -> None:
         self.a, self.b = self.a + reward, self.b + (1 - reward)
-        self.tries, self.rewards = self.tries + 1, self.rewards + reward
+        self.tries, self.rewards, self.full_rewards = self.tries + 1, self.rewards + reward, self.full_rewards + (reward == 1)
 
 
 @dataclass
@@ -112,6 +113,10 @@ class OfferRecord:
     assigned: int  # Trialists assigned it and judged at the horizon (emailed or skipped; never the holdout)
     revenue_share: float  # their first-month revenue, in full prices: a discounted payment counts as half
     leading: bool
+
+    def revenue_per_trialist(self, monthly_price: float) -> float | None:
+        """Average first-month revenue per Trialist assigned this offer; None before any is judged."""
+        return self.revenue_share * monthly_price / self.assigned if self.assigned else None
 
 
 @dataclass(frozen=True)
@@ -249,18 +254,18 @@ class AiLoop:
         def records(slot: str) -> list[VariantRecord]:
             leader = self._leader(slot)
             return [
-                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, int(v.posterior.rewards), v.retired, v is leader)
+                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, v.posterior.full_rewards, v.retired, v is leader)
                 for v in self.variants[slot]
             ]
 
         timings = {}
         for segment, posteriors in self.timings.items():
             best = max(posteriors, key=lambda t: posteriors[t].mean)
-            timings[segment] = [TimingRecord(t.label, p.tries, int(p.rewards), t is best) for t, p in posteriors.items()]
+            timings[segment] = [TimingRecord(t.label, p.tries, p.full_rewards, t is best) for t, p in posteriors.items()]
         best_offer = max(self.offers, key=lambda o: self.offers[o].mean)
         offers = [OfferRecord(o, p.tries, p.rewards, o is best_offer) for o, p in self.offers.items()]
         segment_copy = {
-            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, int(body.posterior.rewards))
+            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.full_rewards)
             for segment, (subject, body) in self.own_first_drafts.items()
         }
         return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers, list(self.history), list(self.weekly_leaders))
@@ -300,7 +305,7 @@ class AiLoop:
             if _chance_better(leader.posterior, variant.posterior) < self.rules.retire_confidence:
                 continue
             variant.retired = True
-            sends, clicks = variant.posterior.tries, int(variant.posterior.rewards)
+            sends, clicks = variant.posterior.tries, variant.posterior.full_rewards
             self.history.append(CopyChange(self.today, slot, "dropped", variant.text, variant.cta, sends, clicks, ""))
             if self.waiting[slot]:
                 staying = self._active(slot)

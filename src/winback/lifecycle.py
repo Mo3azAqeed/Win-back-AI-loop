@@ -12,11 +12,12 @@ import random
 from dataclasses import dataclass, field
 from enum import Enum
 
+from winback import trialist
 from winback.draws import draw
 from winback.loop import AiLoop, LoopReport, Timing, read_shift
-from winback.offers import Offer
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
+from winback.trialist import Offer
 from winback.world import DAYS_PER_WEEK, Merchant, last_entry_day
 
 
@@ -125,6 +126,7 @@ class StayResult:
     reached: bool
     holdout: bool
     first_month_revenue: float  # what the goal action brought, if it was a payment; 0 otherwise
+    discounted: bool  # paid the discounted price
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,7 @@ class _OpenStay:
     left: float | None = None
     goal_day: float | None = None
     first_month_revenue: float = 0.0
+    discounted: bool = False
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
     clicked: bool = False
@@ -242,7 +245,7 @@ class _Calendar:
 
     def _enter(self, state: _MerchantState, segment: Segment, day: float) -> None:
         behaviour = self.settings.segments[segment]
-        deadline = day + self.settings.trial_days if segment is Segment.TRIALIST else math.inf
+        deadline = trialist.deadline(self.settings, segment, day)
         stay = _OpenStay(segment, day, deadline, _Draws(self.seed, state.merchant, segment), counted=day <= self.last_entry_day)
         state.stays.append(stay)
         if stay.counted:
@@ -280,13 +283,11 @@ class _Calendar:
         stay.email, stay.email_sent_at, state.last_email = EmailFate.SENT, day, day
         if stay.received_offer is Offer.EXTENSION:
             # More trial days: a merchant who would have paid on its own just after the trial now can.
-            stay.deadline += offers.extra_trial_days
+            stay.deadline = trialist.extended(offers, stay.deadline)
             if stay.goal_day is None and stay.organic_day is not None and stay.organic_day <= stay.deadline:
                 self._set_goal(state, stay, stay.organic_day)
         if stay.counted:
-            # Idle and Drafter emails are judged from the email; every Trialist from publishing, whatever its offer.
-            opens = stay.entered if stay.segment is Segment.TRIALIST else day
-            closes = opens + behaviour.miss_window_days
+            closes = trialist.miss_window_opens(stay.segment, stay.entered, day) + behaviour.miss_window_days
             self.run_end = max(self.run_end, closes)
             self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
         subject_appeal, body_appeal, timing_shift = FIRST_DRAFT.subject_appeal, FIRST_DRAFT.body_appeal, 0.0
@@ -301,7 +302,7 @@ class _Calendar:
         clicked = stay.clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
         if self.loop is not None and copy is not None:
             self.loop.learn_from_click(stay.segment, copy, clicked, day)
-        act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.received_offer]) if stay.received_offer is not None else behaviour.act_rate
+        act_rate = trialist.act_rate(offers, behaviour.act_rate, stay.received_offer)
         if clicked and stay.draws.chance("act") < act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):
@@ -315,11 +316,8 @@ class _Calendar:
         stay.left = day
         following = NEXT_SEGMENT[stay.segment]
         if following is None:
-            # The discount only works through the email's link: a merchant who clicked it before paying pays
-            # the discounted price, even one who would have paid in full anyway.
-            discounted = stay.received_offer is Offer.DISCOUNT and stay.clicked
-            price_share = self.settings.offers.discount_price_share if discounted else 1.0
-            state.paid_at, stay.first_month_revenue = day, self.settings.monthly_price * price_share
+            stay.discounted = trialist.discounted(stay.received_offer, stay.clicked)
+            state.paid_at, stay.first_month_revenue = day, trialist.first_month_revenue(self.settings, stay.discounted)
         else:
             self._enter(state, following, day)
 
@@ -330,7 +328,7 @@ class _Calendar:
             if stay.offer is not None:
                 self.loop.learn_from_revenue(stay.offer, stay.first_month_revenue / self.settings.monthly_price)
         self.results.append(
-            StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, state.merchant.holdout, stay.first_month_revenue)
+            StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, state.merchant.holdout, stay.first_month_revenue, stay.discounted)
         )
 
     def _close_miss_window(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
@@ -342,119 +340,3 @@ class _Calendar:
 def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> CalendarRun:
     """Run one approach for every merchant on one shared calendar."""
     return _Calendar(settings, merchants, seed, approach).run()
-
-
-def _rate(part: int, whole: int) -> float:
-    return part / whole if whole else 0.0
-
-
-@dataclass(frozen=True)
-class EmailTally:
-    sent: int
-    skipped: int
-    hits: int  # followed by the goal action inside the miss window
-    misses: int
-
-    def __add__(self, other: "EmailTally") -> "EmailTally":
-        return EmailTally(self.sent + other.sent, self.skipped + other.skipped, self.hits + other.hits, self.misses + other.misses)
-
-
-def _emails(stays: list[Stay], results: list[EmailResult]) -> EmailTally:
-    """Emails sent and skipped across these stays, and the scored ones that hit or missed. Holdout
-    stays only ever have ghost sends, so their tally counts ghost sends and ghost skips."""
-    hits = sum(r.hit for r in results)
-    sent = sum(s.email in (EmailFate.SENT, EmailFate.GHOST_SENT) for s in stays)
-    skipped = sum(s.email in (EmailFate.SKIPPED, EmailFate.GHOST_SKIPPED) for s in stays)
-    return EmailTally(sent, skipped, hits, len(results) - hits)
-
-
-@dataclass(frozen=True)
-class SegmentOutcome:
-    counted: int
-    reached: int
-    emails: EmailTally
-    true_lift: float
-    paid_in_window: int  # merchants who paid within the paid window of entering this segment
-    first_month_revenue: float  # from payments within the horizon (Trialists paying)
-
-    @property
-    def reached_share(self) -> float:
-        return _rate(self.reached, self.counted)
-
-    @property
-    def paid_share(self) -> float:
-        return _rate(self.paid_in_window, self.counted)
-
-
-def _outcome(run: CalendarRun, segment: Segment, merchants: set[str], paid_window_days: float, no_email_share: float) -> SegmentOutcome:
-    """One segment's counted stays for these merchants. Holdout merchants only ever have ghost sends,
-    so they have no scored emails."""
-    results = [r for r in run.results if r.segment is segment and r.merchant_key in merchants]
-    reached = sum(r.reached for r in results)
-    stays = [(j, s) for j in run.journeys if j.merchant.key in merchants for s in j.stays if s.segment is segment and s.counted]
-    scored = [e for e in run.email_results if e.segment is segment and e.merchant_key in merchants]
-    emails = _emails([s for _, s in stays], scored)
-    paid = sum(j.paid_at is not None and s.entered <= j.paid_at <= s.entered + paid_window_days for j, s in stays)
-    lift = _rate(reached, len(results)) - no_email_share
-    return SegmentOutcome(len(results), reached, emails, lift, paid, sum(r.first_month_revenue for r in results))
-
-
-@dataclass(frozen=True)
-class Outcomes:
-    """Every approach's results per segment, split by which merchants they count."""
-
-    judged: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants who would be in the segment with no email
-    pushed: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants an earlier email pushed into it
-    baselines: dict[Segment, SegmentOutcome]  # the holdout, never emailed
-
-
-def segment_outcomes(runs: dict[Approach, CalendarRun], paid_window_days: float) -> Outcomes:
-    """Per segment and approach: how many reached the goal action within the horizon, true lift against
-    no email, the emails and how they scored, paid conversion within the paid window, and first-month
-    revenue.
-
-    True lift compares the same merchants: those who would be in the segment with no email. An email
-    can push extra merchants into a later segment; they are that earlier email's win, already counted
-    there, so they are reported apart. Nothing comes before Idle, so no email pushes anyone into it.
-    The holdout is never emailed; its goal rate is each segment's baseline, taken from an emailing
-    approach (a holdout merchant behaves the same in every one)."""
-    held = {j.merchant.key for j in runs[Approach.NO_EMAIL].journeys if j.merchant.holdout}
-    emailing = runs[Approach.HAND_WRITTEN]
-
-    def emailed_in(run: CalendarRun, segment: Segment) -> set[str]:
-        return {r.merchant_key for r in run.results if r.segment is segment} - held
-
-    judged: dict[Segment, dict[Approach, SegmentOutcome]] = {}
-    pushed: dict[Segment, dict[Approach, SegmentOutcome]] = {}
-    for segment in Segment:
-        would_be_here = emailed_in(runs[Approach.NO_EMAIL], segment)
-        no_email = _outcome(runs[Approach.NO_EMAIL], segment, would_be_here, paid_window_days, no_email_share=0.0)
-        judged[segment] = {a: _outcome(run, segment, would_be_here, paid_window_days, no_email.reached_share) for a, run in runs.items()}
-        pushed[segment] = {}
-        for a, run in runs.items():
-            pushed_here = emailed_in(run, segment) - would_be_here
-            pushed[segment][a] = _outcome(run, segment, pushed_here, paid_window_days, no_email_share=0.0)
-    baselines = {segment: _outcome(emailing, segment, held, paid_window_days, no_email_share=0.0) for segment in Segment}
-    return Outcomes(judged, pushed, baselines)
-
-
-@dataclass(frozen=True)
-class OfferSummary:
-    """What the AI loop's Trialist offers did: emails sent with each, Trialists who paid with the
-    discount, and how many of them would have paid the full price with no email."""
-
-    sent: dict[Offer, int]
-    discounted_payers: int
-    would_have_paid_anyway: int
-
-
-def offer_summary(runs: dict[Approach, CalendarRun], monthly_price: float) -> OfferSummary:
-    """Counted Trialist stays only (only they have results), whether the merchant would be a Trialist with
-    no email or an earlier email pushed it there. A merchant would have paid anyway if, with no email at all,
-    it paid at some point in the run: the simulation knows by looking at the same merchant in the no-email run."""
-    stays = [s for j in runs[Approach.AI_LOOP].journeys for s in j.stays if s.segment is Segment.TRIALIST and s.counted]
-    sent = {o: sum(s.offer is o and s.email is EmailFate.SENT for s in stays) for o in Offer}
-    paid = [r for r in runs[Approach.AI_LOOP].results if r.segment is Segment.TRIALIST and r.reached]
-    discounted = {r.merchant_key for r in paid if r.first_month_revenue < monthly_price}
-    paid_alone = {j.merchant.key for j in runs[Approach.NO_EMAIL].journeys if j.paid_at is not None}
-    return OfferSummary(sent, len(discounted), len(discounted & paid_alone))

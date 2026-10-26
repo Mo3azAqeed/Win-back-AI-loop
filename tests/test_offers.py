@@ -1,5 +1,4 @@
 import dataclasses
-from pathlib import Path
 
 import pytest
 
@@ -8,14 +7,9 @@ import tomllib
 
 from winback import Approach, Offer, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
 from winback.lifecycle import EmailFate, Stay
+from winback.trialist import offer_labels
 
-SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
-
-
-@pytest.fixture(scope="module")
-def run() -> RunResult:
-    return run_simulation(load_settings(SETTINGS), seed=1)
-
+from conftest import SETTINGS, only, with_segment
 
 def with_pay_lift(settings: Settings, offer: Offer, lift: float) -> Settings:
     return dataclasses.replace(settings, offers=dataclasses.replace(settings.offers, pay_lift={**settings.offers.pay_lift, offer: lift}))
@@ -89,7 +83,7 @@ def test_when_the_discount_does_nothing_for_paying_the_ai_loop_stops_choosing_it
     # click here, so its cost shows within 13 weeks. Over the second half of the run the AI loop sends it
     # clearly less often than no offer. A judge counting payments instead of revenue couldn't tell them
     # apart. One seed can be lucky, so six are averaged.
-    settings = with_pay_lift(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,)), Offer.DISCOUNT, 0.0)
+    settings = with_pay_lift(only(load_settings(SETTINGS), 1000), Offer.DISCOUNT, 0.0)
     trialist = dataclasses.replace(settings.segments[Segment.TRIALIST], click_rate=0.5)
     settings = dataclasses.replace(settings, segments={**settings.segments, Segment.TRIALIST: trialist})
     gaps = []
@@ -137,6 +131,12 @@ def test_discounted_payers_who_would_have_paid_anyway_are_those_who_paid_with_no
     assert start.offers.would_have_paid_anyway == len(discounted & paid_alone)
 
 
+def test_each_offer_is_named_from_its_settings() -> None:
+    offers = dataclasses.replace(load_settings(SETTINGS).offers, extra_trial_days=10, discount_price_share=0.25)
+
+    assert offer_labels(offers) == {Offer.NONE: "No offer", Offer.EXTENSION: "10 more trial days", Offer.DISCOUNT: "First month 75% off"}
+
+
 def test_each_offer_line_is_on_the_fact_sheet_and_matches_the_offer_settings() -> None:
     settings = load_settings(SETTINGS)
     fact_sheet = tomllib.loads((SETTINGS.parent / "fact_sheet.toml").read_text())
@@ -148,14 +148,10 @@ def test_each_offer_line_is_on_the_fact_sheet_and_matches_the_offer_settings() -
     assert (float(discounted), float(full)) == (settings.monthly_price * settings.offers.discount_price_share, settings.monthly_price)
 
 
-def with_trialist(settings: Settings, **changes: float) -> Settings:
-    return dataclasses.replace(settings, segments={**settings.segments, Segment.TRIALIST: dataclasses.replace(settings.segments[Segment.TRIALIST], **changes)})
-
-
 def test_each_offer_changes_how_likely_a_trialist_who_clicks_is_to_pay_by_its_own_setting() -> None:
     # Hidden truth: a Trialist who clicks pays 25% of the time with no offer. Here more trial days change
     # nothing and the discount triples it (pay lift 2.0). Nobody pays on their own, so every payer was the email's.
-    settings = with_trialist(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1500,)), organic_share=0.0, act_rate=0.25)
+    settings = with_segment(only(load_settings(SETTINGS), 1500), Segment.TRIALIST, organic_share=0.0, act_rate=0.25)
     settings = with_pay_lift(with_pay_lift(settings, Offer.EXTENSION, 0.0), Offer.DISCOUNT, 2.0)
     # The AI loop soon favours the discount, so three seeds are pooled to see enough clicks on every offer.
     stays = [s for seed in (1, 2, 3) for _, s in trialist_stays(run_simulation(settings, seed=seed).by_start[1500], Approach.AI_LOOP) if s.clicked]
@@ -171,7 +167,7 @@ def test_each_offer_changes_how_likely_a_trialist_who_clicks_is_to_pay_by_its_ow
 
 def test_a_slow_payer_given_more_trial_days_can_pay_until_day_14_and_no_later() -> None:
     # Every Trialist would pay on its own about 12 days after publishing, often after day 7 and sometimes after day 14.
-    settings = with_trialist(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,)), organic_share=1.0, organic_mean_days=12)
+    settings = with_segment(only(load_settings(SETTINGS), 1000), Segment.TRIALIST, organic_share=1.0, organic_mean_days=12)
     stays = [s for _, s in trialist_stays(run_simulation(settings, seed=1).by_start[1000], Approach.AI_LOOP)]
     extended = [s for s in stays if received(s, Offer.EXTENSION)]
     paid_after = [s.left - s.entered for s in extended if s.left is not None]

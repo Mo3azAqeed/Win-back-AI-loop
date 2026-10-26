@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from winback.offers import Offer
 from winback.segments import Segment
+from winback.trialist import Offer
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,8 @@ class LoopSettings:
 
 @dataclass(frozen=True)
 class OfferSettings:
-    """What each Trialist offer gives, the line it adds to the Trialist first draft, and (hidden truth)
-    how much more likely it makes a Trialist who clicks to pay."""
+    """What each Trialist offer gives, the line it adds to the Trialist first draft (from the fact sheet), and
+    (hidden truth) how much more likely it makes a Trialist who clicks to pay."""
 
     extra_trial_days: float
     discount_price_share: float  # the share of the first month's price a Trialist pays with the discount
@@ -101,15 +101,16 @@ class Settings:
 
 
 def load_settings(path: Path) -> Settings:
-    """Load the settings file, and the first drafts and the stand-in writer's list that sit next to it."""
+    """Load the settings file, and the first drafts, the stand-in writer's list and the fact sheet that sit next to it."""
     with path.open("rb") as f:
         raw = tomllib.load(f)
     with (path.parent / "first_drafts.toml").open("rb") as f:
         raw_drafts = tomllib.load(f)
     drafts = {segment: Email(d["subject"], d["body"], d["cta"]) for segment, d in raw_drafts.items()}
-    offer_lines = raw_drafts["trialist"]["offer_lines"]
     with (path.parent / "prewritten.toml").open("rb") as f:
         prewritten = tomllib.load(f)
+    with (path.parent / "fact_sheet.toml").open("rb") as f:
+        offer_lines = tomllib.load(f)["offers"]
     entries = {s.key: s for s in _entries(raw)}
 
     def value(key: str) -> float:

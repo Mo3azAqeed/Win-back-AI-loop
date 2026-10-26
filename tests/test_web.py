@@ -1,7 +1,6 @@
 import base64
 import json
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,8 +11,8 @@ from winback.aws import run_and_save
 from winback.export import run_data
 from winback.web import respond
 
-ROOT = Path(__file__).resolve().parent.parent
-SETTINGS = ROOT / "settings.toml"
+from conftest import SETTINGS
+
 TODAY = date(2026, 10, 26)
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
 

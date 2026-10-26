@@ -319,6 +319,12 @@ Short versions, each with the situation, what I did and the result.
 - **Result:** the chart now shows the loop learning (Idle climbs from +1.8 to +2.0 points while the hand-written email stays flat), and "ahead from week 2" means something. The same review found that "ahead in 0 of 200 replays" for Drafters hid that a third were exact ties, so the report now shows ties too.
 - **Lesson:** a chart can be precise and still answer the wrong question. Ask "what could anyone have known at that point?" before plotting anything over time.
 
+**11. "My own setup instructions broke the deploy."**
+- **Situation:** the web app needed one extra read permission, so I wrote a one-time CloudShell step for the founder. The first deploy after merging failed: "The web identity token provided could not be validated".
+- **What I did:** read the log instead of re-running. The step copied the original fallback flag `CreateOidcProvider=false`, but this account's provider had been created by that same stack, so "false" told CloudFormation to delete it. I owned it to the founder straight away, gave the one-command fix (`true`), and changed the doc to leave the parameter out so the stack keeps its own settings.
+- **Result:** caught within minutes, nothing lost but one deploy run.
+- **Lesson:** an infrastructure parameter that means "create or not" also means "keep or delete" on an update. Copy-pasted setup steps need the same review as code.
+
 ---
 
 ## 8. Vocabulary I use
@@ -343,6 +349,8 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Built #31, the refactor before champion vs challenger: outcome counting has its own module where the "same merchants" rule lives once (the table and the weekly chart can no longer disagree); every Trialist rule lives in one place; the discount is recorded from the click, not inferred from money; offer lines come only from the fact sheet; the tests share one helper file. Proof of no change: reports and web data byte-identical to `main` for three seeds, including a 200-replay run; 26 of 26 planted bugs in the moved code caught (one gap found and closed with a test). |
+| 2026-10-26 | Merged the web app (#33). The first deploy after it failed: my step 8.1 told the founder to update the deploy-role stack with `CreateOidcProvider=false`, which deleted the GitHub login link that stack had created. Fixed in CloudShell with `true`; the doc now leaves the parameter out (story 11). Broke the champion-vs-challenger work (#32) into #34–#36 with the founder's decisions: borrow Idle's playbook, a test always ends (2 weeks or 1,000 emails at most), clicks decide with a goal-action check. |
 | 2026-10-26 | Built #28, the web app the CEO will see: a Run button, the run history, and for each run the summary, the journey funnel, a timeline and funnel per stage, revenue, and every email tested. Served from a public Lambda function URL; starting a run needs an access code. |
 | 2026-10-26 | Built #11: 200 replays at 1,000 and 1,500 merchants with a generated plain-English summary, middle-90% ranges and weekly charts. Over 200 replays the AI loop beats the hand-written email in Idle and Trialist (with more revenue) but never in Drafter: there it can only change timing, +2 days is already best, and about a third of replays tie. Review caught that the weekly chart used results that hadn't happened yet; fixed (story 10). Added `docs/ai-loop.md` and its diagram; chose Jev 1.14 (judge) and DeepSeek V4.1 Flash (writer) for #13. |
 | 2026-10-26 | Planted-bug audit of #22 and #8: 24 of 35 caught at first. Closed every real gap with tests (offer pay lifts, the day-14 limit, the default carry-over, report tables, the revenue-based reward); now 32 of 35, and the last 3 cannot change any result. |

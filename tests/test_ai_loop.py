@@ -1,21 +1,14 @@
 import dataclasses
 import re
 import tomllib
-from pathlib import Path
 
 import pytest
 
 from winback import Approach, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
-from winback.lifecycle import EmailFate, SegmentOutcome
+from winback.lifecycle import EmailFate
+from winback.outcomes import SegmentOutcome
 
-ROOT = Path(__file__).resolve().parent.parent
-SETTINGS = ROOT / "settings.toml"
-
-
-@pytest.fixture
-def run() -> RunResult:
-    return run_simulation(load_settings(SETTINGS), seed=1)
-
+from conftest import ROOT, SETTINGS, only, with_segment
 
 def test_the_stand_in_writers_list_has_at_least_8_subjects_and_8_bodies_within_the_fact_sheet() -> None:
     settings = load_settings(SETTINGS)
@@ -36,11 +29,6 @@ def test_the_stand_in_writers_list_has_at_least_8_subjects_and_8_bodies_within_t
 def with_subjects(settings: Settings, *qualities: float) -> Settings:
     subjects = tuple(dataclasses.replace(v, quality=q) for v, q in zip(settings.prewritten_subjects, qualities))
     return dataclasses.replace(settings, prewritten_subjects=subjects + settings.prewritten_subjects[len(qualities):])
-
-
-def with_segment(settings: Settings, segment: Segment, **changes: float) -> Settings:
-    segments = {**settings.segments, segment: dataclasses.replace(settings.segments[segment], **changes)}
-    return dataclasses.replace(settings, segments=segments)
 
 
 def with_carry_over(settings: Settings, carry_over: float) -> Settings:
@@ -88,7 +76,7 @@ def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early
     # The email has to matter enough for 13 weeks to tell timings apart: with the placeholder Drafter
     # rates, +1 hour leads in about a third of seeds whichever judge is used.
     settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_shift_1_hour=-2.0, click_rate=0.5, act_rate=1.0)
-    settings = dataclasses.replace(settings, start_sizes=(1000,))
+    settings = only(settings, 1000)
     shares, ahead = [], 0
     for seed in range(1, 7):
         timings = run_simulation(settings, seed=seed).by_start[1000].loop.timings[Segment.DRAFTER]
@@ -159,7 +147,7 @@ def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_firs
     # Timing doesn't change reading here, so every Drafter or Trialist email is read and clicked exactly as
     # often as its first draft (read rate x click rate), unless some of Idle's edge carries over.
     settings = with_subjects(load_settings(SETTINGS), 400)
-    settings = dataclasses.replace(settings, start_sizes=(1000,), prewritten_bodies=(dataclasses.replace(settings.prewritten_bodies[0], quality=300), *settings.prewritten_bodies[1:]))
+    settings = dataclasses.replace(only(settings, 1000), prewritten_bodies=(dataclasses.replace(settings.prewritten_bodies[0], quality=300), *settings.prewritten_bodies[1:]))
     for segment in (Segment.DRAFTER, Segment.TRIALIST):
         settings = with_segment(settings, segment, read_shift_1_hour=0.0, read_shift_5_days=0.0)
 
@@ -175,7 +163,7 @@ def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_firs
 
 
 def test_changing_the_carry_over_never_changes_idle_results() -> None:
-    settings = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
+    settings = only(load_settings(SETTINGS), 1000)
     none, full = (run_simulation(with_carry_over(settings, c), seed=1).by_start[1000] for c in (0.0, 1.0))
 
     # Paying within 30 days of signing up depends on the Trialist email that comes later, so it may change.
@@ -188,7 +176,7 @@ def test_changing_the_carry_over_never_changes_idle_results() -> None:
 
 
 def test_the_report_states_the_carry_over_it_used() -> None:
-    settings = dataclasses.replace(with_carry_over(load_settings(SETTINGS), 0.5), start_sizes=(1000,))
+    settings = only(with_carry_over(load_settings(SETTINGS), 0.5), 1000)
     report = run_simulation(settings, seed=1).report
 
     assert "Carry-over from Idle: 50%" in report

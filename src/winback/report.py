@@ -2,12 +2,13 @@
 
 from typing import TYPE_CHECKING, NamedTuple
 
-from winback.lifecycle import Approach, OfferSummary, SegmentOutcome
+from winback.lifecycle import Approach
 from winback.loop import LoopReport, VariantRecord
-from winback.offers import Offer
+from winback.outcomes import OfferSummary, SegmentOutcome
 from winback.replays import Replays
-from winback.settings import Settings
 from winback.segments import Segment
+from winback.settings import Settings
+from winback.trialist import MISS_WINDOW_FROM, Offer, offer_labels
 
 if TYPE_CHECKING:
     from winback.run import StartResult
@@ -26,10 +27,13 @@ SEGMENT_TEXT = {
     Segment.DRAFTER: SegmentText("Drafter", "saving the draft", "publish", "published"),
     Segment.TRIALIST: SegmentText("Trialist", "publishing", "pay", "paid"),
 }
-APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email (your first draft)", Approach.AI_LOOP: "AI loop"}
+APPROACH_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email", Approach.AI_LOOP: "AI loop"}
 HOLDOUT_LABEL = "Holdout (never emailed)"
-# Where each segment's miss window starts.
-MISS_WINDOW_FROM = {Segment.IDLE: "the email", Segment.DRAFTER: "the email", Segment.TRIALIST: "publishing"}
+
+
+def _row_label(approach: Approach) -> str:
+    """An approach's name in a segment's tables, which come after your first drafts."""
+    return APPROACH_LABEL[approach] + (" (your first draft)" if approach is Approach.HAND_WRITTEN else "")
 
 
 def render(settings: Settings, seed: int, by_start: "dict[int, StartResult]", replays: dict[int, Replays]) -> str:
@@ -119,12 +123,12 @@ def _segment_section(
     ]
     for approach, o in outcomes.items():
         lift = "reference" if approach is Approach.NO_EMAIL else f"{o.true_lift * 100:+.1f}"
-        row = f"| {APPROACH_LABEL[approach]} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.paid_share:.1%} |"
+        row = f"| {_row_label(approach)} | {o.counted:,} | {o.reached_share:.1%} | {lift} | {o.paid_share:.1%} |"
         lines.append(row + (f" ${o.first_month_revenue:,.0f} |" if paying else ""))
-        extra = pushed[approach]
-        if extra.counted:
-            row = f"| {APPROACH_LABEL[approach]}: pushed here by an earlier email | {extra.counted:,} | {extra.reached_share:.1%} | – | {extra.paid_share:.1%} |"
-            lines.append(row + (f" ${extra.first_month_revenue:,.0f} |" if paying else ""))
+        pushed_here = pushed[approach]
+        if pushed_here.counted:
+            row = f"| {_row_label(approach)}: pushed here by an earlier email | {pushed_here.counted:,} | {pushed_here.reached_share:.1%} | – | {pushed_here.paid_share:.1%} |"
+            lines.append(row + (f" ${pushed_here.first_month_revenue:,.0f} |" if paying else ""))
     held = f"| {HOLDOUT_LABEL} | {baseline.counted:,} | {baseline.reached_share:.1%} | baseline | {baseline.paid_share:.1%} |"
     lines += [
         held + (f" ${baseline.first_month_revenue:,.0f} |" if paying else ""),
@@ -146,7 +150,7 @@ def _segment_section(
         "| Approach | Emails sent | Skipped | Hits | Misses |",
         "|---|---|---|---|---|",
         *(
-            f"| {APPROACH_LABEL[a]} | {e.sent:,} | {e.skipped:,} | {e.hits:,} | {e.misses:,} |"
+            f"| {_row_label(a)} | {e.sent:,} | {e.skipped:,} | {e.hits:,} | {e.misses:,} |"
             for a, o in outcomes.items()
             if a is not Approach.NO_EMAIL
             for e in [o.emails + pushed[a].emails]  # every email sent in this segment, whoever it went to
@@ -157,18 +161,9 @@ def _segment_section(
     return lines
 
 
-def offer_labels(settings: Settings) -> dict[Offer, str]:
-    offers = settings.offers
-    return {
-        Offer.NONE: "No offer",
-        Offer.EXTENSION: f"{offers.extra_trial_days:g} more trial days",
-        Offer.DISCOUNT: f"First month {1 - offers.discount_price_share:.0%} off",
-    }
-
-
 def _offers_section(settings: Settings, offers: OfferSummary) -> list[str]:
     """The offers the AI loop's Trialist emails carried, and what the discount cost."""
-    labels, price = offer_labels(settings), settings.monthly_price
+    labels, price = offer_labels(settings.offers), settings.monthly_price
     return [
         "Each AI loop Trialist email carries one offer, added as a line to your Trialist first draft. "
         "The hand-written email never carries one.",
@@ -231,7 +226,7 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
     for segment, timings in loop.timings.items():
         for t in timings:
             lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'ahead so far' if t.leading else ''} |")
-    labels = offer_labels(settings)
+    labels = offer_labels(settings.offers)
     lines += [
         "",
         "Trialist offers learn the same way, from the first-month revenue of every Trialist assigned them, "
@@ -241,7 +236,7 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         "|---|---|---|---|",
         *(
             f"| {labels[o.offer]} | {o.assigned:,} | "
-            + (f"${o.revenue_share * settings.monthly_price / o.assigned:,.2f}" if o.assigned else "–")
+            + (f"${revenue:,.2f}" if (revenue := o.revenue_per_trialist(settings.monthly_price)) is not None else "–")
             + f" | {'ahead so far' if o.leading else ''} |"
             for o in loop.offers
         ),
@@ -259,7 +254,6 @@ def _margin(outcome: SegmentOutcome) -> float:
     return 1.96 * (p * (1 - p) / n) ** 0.5 * 100 if n else 0.0
 
 
-SHORT_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-written email", Approach.AI_LOOP: "AI loop"}
 # Chart lines, in the order drawn: no email (the zero line), the hand-written email, the AI loop.
 CHART_COLOURS = {Approach.NO_EMAIL: ("#9ca3af", "Grey"), Approach.HAND_WRITTEN: ("#f59e0b", "Orange"), Approach.AI_LOOP: ("#2563eb", "Blue")}
 
@@ -337,14 +331,14 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
             for approach in (Approach.HAND_WRITTEN, Approach.AI_LOOP):
                 low, high = r.middle_90(segment, approach)
                 won = f"{r.wins(segment):,} ahead, {r.ties(segment):,} tied, of {count:,}" if approach is Approach.AI_LOOP else "–"
-                lines.append(f"| {SEGMENT_TEXT[segment].label} | {SHORT_LABEL[approach]} | {r.average(segment, approach):+.1f} | {low:+.1f} to {high:+.1f} | {won} |")
+                lines.append(f"| {SEGMENT_TEXT[segment].label} | {APPROACH_LABEL[approach]} | {r.average(segment, approach):+.1f} | {low:+.1f} to {high:+.1f} | {won} |")
         lines += [
             "",
             f"Trialist first-month revenue, average per replay (${settings.monthly_price:,.0f} a payment, ${settings.monthly_price * settings.offers.discount_price_share:,.0f} with the discount):",
             "",
             "| Approach | Average first-month revenue |",
             "|---|---|",
-            *(f"| {SHORT_LABEL[a]} | ${r.revenue(a):,.0f} |" for a in Approach),
+            *(f"| {APPROACH_LABEL[a]} | ${r.revenue(a):,.0f} |" for a in Approach),
             "",
         ]
         for segment in Segment:
@@ -362,7 +356,7 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
                 *(f"    line [{', '.join(f'{v:.2f}' for v in r.weekly(segment, a))}]" for a in CHART_COLOURS),
                 "```",
                 "",
-                ". ".join(f"{name}: {SHORT_LABEL[a]}" for a, (_, name) in CHART_COLOURS.items())
+                ". ".join(f"{name}: {APPROACH_LABEL[a]}" for a, (_, name) in CHART_COLOURS.items())
                 + ". Each week counts the merchants whose result was known by then (their horizon had closed), "
                 "which is all the AI loop could have learned from; the last week is the segment's true lift.",
                 "",

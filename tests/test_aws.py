@@ -1,4 +1,3 @@
-import dataclasses
 import subprocess
 import sys
 from datetime import date
@@ -10,8 +9,8 @@ from winback import load_settings, run_simulation
 from winback import aws
 from winback.aws import ready_message, run_and_save
 
-ROOT = Path(__file__).resolve().parent.parent
-SETTINGS = ROOT / "settings.toml"
+from conftest import ROOT, SETTINGS, copy_settings, only
+
 TODAY = date(2026, 10, 22)
 
 
@@ -47,15 +46,13 @@ def test_a_run_can_ask_for_one_starting_size_only() -> None:
 
     key = run_and_save({"seed": 7, "start": 1000, "replays": 1}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
 
-    only_1000 = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
+    only_1000 = only(load_settings(SETTINGS), 1000)
     assert key == "runs/2026-10-22-seed7-start1000.md"
     assert bucket.objects[key] == run_simulation(only_1000, seed=7).report
 
 
 def test_without_a_number_of_replays_a_run_replays_as_many_times_as_the_settings_say(tmp_path: Path) -> None:
-    for name in ("settings.toml", "first_drafts.toml", "prewritten.toml"):
-        (tmp_path / name).write_text((ROOT / name).read_text())
-    settings_file = tmp_path / "settings.toml"
+    settings_file = copy_settings(tmp_path)
     settings_file.write_text(settings_file.read_text().replace("count = { value = 200,", "count = { value = 2,"))
     bucket = FakeBucket()
 
