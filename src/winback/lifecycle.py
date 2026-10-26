@@ -17,7 +17,7 @@ from winback.loop import AiLoop, LoopReport, Timing, read_shift
 from winback.offers import Offer
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
-from winback.world import Merchant, last_entry_day
+from winback.world import DAYS_PER_WEEK, Merchant, last_entry_day
 
 
 class Approach(Enum):
@@ -214,8 +214,12 @@ class _Calendar:
         heapq.heappush(self.queue, _Scheduled(day, event.value, next(self.sequence), event, state.index, stay))
 
     def run(self) -> CalendarRun:
+        week = 1
         while self.queue and self.queue[0].day <= self.run_end:
             item = heapq.heappop(self.queue)
+            while self.loop is not None and item.day > week * DAYS_PER_WEEK:
+                self.loop.end_week(week)
+                week += 1
             self.event_days.append(item.day)
             state = self.merchants[item.merchant]
             if item.event is _Event.ENTER:
@@ -289,7 +293,7 @@ class _Calendar:
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
         clicked = stay.clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
         if self.loop is not None and copy is not None:
-            self.loop.learn_from_click(stay.segment, copy, clicked)
+            self.loop.learn_from_click(stay.segment, copy, clicked, day)
         act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.received_offer]) if stay.received_offer is not None else behaviour.act_rate
         if clicked and stay.draws.chance("act") < act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)

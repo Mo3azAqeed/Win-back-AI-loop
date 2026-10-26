@@ -18,7 +18,9 @@ from typing import Any, Protocol
 
 import boto3
 
-from winback.aws import run_name
+from winback.aws import BUNDLED_SETTINGS, SEND_AFTER, checked_emails, run_name
+from winback.segments import Segment
+from winback.settings import load_settings
 
 PAGE = Path(__file__).resolve().parent / "web" / "index.html"
 MAX_REPLAYS = 200
@@ -55,6 +57,8 @@ def respond(
     """Answer one request to the app: the page, the run list, one run's data or report, or a new run."""
     if method == "GET" and path == "/":
         return Response(200, "text/html; charset=utf-8", PAGE.read_text())
+    if method == "GET" and path == "/api/drafts":
+        return _json(200, {"emails": _drafts()})
     if method == "GET" and path == "/api/runs":
         return _json(200, {"runs": _finished(store), "running": _running(store, now)})
     parts = path.removeprefix("/api/runs/").split("/")
@@ -83,13 +87,35 @@ def _start(
     replays = asked.get("replays")
     if not isinstance(replays, int) or isinstance(replays, bool) or not 1 <= replays <= MAX_REPLAYS:
         return _json(400, {"error": f"Ask for 1 to {MAX_REPLAYS} replays."})
+    payload: dict[str, object] = {"replays": replays}
+    if "emails" in asked:
+        try:
+            payload["emails"] = checked_emails(asked["emails"])
+        except ValueError as error:
+            return _json(400, {"error": str(error)})
     if _running(store, now):
         return _json(409, {"error": "A run is already going. Try again when it finishes."})
     seed = new_seed()
     name = run_name(today, seed, None)
     store.put(f"pending/{name}.json", json.dumps({"run": name, "requested": now.isoformat(), "replays": replays}))
-    start_run({"seed": seed, "replays": replays})
+    start_run({"seed": seed, **payload})
     return _json(202, {"run": name})
+
+
+def _drafts() -> list[dict[str, str]]:
+    """Your current first drafts, for the editor to start from."""
+    settings = load_settings(BUNDLED_SETTINGS if BUNDLED_SETTINGS.exists() else Path("settings.toml"))
+    by_days = {days: label for label, days in SEND_AFTER.items()}
+    return [
+        {
+            "segment": s.value,
+            "subject": settings.first_drafts[s.value].subject,
+            "body": settings.first_drafts[s.value].body,
+            "cta": settings.first_drafts[s.value].cta,
+            "send_after": by_days.get(settings.segments[s].hand_written_after_days, "2 days"),
+        }
+        for s in Segment
+    ]
 
 
 def _finished(store: Store) -> list[dict[str, Any]]:

@@ -11,9 +11,13 @@ import boto3
 
 from winback.export import run_data
 from winback.run import run_simulation
-from winback.settings import load_settings
+from winback.segments import Segment
+from winback.settings import Email, Settings, load_settings
 
 LATEST = "latest.md"
+# The send times you can pick for your email: the timings the AI loop tests too.
+SEND_AFTER = {"1 hour": 1 / 24, "2 days": 2.0, "5 days": 5.0}
+LIMITS = {"subject": 200, "body": 3000, "cta": 60}
 # The Lambda package holds the winback folder with the settings files beside it.
 BUNDLED_SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 
@@ -44,6 +48,8 @@ def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Pat
     start = _whole_number(event, "start")
     replays = _whole_number(event, "replays")
     settings = load_settings(settings_path)
+    if event.get("emails") is not None:
+        settings = with_your_emails(settings, checked_emails(event["emails"]))
     if start is not None:
         settings = dataclasses.replace(settings, start_sizes=(start,))
     name = run_name(today, seed, start)
@@ -98,3 +104,30 @@ def ready_message(bucket: str, region: str, key: str) -> str:
         f"This run:   {console}{key}\n"
         f"Latest run: {console}{LATEST}\n"
     )
+
+
+def checked_emails(raw: object) -> list[dict[str, str]]:
+    """Your hand-written emails as the app sends them: one per stage, with a subject, body, button text and
+    one of the send times the simulation tests. Raises ValueError for anything it can't simulate."""
+    if not isinstance(raw, list) or not all(isinstance(e, dict) for e in raw) or len(raw) != len(Segment) or {e.get("segment") for e in raw} != {s.value for s in Segment}:
+        raise ValueError("Send one email for each stage: idle, drafter and trialist.")
+    for email in raw:
+        for field, limit in LIMITS.items():
+            value = email.get(field)
+            if not isinstance(value, str) or not value.strip() or len(value) > limit:
+                raise ValueError(f"Each email needs a {field} of 1 to {limit} characters.")
+        if email.get("send_after") not in SEND_AFTER:
+            raise ValueError(f"Send after must be one of: {', '.join(SEND_AFTER)}.")
+    return [{key: email[key] for key in ("segment", "subject", "body", "cta", "send_after")} for email in raw]
+
+
+def with_your_emails(settings: Settings, emails: list[dict[str, str]]) -> Settings:
+    """The settings with your emails as the first drafts: what the hand-written approach sends, when, and
+    where the AI loop starts."""
+    drafts = dict(settings.first_drafts)
+    segments = dict(settings.segments)
+    for email in emails:
+        segment = Segment(email["segment"])
+        drafts[segment.value] = Email(email["subject"], email["body"], email["cta"])
+        segments[segment] = dataclasses.replace(segments[segment], hand_written_after_days=SEND_AFTER[email["send_after"]])
+    return dataclasses.replace(settings, first_drafts=drafts, segments=segments)

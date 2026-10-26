@@ -205,3 +205,85 @@ def test_until_the_boundary_lets_it_read_reports_the_app_says_what_to_do(monkeyp
     answer = web.handler({"requestContext": {"http": {"method": "GET"}}, "rawPath": "/api/runs"}, None)
 
     assert answer["statusCode"] == 500 and "docs/aws-setup.md" in str(answer["body"])
+
+
+def test_each_stage_has_a_week_by_week_story_of_what_was_sent_written_and_dropped() -> None:
+    settings = load_settings(SETTINGS)
+    result = run_simulation(settings, seed=7, replays=2)
+    data = run_data(settings, result, seed=7, created=TODAY)
+    detail = result.by_start[1000]
+    segments = {s["segment"]: s for s in data["starts"][0]["segments"]}
+
+    idle = segments["idle"]["weeks"]
+    assert [w["week"] for w in idle] == list(range(1, 16))
+    # Your first drafts are where the AI loop starts, in week 1.
+    assert {(c["text"], c["by"]) for c in idle[0]["ai"]["written"]} >= {(settings.first_drafts["idle"].subject, "you"), (settings.first_drafts["idle"].body, "you")}
+    written = [c for w in idle for c in w["ai"]["written"]]
+    dropped = [c for w in idle for c in w["ai"]["dropped"]]
+    assert dropped and len(written) == len(detail.loop.subjects) + len(detail.loop.bodies)
+    # A dropped email is never the one leading at the end of its week, and was judged on enough sends.
+    for w in idle:
+        for c in w["ai"]["dropped"]:
+            assert c["text"] not in (w["ai"]["leading"]["subject"], w["ai"]["leading"]["body"])
+            assert c["sends"] >= settings.loop.min_sends
+    # Drafters and Trialists send their own first draft every week, and their words never change.
+    for segment in ("drafter", "trialist"):
+        for w in segments[segment]["weeks"]:
+            assert w["ai"]["leading"]["subject"] == settings.first_drafts[segment].subject
+            assert w["ai"]["written"] == w["ai"]["dropped"] == []
+    # Only Trialist emails carry offers.
+    assert any(w["ai"]["offers"] for w in segments["trialist"]["weeks"]) and not any(w["ai"]["offers"] for w in idle)
+    # Every email sent by week 15 is counted in its week, and a goal action needs a send.
+    sent = sum(s.segment is Segment.IDLE and s.email_sent_at is not None and s.email_sent_at <= 105 and s.email.value == "sent" for j in detail.journeys[Approach.HAND_WRITTEN] for s in j.stays)
+    assert sum(w["hand"]["sent"] for w in idle) == sent
+    assert all(w[a]["clicks"] <= w[a]["sent"] and w[a]["goal_actions"] <= w[a]["sent"] for w in idle for a in ("hand", "ai"))
+
+
+YOUR_EMAILS = [
+    {"segment": "idle", "subject": "Your store is waiting", "body": "Hi {first_name}, clone a store you like and make it yours.", "cta": "Clone a store", "send_after": "1 hour"},
+    {"segment": "drafter", "subject": "Publish {store_name} today", "body": "Hi {first_name}, one click and your 7-day free trial starts.", "cta": "Publish", "send_after": "2 days"},
+    {"segment": "trialist", "subject": "Keep {store_name} going", "body": "Hi {first_name}, keep your store for $40/month.", "cta": "Keep it", "send_after": "5 days"},
+]
+
+
+def test_the_editor_starts_from_your_current_first_drafts() -> None:
+    settings = load_settings(SETTINGS)
+    status, content, _ = call(FakeBucket(), "GET", "/api/drafts")
+
+    assert status == 200
+    assert [(e["segment"], e["subject"], e["cta"], e["send_after"]) for e in content["emails"]] == [
+        (s.value, settings.first_drafts[s.value].subject, settings.first_drafts[s.value].cta, "2 days") for s in Segment
+    ]
+
+
+def test_a_run_from_the_app_carries_the_emails_you_wrote() -> None:
+    status, _, started = call(FakeBucket(), "POST", "/api/runs", {"code": "letmein", "replays": 20, "emails": YOUR_EMAILS})
+
+    assert status == 202
+    assert started == [{"seed": 4242, "replays": 20, "emails": YOUR_EMAILS}]
+
+
+@pytest.mark.parametrize(
+    "emails",
+    [
+        YOUR_EMAILS[:2],  # a stage missing
+        [{**YOUR_EMAILS[0], "send_after": "3 days"}, *YOUR_EMAILS[1:]],  # a timing the simulation can't test
+        [{**YOUR_EMAILS[0], "subject": ""}, *YOUR_EMAILS[1:]],  # an empty subject
+        [{**YOUR_EMAILS[0], "body": "x" * 3001}, *YOUR_EMAILS[1:]],  # far too long
+        "not a list",
+    ],
+)
+def test_emails_that_cant_be_simulated_are_refused(emails: object) -> None:
+    assert call(FakeBucket(), "POST", "/api/runs", {"code": "letmein", "replays": 20, "emails": emails})[0] == 400
+
+
+def test_the_simulation_sends_your_emails_as_the_hand_written_email_and_starts_the_ai_loop_from_them() -> None:
+    bucket = FakeBucket()
+    run_and_save({"seed": 7, "start": 1000, "replays": 1, "emails": YOUR_EMAILS}, today=TODAY, settings_path=SETTINGS, put=bucket.put)
+    data = json.loads(bucket.objects["runs/2026-10-26-seed7-start1000.json"])
+
+    assert [(e["subject"], e["send_after_days"]) for e in data["first_drafts"]] == [("Your store is waiting", 1 / 24), ("Publish {store_name} today", 2), ("Keep {store_name} going", 5)]
+    loop = data["starts"][0]["loop"]
+    assert loop["subjects"][0]["text"] == "Your store is waiting" and loop["bodies"][0]["cta"] == "Clone a store"
+    assert [c["subject"] for c in loop["segment_copy"]] == ["Publish {store_name} today", "Keep {store_name} going"]
+    assert "Your store is waiting" in bucket.objects["runs/2026-10-26-seed7-start1000.md"]
