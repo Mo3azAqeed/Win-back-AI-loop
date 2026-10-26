@@ -163,13 +163,27 @@ def _loop_section(loop: LoopReport) -> list[str]:
     lines = [
         "### What the AI loop is sending",
         "",
-        "Idle tests subjects and bodies against each other and learns from human clicks. Drafters and Trialists "
-        "get whichever Idle subject and body lead. Hidden quality is visible only because this is a simulation: "
-        "100 is your first draft, and every other number is a placeholder.",
+        "Idle tests subjects and bodies against each other and learns from human clicks. Hidden quality is "
+        "visible only because this is a simulation: 100 is your first draft, and every other number is a placeholder.",
         "",
         *variants("Subject", loop.subjects),
         "",
         *variants("Body", loop.bodies),
+        "",
+        f"Carry-over from Idle: {loop.carry_over:.0%}. Drafters and Trialists get their own first drafts, plus this share "
+        "of the edge the Idle leader has over your Idle first draft"
+        + (
+            ", so any win over the hand-written email there comes from what the AI loop tests in that segment."
+            if loop.carry_over == 0
+            else ". That edge is assumed, not tested on Drafters or Trialists."
+        ),
+        "",
+        "| Segment | Email | Sends | Human clicks |",
+        "|---|---|---|---|",
+        *(
+            f"| {SEGMENT_TEXT[segment].label} | {c.subject}: {c.body} **[{c.cta}]** | {c.sends:,} | {_share(c.clicks, c.sends)} |"
+            for segment, c in loop.segment_copy.items()
+        ),
         "",
         "Each segment learns timing from every emailed merchant assigned it, judged when the horizon closes. "
         "With a few hundred merchants per timing, the one ahead so far may still be ahead by chance.",

@@ -43,6 +43,10 @@ def with_segment(settings: Settings, segment: Segment, **changes: float) -> Sett
     return dataclasses.replace(settings, segments=segments)
 
 
+def with_carry_over(settings: Settings, carry_over: float) -> Settings:
+    return dataclasses.replace(settings, loop=dataclasses.replace(settings.loop, carry_over=carry_over))
+
+
 def test_the_ai_loop_starts_from_your_first_drafts(run: RunResult) -> None:
     settings = load_settings(SETTINGS)
     loop = run.by_start[1000].loop
@@ -81,7 +85,9 @@ def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early
     # A third of Drafters publish on their own within days, which a judge counting the window after the
     # email would credit to the early email. Judged by everyone assigned, from the trigger, +1 hour gets
     # under a third of Drafters on average and is never ahead (one seed can be lucky, so six are used).
-    settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_shift_1_hour=-2.0, act_rate=0.6)
+    # The email has to matter enough for 13 weeks to tell timings apart: with the placeholder Drafter
+    # rates, +1 hour leads in about a third of seeds whichever judge is used.
+    settings = with_segment(load_settings(SETTINGS), Segment.DRAFTER, read_shift_1_hour=-2.0, click_rate=0.5, act_rate=1.0)
     settings = dataclasses.replace(settings, start_sizes=(1000,))
     shares, ahead = [], 0
     for seed in range(1, 7):
@@ -113,7 +119,7 @@ def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_i
 
 
 def test_only_idle_emails_teach_subjects_and_bodies(run: RunResult) -> None:
-    # Drafters and Trialists reuse the Idle leaders; their clicks teach timing only.
+    # Drafters and Trialists send their own first drafts; their clicks teach nothing about Idle's words.
     start = run.by_start[1000]
     idle_sent = start.outcomes[Segment.IDLE][Approach.AI_LOOP].emails.sent
 
@@ -133,3 +139,52 @@ def test_an_early_email_held_back_by_the_48_hour_gap_is_read_as_when_it_really_a
 
     assert early.assigned > 20
     assert 0.3 < early.reached / early.assigned < 0.56
+
+
+def test_drafters_and_trialists_get_their_own_first_drafts_never_idle_words(run: RunResult) -> None:
+    settings = load_settings(SETTINGS)
+    start = run.by_start[1000]
+    idle_words = {v.text for v in (*start.loop.subjects, *start.loop.bodies)}
+
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        copy, draft = start.loop.segment_copy[segment], settings.first_drafts[segment.value]
+        sent = sum(s.segment is segment and s.email is EmailFate.SENT for j in start.journeys[Approach.AI_LOOP] for s in j.stays)
+        assert (copy.subject, copy.body, copy.cta) == (draft.subject, draft.body, draft.cta)
+        assert not {copy.subject, copy.body} & idle_words
+        assert copy.sends == sent > 0
+
+
+def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_first_drafts_whatever_idle_finds() -> None:
+    # Idle soon finds a subject and a body far better than your first draft (hidden quality 400 and 300).
+    # Timing doesn't change reading here, so every Drafter or Trialist email is read and clicked exactly as
+    # often as its first draft (read rate x click rate), unless some of Idle's edge carries over.
+    settings = with_subjects(load_settings(SETTINGS), 400)
+    settings = dataclasses.replace(settings, start_sizes=(1000,), prewritten_bodies=(dataclasses.replace(settings.prewritten_bodies[0], quality=300), *settings.prewritten_bodies[1:]))
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        settings = with_segment(settings, segment, read_shift_1_hour=0.0, read_shift_5_days=0.0)
+
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        behaviour = settings.segments[segment]
+        expected = behaviour.read_rate * behaviour.click_rate
+        none = run_simulation(with_carry_over(settings, 0.0), seed=1).by_start[1000].loop.segment_copy[segment]
+        full = run_simulation(with_carry_over(settings, 1.0), seed=1).by_start[1000].loop.segment_copy[segment]
+        margin = 3 * (expected * (1 - expected) / none.sends) ** 0.5
+
+        assert abs(none.clicks / none.sends - expected) < margin, segment
+        assert full.clicks / full.sends > expected + 2 * margin, segment
+
+
+def test_changing_the_carry_over_never_changes_idle_results() -> None:
+    settings = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
+    none, full = (run_simulation(with_carry_over(settings, c), seed=1).by_start[1000] for c in (0.0, 1.0))
+
+    assert none.outcomes[Segment.IDLE] == full.outcomes[Segment.IDLE]
+    assert (none.loop.subjects, none.loop.bodies, none.loop.timings[Segment.IDLE]) == (full.loop.subjects, full.loop.bodies, full.loop.timings[Segment.IDLE])
+    assert none.outcomes[Segment.TRIALIST] != full.outcomes[Segment.TRIALIST]
+
+
+def test_the_report_states_the_carry_over_it_used() -> None:
+    settings = dataclasses.replace(with_carry_over(load_settings(SETTINGS), 0.5), start_sizes=(1000,))
+    report = run_simulation(settings, seed=1).report
+
+    assert "Carry-over from Idle: 50%" in report

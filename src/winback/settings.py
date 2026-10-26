@@ -61,6 +61,7 @@ class LoopSettings:
     min_sends: int
     retire_confidence: float
     prior_sends: float
+    carry_over: float  # the share of the Idle leader's edge that Drafter and Trialist emails get, 0 to 1
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,7 @@ def load_settings(path: Path) -> Settings:
             min_sends=int(value("ai_loop.min_sends")),
             retire_confidence=value("ai_loop.retire_confidence"),
             prior_sends=value("ai_loop.prior_sends"),
+            carry_over=value("ai_loop.carry_over"),
         ),
         entries=tuple(entries.values()),
     )

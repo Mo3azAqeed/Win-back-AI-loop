@@ -86,6 +86,10 @@ A send time picked for a holdout merchant exactly as it would be for a real emai
 The founder's approved hand-written email for a segment. It is what the hand-written approach sends and where the AI loop starts, and it is the reference for hidden quality (100). Not a merchant's store draft.
 _Avoid_: Template, baseline email
 
+**Carry-over**:
+The share (0 to 1) of the edge the Idle leader has over the Idle first draft that Drafter and Trialist emails are given in the simulation. Drafters and Trialists always send their own first drafts' words; at 0, the default, none of Idle's edge carries over, so any AI loop win there is earned in that segment. Real carry-over is meant to come from lessons (see ADR 0005).
+_Avoid_: Transfer, spillover
+
 **Variant**:
 One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; the loop decides which one each merchant gets.
 
