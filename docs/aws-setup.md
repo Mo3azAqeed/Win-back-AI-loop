@@ -69,7 +69,7 @@ AWS then emails `ALERT_EMAIL` asking you to confirm the SNS subscription. **Clic
    - `{"seed": 7}`: a run you can repeat exactly;
    - `{"seed": 7, "start": 1000}`: only the 1,000-merchant start;
    - `{"seed": 7, "replays": 5}`: 5 replays instead of 200, for a quick look (a full run takes a few minutes).
-3. Click **Test**. A few seconds later the report is in S3, and the "report ready" email links to it.
+3. Click **Test**. The report is in S3 a few minutes later (seconds with `"replays": 5`), and the "report ready" email links to it.
 
 Otherwise it runs by itself every Monday at 06:00 UTC.
 

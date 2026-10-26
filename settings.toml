@@ -5,7 +5,7 @@
 # should be replaced with real data when we have it.
 
 [replays]
-count = { value = 200, placeholder = false, note = "The same weeks are replayed this many times with different luck, so one lucky run can't fool us." }
+count = { value = 200, placeholder = false, note = "The same weeks are replayed this many times with different luck, so one lucky run can't fool us (our choice, from spec #1)." }
 
 [merchants]
 start = { value = 1000, placeholder = false, note = "Merchants today (founder's figure)." }

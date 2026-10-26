@@ -66,7 +66,7 @@ def test_without_a_number_of_replays_a_run_replays_as_many_times_as_the_settings
 
 
 @pytest.mark.parametrize("event", [{"seed": "7"}, {"seed": 7.5}, {"seed": True}, {"start": "1000"}, {"replays": "2"}])
-def test_a_run_refuses_a_seed_or_start_that_is_not_a_whole_number(event: dict[str, object]) -> None:
+def test_a_run_refuses_a_seed_start_or_number_of_replays_that_is_not_a_whole_number(event: dict[str, object]) -> None:
     bucket = FakeBucket()
 
     with pytest.raises(ValueError, match="must be a whole number"):

@@ -41,18 +41,20 @@ class RunResult:
 def run_simulation(settings: Settings, seed: int, replays: int = 1) -> RunResult:
     """Replay the weeks this many times with different luck, from each starting size in the settings, and
     write one report: what happened across the replays, then the first replay in full."""
+    if replays < 1:
+        raise ValueError(f"A run needs at least one replay, not {replays}")
     seeds = [replay_seed(seed, i) for i in range(replays)]
     by_start: dict[int, StartResult] = {}
-    summed: dict[int, Replays] = {}
+    replayed: dict[int, Replays] = {}
     for start in settings.start_sizes:
         stats = []
-        for i, replay in enumerate(seeds):
-            result = _run_from(settings, start, replay)
+        for i, this_seed in enumerate(seeds):
+            result = _run_from(settings, start, this_seed)
             if i == 0:
                 by_start[start] = result
-            stats.append(replay_stats(result, settings.weeks))  # only the summary is kept, so memory stays flat
-        summed[start] = Replays(seeds, stats)
-    return RunResult(by_start=by_start, replays=summed, report=report.render(settings, seed, by_start, summed))
+            stats.append(replay_stats(result, settings))  # only the summary is kept, so memory stays flat
+        replayed[start] = Replays(seeds, stats)
+    return RunResult(by_start=by_start, replays=replayed, report=report.render(settings, seed, by_start, replayed))
 
 
 def _run_from(settings: Settings, start: int, seed: int) -> StartResult:

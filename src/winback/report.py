@@ -285,6 +285,12 @@ def _wins(replays: Replays, segment: Segment) -> int:
     return sum(a > h for a, h in zip(_lifts(replays, segment, Approach.AI_LOOP), _lifts(replays, segment, Approach.HAND_WRITTEN)))
 
 
+def _ties(replays: Replays, segment: Segment) -> int:
+    """Replays where both approaches lifted exactly as much: with the same merchants and luck, an AI loop
+    that sends the same email at the same time gets the same result."""
+    return sum(a == h for a, h in zip(_lifts(replays, segment, Approach.AI_LOOP), _lifts(replays, segment, Approach.HAND_WRITTEN)))
+
+
 def _weekly(replays: Replays, segment: Segment, approach: Approach) -> list[float]:
     """The average across replays of the cumulative true lift by the end of each week, in points."""
     weeks = len(replays.stats[0].weekly[segment][approach])
@@ -328,6 +334,7 @@ def _summary(settings: Settings, replays: dict[int, Replays]) -> list[str]:
             sentence = (
                 f"- In {SEGMENT_TEXT[segment].label} the AI loop {verdict}: {ai:+.1f} points against {hand:+.1f} for the hand-written email, "
                 f"ahead in {_wins(r, segment):,} of {count:,} replays"
+                + (f" and tied in {_ties(r, segment):,}" if _ties(r, segment) else "")
                 + (f", ahead from week {week} on average" if week is not None else "")
                 + "."
             )
@@ -340,12 +347,12 @@ def _summary(settings: Settings, replays: dict[int, Replays]) -> list[str]:
             lines.append(sentence)
         lines.append("")
     if len(replays) > 1:
-        (small, a), (large, b) = sorted(replays.items())[0], sorted(replays.items())[-1]
+        (small, fewer), (large, more) = sorted(replays.items())[0], sorted(replays.items())[-1]
 
         def edge(r: Replays, segment: Segment) -> float:
             return _average(_lifts(r, segment, Approach.AI_LOOP)) - _average(_lifts(r, segment, Approach.HAND_WRITTEN))
 
-        moves = ", ".join(f"{SEGMENT_TEXT[s].label} {edge(a, s):+.1f} to {edge(b, s):+.1f}" for s in Segment)
+        moves = ", ".join(f"{SEGMENT_TEXT[s].label} {edge(fewer, s):+.1f} to {edge(more, s):+.1f}" for s in Segment)
         lines += [f"Starting from {large:,} merchants instead of {small:,}, the AI loop's edge over the hand-written email, in points, moved: {moves}.", ""]
     lines += [
         "No lessons are written yet (they arrive with #9), so none can be false. Your original open-and-click idea joins the comparison with #10.",
@@ -368,14 +375,14 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
         lines += [
             f"### From {start:,} merchants",
             "",
-            "| Segment | Approach | Average true lift (pts) | Middle 90% of replays (pts) | AI loop beat the hand-written email |",
+            "| Segment | Approach | Average true lift (pts) | Middle 90% of replays (pts) | AI loop against the hand-written email |",
             "|---|---|---|---|---|",
         ]
         for segment in Segment:
             for approach in (Approach.HAND_WRITTEN, Approach.AI_LOOP):
                 values = _lifts(r, segment, approach)
                 low, high = _middle_90(values)
-                won = f"{_wins(r, segment):,} of {count:,}" if approach is Approach.AI_LOOP else "–"
+                won = f"{_wins(r, segment):,} ahead, {_ties(r, segment):,} tied, of {count:,}" if approach is Approach.AI_LOOP else "–"
                 lines.append(f"| {SEGMENT_TEXT[segment].label} | {SHORT_LABEL[approach]} | {_average(values):+.1f} | {low:+.1f} to {high:+.1f} | {won} |")
         lines += [
             "",
@@ -402,7 +409,8 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
                 "```",
                 "",
                 ". ".join(f"{name}: {SHORT_LABEL[a]}" for a, (_, name) in CHART_COLOURS.items())
-                + ". Each week counts the merchants who would have entered the segment by then with no email.",
+                + ". Each week counts the merchants whose result was known by then (their horizon had closed), "
+                "which is all the AI loop could have learned from; the last week is the segment's true lift.",
                 "",
             ]
     return lines

@@ -1,6 +1,9 @@
 import dataclasses
+import os
 import re
 import statistics
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -72,14 +75,19 @@ def test_each_replay_is_the_same_as_a_single_run_with_its_seed(run: RunResult) -
         assert stats.revenue[Approach.AI_LOOP] == alone.outcomes[Segment.TRIALIST][Approach.AI_LOOP].first_month_revenue
 
 
-def test_a_segments_cumulative_lift_by_week_13_is_its_true_lift(run: RunResult) -> None:
+def test_each_week_counts_only_results_known_by_then_and_the_last_week_is_the_true_lift(run: RunResult) -> None:
+    # A result is known when its horizon closes: 8 days after entering Idle, 14 after publishing. The last
+    # signups enter on day 91, so every result is known by day 105, the end of week 15.
     for stats in run.replays[1000].stats:
         for segment in Segment:
             for approach in Approach:
                 weekly = stats.weekly[segment][approach]
-                assert len(weekly) == 13
+                assert len(weekly) == 15
                 assert weekly[-1] == pytest.approx(stats.lifts[segment][approach])
             assert all(v == 0 for v in stats.weekly[segment][Approach.NO_EMAIL])
+        assert all(stats.weekly[segment][approach][0] == 0 for segment in Segment for approach in Approach)  # nothing known in week 1
+    ai = [s.weekly[Segment.IDLE][Approach.AI_LOOP] for s in run.replays[1000].stats]
+    assert any(week[1] != week[-1] for week in ai)  # early weeks are not just the final lift
 
 
 def test_the_report_shows_average_lift_its_middle_90_percent_range_and_how_often_the_ai_loop_won(run: RunResult) -> None:
@@ -90,9 +98,10 @@ def test_the_report_shows_average_lift_its_middle_90_percent_range_and_how_often
         ai = [s.lifts[segment][Approach.AI_LOOP] * 100 for s in replays.stats]
         hand = [s.lifts[segment][Approach.HAND_WRITTEN] * 100 for s in replays.stats]
         wins = sum(a > h for a, h in zip(ai, hand))
-        row = re.search(rf"\| {segment.value.title()} \| AI loop \| ([+-]\d+\.\d) \| ([+-]\d+\.\d) to ([+-]\d+\.\d) \| (\d+) of {REPLAYS} \|", summary)
+        row = re.search(rf"\| {segment.value.title()} \| AI loop \| ([+-]\d+\.\d) \| ([+-]\d+\.\d) to ([+-]\d+\.\d) \| (\d+) ahead, (\d+) tied, of {REPLAYS} \|", summary)
         assert row, segment
-        average, low, high, won = float(row[1]), float(row[2]), float(row[3]), int(row[4])
+        average, low, high, won, tied = float(row[1]), float(row[2]), float(row[3]), int(row[4]), int(row[5])
+        assert tied == sum(a == h for a, h in zip(ai, hand))
         assert average == pytest.approx(statistics.fmean(ai), abs=0.05)
         assert (low, high) == pytest.approx((percentile(ai, 5), percentile(ai, 95)), abs=0.05)
         assert won == wins
@@ -109,7 +118,7 @@ def test_the_report_has_a_weekly_true_lift_chart_for_each_segment(run: RunResult
         lines = re.findall(r"line \[(.*?)\]", chart)
         assert len(lines) == 3  # no email (zero), hand-written, AI loop
         values = [[float(v) for v in line.split(",")] for line in lines]
-        assert all(len(v) == 13 for v in values) and set(values[0]) == {0.0}
+        assert all(len(v) == 15 for v in values) and set(values[0]) == {0.0}
         ai_by_week_13 = statistics.fmean(s.weekly[segment][Approach.AI_LOOP][-1] for s in run.replays[1000].stats) * 100
         assert values[2][-1] == pytest.approx(ai_by_week_13, abs=0.01)
     assert "Grey: No email. Orange: Hand-written email. Blue: AI loop." in summary
@@ -139,7 +148,7 @@ def test_the_plain_english_summary_is_written_from_the_results() -> None:
     strong_summary = strong.split("## Summary", 1)[1].split("## ", 1)[0]
     assert "From 1,000 merchants" in flat_summary and "From 1,000 merchants" in strong_summary
     assert "did better than the hand-written email in 0 of 3 segments" in flat_summary
-    assert flat_summary.count("ahead in 0 of 3 replays") == 3  # a tie is not a win
+    assert flat_summary.count("ahead in 0 of 3 replays and tied in 3") == 3  # a tie is not a win
     assert re.search(r"In Idle the AI loop did better: [+]\d+\.\d points against [+-]\d+\.\d", strong_summary)
     assert re.search(r"In Trialist the AI loop did better", strong_summary)
     assert "ahead from week" in strong_summary
@@ -166,8 +175,10 @@ def test_the_week_the_summary_says_the_ai_loop_pulled_ahead_matches_its_chart() 
     settings = dataclasses.replace(settings, prewritten_subjects=(dataclasses.replace(settings.prewritten_subjects[0], quality=400), *settings.prewritten_subjects[1:]))
     report = run_simulation(settings, seed=1, replays=3).report
 
-    week = int(re.search(r"In Idle the AI loop did better: .*?ahead from week (\d+) on average", report)[1])
-    chart = re.search(r"title \"Idle: cumulative true lift \(pts\)\".*?```", report, re.S)[0]
+    stated = re.search(r"In Idle the AI loop did better: .*?ahead from week (\d+) on average", report)
+    chart_block = re.search(r"title \"Idle: cumulative true lift \(pts\)\".*?```", report, re.S)
+    assert stated and chart_block
+    week, chart = int(stated[1]), chart_block[0]
     _, hand, ai = ([float(v) for v in line.split(",")] for line in re.findall(r"line \[(.*?)\]", chart))
     assert all(a > h for a, h in zip(ai[week - 1 :], hand[week - 1 :]))
     assert week == 1 or ai[week - 2] <= hand[week - 2]
@@ -194,3 +205,31 @@ def test_without_a_number_of_replays_the_command_replays_as_many_times_as_the_se
     main(["--settings", str(settings_file), "--start", "1000", "--out", str(out)])
 
     assert "## Across 2 replays" in out.read_text()
+
+
+def test_the_summary_states_each_segments_average_lifts_from_the_replays(run: RunResult) -> None:
+    summary = run.report.split("## Summary", 1)[1].split("## Across", 1)[0]
+
+    for segment in Segment:
+        ai = statistics.fmean(s.lifts[segment][Approach.AI_LOOP] * 100 for s in run.replays[1000].stats)
+        hand = statistics.fmean(s.lifts[segment][Approach.HAND_WRITTEN] * 100 for s in run.replays[1000].stats)
+        stated = re.escape(f": {ai:+.1f} points against {hand:+.1f} for the hand-written email")
+        assert re.search(rf"In {segment.value.title()} the AI loop did (no )?better{stated}", summary), segment
+
+
+def test_a_run_needs_at_least_one_replay() -> None:
+    with pytest.raises(ValueError, match="at least one replay"):
+        run_simulation(only_1000(load_settings(SETTINGS)), seed=1, replays=0)
+
+
+def test_the_same_seed_gives_an_identical_report_in_separate_processes(tmp_path: Path) -> None:
+    # Python's hash seed differs between processes; nothing in a report may depend on it.
+    reports = []
+    for hash_seed in ("1", "2"):
+        out = tmp_path / f"report{hash_seed}.md"
+        env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+        command = [sys.executable, "-m", "winback.cli", "--settings", str(SETTINGS), "--seed", "4", "--start", "1000", "--replays", "3", "--out", str(out)]
+        subprocess.run(command, env=env, check=True, capture_output=True)
+        reports.append(out.read_text())
+
+    assert reports[0] == reports[1]
