@@ -11,7 +11,7 @@ from winback.report import APPROACH_LABEL, SEGMENT_TEXT, summary_sentences
 from winback.segments import Segment
 from winback.settings import Settings
 from winback.trialist import Offer, offer_labels
-from winback.world import week_of
+from winback.world import DAYS_PER_WEEK, week_of
 
 if TYPE_CHECKING:  # run.py imports this module's caller
     from winback.run import RunResult, StartResult
@@ -88,6 +88,15 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
             "segment_copy": [
                 {"segment": s.value, "label": SEGMENT_TEXT[s].label, "subject": c.subject, "body": c.body, "cta": c.cta, "sends": c.sends, "clicks": c.clicks}
                 for s, c in loop.segment_copy.items()
+            ],
+            "segment_versions": [
+                {
+                    "segment": s.value, "label": SEGMENT_TEXT[s].label, "number": v.number, "subject": v.subject, "body": v.body, "cta": v.cta,
+                    "week": week_of(v.day), "borrowed_from_test": v.borrowed_from_test, "idle_version": v.idle_version, "changed": v.changed,
+                    "hypothesis": v.hypothesis, "sends": v.sends, "clicks": v.clicks,
+                }
+                for s, versions in loop.segment_versions.items()
+                for v in versions
             ],
             "timings": [
                 {"segment": s.value, "label": SEGMENT_TEXT[s].label, "timing": t.label, "assigned": t.assigned, "reached": t.reached, "leading": t.leading}
@@ -169,9 +178,9 @@ def _weeks(detail: "StartResult", segment: Segment, weeks: int) -> list[dict[str
 
 def _leading(loop: LoopReport, segment: Segment, week: int) -> dict[str, str]:
     """The email the AI loop was sending to this segment at the end of the week: Idle's leaders, or the
-    segment's own first draft."""
+    segment's latest version by then (its first draft, or a change borrowed from Idle)."""
     if segment is not Segment.IDLE:
-        own = loop.segment_copy[segment]
+        own = [v for v in loop.segment_versions[segment] if v.day <= week * DAYS_PER_WEEK][-1]
         return {"subject": own.subject, "body": own.body, "cta": own.cta}
     known = [w for w in loop.weekly_leaders if w.week <= week]
     leaders = known[-1] if known else loop.weekly_leaders[0]
@@ -218,9 +227,15 @@ def _versions(detail: "StartResult", segment: Segment, offer_labels_: dict[Offer
                 "number": v.number, "hypothesis": v.hypothesis, **tally, **_against(yours, tally),
             })
     else:
-        own = loop.segment_copy[segment]
-        tally = _tally(ai_sent)
-        versions.append({"part": "email", "text": own.subject, "cta": own.cta, "by": "you", "status": "leading", "written_week": 1, "dropped_week": None, **tally, **_against(yours, tally)})
+        own = loop.segment_versions[segment]
+        for sv, after in zip(own, [*own[1:], None]):
+            tally = _tally([s for s in ai_sent if s.version == sv.number])
+            versions.append({
+                "part": f"v{sv.number}" + (f" · borrowed {sv.changed}" if sv.changed else " · your email"), "text": f"{sv.subject} / {sv.body}", "cta": sv.cta,
+                "by": "you" if sv.borrowed_from_test is None else f"borrowed from Idle test {sv.borrowed_from_test} (v{sv.idle_version})",
+                "status": "leading" if after is None else "dropped", "written_week": week_of(sv.day), "dropped_week": week_of(after.day) if after is not None else None,
+                "number": sv.number, "hypothesis": sv.hypothesis, **tally, **_against(yours, tally),
+            })
     offers = []
     if segment is Segment.TRIALIST:
         for offer in Offer:

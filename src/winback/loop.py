@@ -4,6 +4,8 @@ and a stand-in writer.
 Idle's email comes in versions. Version 0 is your first draft and starts as the champion. The writer brings a
 challenger, the champion with one part changed and a hypothesis saying why, and it gets a third of Idle's
 emails (challenger_share) until the test ends with a verdict (ADR 0007). Every verdict, won or lost, goes into the playbook.
+Drafters and Trialists don't run tests of their own: when an Idle test is won, the writer applies the same change
+to their emails in their own words, and that version replaces theirs (#36).
 
 Timing and offers are not part of a version: every choice there (a timing for one segment, an offer) has a
 Beta posterior over how often it is rewarded, and the loop draws once from each and takes the highest draw.
@@ -104,6 +106,22 @@ class _Version:
 
 
 @dataclass
+class _SegmentVersion:
+    """A Drafter or Trialist email: your first draft, or a change borrowed from a won Idle test."""
+
+    number: int
+    subject: LoopVariant
+    body: LoopVariant
+    introduced: float
+    borrowed_from_test: int | None = None
+    idle_version: int | None = None
+    changed: str | None = None
+    hypothesis: str = ""
+    sends: int = 0
+    clicks: int = 0
+
+
+@dataclass
 class _Arm:
     """One version's results inside one test."""
 
@@ -149,8 +167,9 @@ class Copy:
     subject_appeal: float
     body_appeal: float
     follow_through: float = 1.0
-    version: int | None = None
+    version: int | None = None  # in the email's own segment: Idle's version, or a Drafter or Trialist one
     test: int | None = None
+    segment: Segment = Segment.IDLE
 
 
 @dataclass(frozen=True)
@@ -245,6 +264,24 @@ class SegmentCopyRecord:
 
 
 @dataclass(frozen=True)
+class SegmentVersionRecord:
+    """One Drafter or Trialist version: version 0 is your first draft; each later one borrows the change an
+    Idle test proved, naming that test, and replaced the one before it on the day of the verdict."""
+
+    number: int
+    subject: str
+    body: str
+    cta: str
+    day: float
+    borrowed_from_test: int | None
+    idle_version: int | None
+    changed: str | None
+    hypothesis: str
+    sends: int
+    clicks: int
+
+
+@dataclass(frozen=True)
 class CopyChange:
     """A subject or body that entered Idle's tests in a new version, or left them with a sunset version, and when."""
 
@@ -280,7 +317,8 @@ class LoopReport:
     playbook: list[PlaybookEntry]
     subjects: list[VariantRecord]
     bodies: list[VariantRecord]
-    segment_copy: dict[Segment, SegmentCopyRecord]
+    segment_copy: dict[Segment, SegmentCopyRecord]  # the words each was last sent, and all its sends and clicks
+    segment_versions: dict[Segment, list[SegmentVersionRecord]]
     carry_over: float
     timings: dict[Segment, list[TimingRecord]]
     offers: list[OfferRecord]
@@ -296,8 +334,9 @@ class AiLoop:
       without clearly fewer goal actions, the champion won, the two are the same, or the test hit its limit
       (too close to call: the version ahead on clicks stays, kept but not proven). Then the writer brings the next
       challenger, so no test ever waits.
-    - Drafters and Trialists get their own first drafts, plus the carry-over share of the edge the
-      Idle champion has over your Idle first draft.
+    - Drafters and Trialists start from their own first drafts. When Idle crowns a challenger, the writer applies
+      the same change to their emails in their own words, and that version replaces theirs with no test of its own.
+      How much it helps them is the carry-over share of the edge the Idle part has over your Idle first draft.
     - Every segment learns timing from the goal action of every merchant assigned that timing,
       judged when the horizon closes. Trialist offers learn the same way, from the revenue each
       Trialist brought, so a discounted payment counts as half.
@@ -325,9 +364,8 @@ class AiLoop:
         self.champion = self.versions[0]
         self.test: _Test | None = None
         self._next_challenger()
-        # A Drafter or Trialist first draft is never replaced; its posteriors only count sends and clicks.
-        self.own_first_drafts = {
-            s: (LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0))
+        self.segment_versions = {
+            s: [_SegmentVersion(0, LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0), 0.0)]
             for s in (Segment.DRAFTER, Segment.TRIALIST)
             for d in [settings.first_drafts[s.value]]
         }
@@ -342,7 +380,7 @@ class AiLoop:
 
     def choose_copy(self, segment: Segment) -> Copy:
         """The words for one email: in Idle the champion or, for its share while a test runs, the challenger; else
-        the segment's own first draft with the carry-over share of the Idle champion's appeal."""
+        the segment's latest version, with the carry-over share of the appeal of the Idle parts it borrowed."""
         if segment is Segment.IDLE:
             version = self.champion
             if self.test is not None and self.rngs[Segment.IDLE].random() < self.rules.challenger_share:
@@ -350,9 +388,8 @@ class AiLoop:
             subject, body = version.subject, version.body
             test = self.test.number if self.test is not None else None
             return Copy(subject, body, subject.appeal, body.appeal, subject.follow_through * body.follow_through, version.number, test)
-        carry = self.rules.carry_over
-        subject, body = self.own_first_drafts[segment]
-        return Copy(subject, body, carry * self.champion.subject.appeal, carry * self.champion.body.appeal)
+        latest = self.segment_versions[segment][-1]
+        return Copy(latest.subject, latest.body, latest.subject.appeal, latest.body.appeal, version=latest.number, segment=segment)
 
     def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool, day: float) -> None:
         """An email went out on this day, and a human clicked it or not. Every click counts as human until
@@ -360,6 +397,10 @@ class AiLoop:
         self.today = day
         for variant in (copy.subject, copy.body):
             variant.posterior.learn(clicked)
+        if copy.segment is not Segment.IDLE and copy.version is not None:
+            borrower = self.segment_versions[copy.segment][copy.version]
+            borrower.sends, borrower.clicks = borrower.sends + 1, borrower.clicks + clicked
+            return
         if copy.version is None:
             return
         version = self.versions[copy.version]
@@ -374,7 +415,7 @@ class AiLoop:
 
     def learn_from_goal(self, copy: Copy, reached: bool) -> None:
         """An Idle email's miss window closed: the merchant reached the goal in it or not."""
-        if copy.version is None:
+        if copy.segment is not Segment.IDLE or copy.version is None:
             return
         version = self.versions[copy.version]
         version.goals_judged, version.goals = version.goals_judged + 1, version.goals + reached
@@ -423,12 +464,19 @@ class AiLoop:
         best_offer = max(self.offers, key=lambda o: self.offers[o].mean)
         offers = [OfferRecord(o, p.tries, p.rewards, o is best_offer) for o, p in self.offers.items()]
         segment_copy = {
-            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.full_rewards)
-            for segment, (subject, body) in self.own_first_drafts.items()
+            segment: SegmentCopyRecord(vs[-1].subject.text, vs[-1].body.text, vs[-1].body.cta, sum(v.sends for v in vs), sum(v.clicks for v in vs))
+            for segment, vs in self.segment_versions.items()
+        }
+        segment_versions = {
+            segment: [
+                SegmentVersionRecord(v.number, v.subject.text, v.body.text, v.body.cta, v.introduced, v.borrowed_from_test, v.idle_version, v.changed, v.hypothesis, v.sends, v.clicks)
+                for v in vs
+            ]
+            for segment, vs in self.segment_versions.items()
         }
         versions = [self._record(v) for v in self.versions]
         return LoopReport(
-            versions, list(self.playbook), records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers,
+            versions, list(self.playbook), records("subject"), records("body"), segment_copy, segment_versions, self.rules.carry_over, timings, offers,
             list(self.history), list(self.weekly_leaders),
         )
 
@@ -523,7 +571,26 @@ class AiLoop:
                 better, same, _conclusion(test, ending, better, same, clickbait or held_back_by_goals, kept_ahead),
             )
         )
+        if ending is Ending.CHALLENGER_WON:
+            self._borrow(test.number, challenger.version)
         self._next_challenger()
+
+    def _borrow(self, test: int, won: _Version) -> None:
+        """Drafters and Trialists take the change a won Idle test proved, in their own words, with no test of
+        their own. The borrowed part gets the carry-over share of the Idle part's appeal: at 0, none."""
+        slot = won.changed or "subject"
+        idle_part = won.subject if slot == "subject" else won.body
+        for segment, versions in self.segment_versions.items():
+            latest = versions[-1]
+            own = Email(latest.subject.text, latest.body.text, latest.body.cta)
+            words = self.copywriter.adapt(segment.value, slot, own, idle_part.text, idle_part.cta, won.hypothesis)
+            if words is None:
+                continue  # the writer has no words for it here, so the segment keeps its email
+            part = LoopVariant(words[0], words[1], idle_part.quality, self.rules.carry_over * idle_part.appeal)
+            versions.append(_SegmentVersion(
+                len(versions), part if slot == "subject" else latest.subject, part if slot == "body" else latest.body,
+                self.today, test, won.number, slot, won.hypothesis,
+            ))
 
     def _draw_best(self, segment: Segment, posteriors: "dict[K, _Posterior]") -> K:
         rng = self.rngs[segment]

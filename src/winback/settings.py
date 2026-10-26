@@ -36,6 +36,11 @@ class Variant:
     placeholder: bool
     hypothesis: str = ""
     follow_through: float = 100.0
+    adapted: tuple[tuple[str, str, str], ...] = ()  # (segment, text, cta): the same change in Drafter and Trialist words (#36)
+
+    def adaptation(self, segment: str) -> tuple[str, str] | None:
+        """This change in the segment's own words, with its button for a body; None if there are none."""
+        return next(((text, cta) for s, text, cta in self.adapted if s == segment), None)
 
 
 @dataclass(frozen=True)
@@ -210,7 +215,8 @@ def load_settings(path: Path) -> Settings:
 def _variant(raw: dict[str, Any], slot: str) -> Variant:
     """One prewritten subject or body; its hidden quality is a number like any setting, marked as real or placeholder."""
     [quality] = _entries({"quality": raw["quality"]}, f"prewritten.{slot}.")
-    return Variant(raw["text"], raw.get("cta", ""), quality.value, quality.placeholder, raw.get("hypothesis", ""))
+    adapted = tuple((s, raw[s], raw.get(f"{s}_cta", "")) for s in ("drafter", "trialist") if s in raw)
+    return Variant(raw["text"], raw.get("cta", ""), quality.value, quality.placeholder, raw.get("hypothesis", ""), adapted=adapted)
 
 
 def _entries(raw: dict[str, Any], prefix: str = "") -> list[Setting]:
