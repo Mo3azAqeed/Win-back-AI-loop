@@ -26,13 +26,16 @@ class Email:
 
 @dataclass(frozen=True)
 class Variant:
-    """A prewritten subject (cta empty) or body for the stand-in writer, with its hidden quality
-    for Idle merchants: 100 is your first draft."""
+    """A prewritten subject (cta empty) or body for the stand-in writer, the hypothesis behind it, and its
+    hidden quality for Idle merchants: 100 is your first draft. Follow-through is hidden too: how likely a
+    merchant who clicks is to act, where 100 is your first draft (an email can win clicks it doesn't keep)."""
 
     text: str
     cta: str
     quality: float
     placeholder: bool
+    hypothesis: str = ""
+    follow_through: float = 100.0
 
 
 @dataclass(frozen=True)
@@ -56,12 +59,15 @@ class SegmentSettings:
 
 @dataclass(frozen=True)
 class LoopSettings:
-    """How the AI loop tests and retires subjects and bodies."""
+    """How the AI loop tests a challenger against the champion in Idle, and when a test ends."""
 
-    active_variants: int
-    min_sends: int
-    retire_confidence: float
-    prior_sends: float
+    min_sends: int  # each version's sends in a test before a verdict on clicks
+    verdict_confidence: float  # how sure a verdict must be, 0 to 1
+    same_margin: float  # click rates closer than this (a share: 0.01 is 1 point) count as the same
+    test_max_weeks: int
+    test_max_sends: int  # per version
+    challenger_share: float  # the share of Idle emails the challenger gets while a test runs
+    keep_ahead_at_limit: bool  # at the limit, the version ahead on clicks stays, rather than always the champion
     carry_over: float  # the share of the Idle leader's edge that Drafter and Trialist emails get, 0 to 1
 
 
@@ -137,10 +143,13 @@ def load_settings(path: Path) -> Settings:
         prewritten_subjects=tuple(_variant(v, "subject") for v in prewritten["subject"]),
         prewritten_bodies=tuple(_variant(v, "body") for v in prewritten["body"]),
         loop=LoopSettings(
-            active_variants=int(value("ai_loop.active_variants")),
             min_sends=int(value("ai_loop.min_sends")),
-            retire_confidence=value("ai_loop.retire_confidence"),
-            prior_sends=value("ai_loop.prior_sends"),
+            verdict_confidence=value("ai_loop.verdict_confidence"),
+            same_margin=value("ai_loop.same_margin_points") / 100,
+            test_max_weeks=int(value("ai_loop.test_max_weeks")),
+            test_max_sends=int(value("ai_loop.test_max_sends")),
+            challenger_share=value("ai_loop.challenger_share"),
+            keep_ahead_at_limit=value("ai_loop.keep_ahead_at_limit") == 1,
             carry_over=value("ai_loop.carry_over"),
         ),
         offers=OfferSettings(
@@ -157,7 +166,7 @@ def load_settings(path: Path) -> Settings:
 def _variant(raw: dict[str, Any], slot: str) -> Variant:
     """One prewritten subject or body; its hidden quality is a number like any setting, marked as real or placeholder."""
     [quality] = _entries({"quality": raw["quality"]}, f"prewritten.{slot}.")
-    return Variant(raw["text"], raw.get("cta", ""), quality.value, quality.placeholder)
+    return Variant(raw["text"], raw.get("cta", ""), quality.value, quality.placeholder, raw.get("hypothesis", ""))
 
 
 def _entries(raw: dict[str, Any], prefix: str = "") -> list[Setting]:

@@ -87,11 +87,39 @@ The founder's approved hand-written email for a segment. It is what the hand-wri
 _Avoid_: Template, baseline email
 
 **Carry-over**:
-The share (0 to 1) of the edge the Idle leader has over the Idle first draft that Drafter and Trialist emails are given in the simulation. Drafters and Trialists always send their own first drafts' words; at 0, the default, none of Idle's edge carries over, so any AI loop win there is earned in that segment. Real carry-over is meant to come from lessons (see ADR 0005).
+The share (0 to 1) of the edge the Idle champion has over the Idle first draft that Drafter and Trialist emails are given in the simulation. Drafters and Trialists always send their own first drafts' words; at 0, the default, none of Idle's edge carries over, so any AI loop win there is earned in that segment. Real carry-over is meant to come from lessons (see ADR 0005).
 _Avoid_: Transfer, spillover
 
 **Variant**:
-One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; the loop decides which one each merchant gets.
+One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; in Idle they come together as versions.
+
+**Version**:
+A whole Idle email: a subject and a body with its button. Version 0 (v0) is the founder's first draft; each later version is numbered in the order the writer brought it, changes one part of the champion it was tested against, and carries a hypothesis. Send time is not part of a version (ADR 0007).
+_Avoid_: Variation, draft (a draft is the merchant's store)
+
+**Champion**:
+The Idle version the AI loop currently sends as its best. v0 is the first champion; a challenger that wins its test is crowned and becomes the champion.
+
+**Challenger**:
+The Idle version being tested against the champion. It gets a third of Idle's emails until the test ends.
+
+**Hypothesis**:
+What a challenger changes and why, written with it: "Names store cloning in the subject, because it is what sets the app apart." Every challenger has one.
+
+**Test**:
+One champion against one challenger. It always ends, in one of four ways: the challenger won (crowned), the champion won (the challenger is sunset, including when it won clicks but clearly lost goal actions), the same (within 1 click point), or too close to call (at 2 weeks or 1,000 emails per version; the version ahead on clicks stays, kept but not proven). Verdicts on clicks are taken at week ends (ADR 0007).
+_Avoid_: Experiment, round
+
+**Sunset**:
+A version that lost a test, or that was the champion when a challenger was crowned. It is no longer sent, and keeps its record.
+_Avoid_: Retired, killed
+
+**Playbook**:
+The record of every test: the two versions, the hypothesis, each one's sends, clicks and goal actions in the test, how sure the verdict is, how the test ended, and a one-line conclusion. Losers keep their entry, saying why they lost. It is the loop's lessons, with the evidence.
+_Avoid_: Log, history
+
+**Follow-through**:
+Hidden in the simulation: how likely a merchant who clicks an email is to act, against the founder's first draft (100). It lets a test plant an email that wins clicks it doesn't keep.
 
 **Offer**:
 An incentive in a Trialist's email: none, a 7-day trial extension, or the first month at 50% off. Only the AI loop's Trialist emails carry one; it adds one line to the Trialist first draft. An extension lets the merchant pay until day 14, including a merchant who would have paid on its own just after day 7. The discount only works through the email's link: a merchant who clicked it before paying pays half, even one who would have paid anyway; one who didn't click pays in full.

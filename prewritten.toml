@@ -1,5 +1,6 @@
-# The stand-in writer (#7): real subjects and bodies written to the fact sheet, used in this order
-# when the AI loop retires a variant and needs a replacement. Until the real writer arrives (#13).
+# The stand-in writer (#7): real subjects and bodies written to the fact sheet. Each new challenger is
+# the champion with one part changed: the next subject, then the next body, in turn (#34). Each comes
+# with its hypothesis: the one change it makes and why. Until the real writer arrives (#13).
 #
 # quality is each one's hidden quality for Idle merchants, where 100 is your first draft:
 # 120 means 20% more reads (subject) or clicks (body). Every quality is a placeholder, made up
@@ -7,72 +8,88 @@
 
 [[subject]]
 text = "Start your store from one you already like"
+hypothesis = "Leads with starting from a store they already like, because Idle merchants haven't pictured their own store yet."
 quality = { value = 110, placeholder = true }
 
 [[subject]]
 text = "Your store, a few minutes away"
+hypothesis = "Promises speed, because an empty store feels like hours of work."
 quality = { value = 90, placeholder = true }
 
 [[subject]]
 text = "Clone a store, then make it yours"
+hypothesis = "Names store cloning in the subject, because it is what sets the app apart."
 quality = { value = 120, placeholder = true }
 
 [[subject]]
 text = "{first_name}, your first draft is waiting to be started"
+hypothesis = "Uses their name and names the next step, because a small, personal task feels easier to start."
 quality = { value = 105, placeholder = true }
 
 [[subject]]
 text = "Skip the blank page"
+hypothesis = "Short, and names the pain, because the blank page is why Idle merchants stall."
 quality = { value = 130, placeholder = true }
 
 [[subject]]
 text = "Build every page with the section builder"
+hypothesis = "Leads with the section builder, to see whether control over every page draws more interest than cloning."
 quality = { value = 85, placeholder = true }
 
 [[subject]]
 text = "Still thinking about your store?"
+hypothesis = "Asks a soft question, to see whether a gentle nudge beats naming a feature."
 quality = { value = 95, placeholder = true }
 
 [[subject]]
 text = "One clone, then it's all yours"
+hypothesis = "Stresses that the store is theirs after cloning, because merchants may fear a clone won't feel like their own."
 quality = { value = 115, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, pick a store you like and clone it to start from. Then change every page with the section builder until it's yours."
 cta = "Clone a store"
+hypothesis = "Walks through the two steps (clone, then edit), because a clear path makes starting feel small."
 quality = { value = 115, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, starting from a blank page is the slow way. Clone a store to start from and you'll have a first draft in minutes."
 cta = "Start my first draft"
+hypothesis = "Contrasts the blank page with cloning and promises a first draft in minutes, because speed is the main draw."
 quality = { value = 125, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, clone a store to start from, make every page yours with the section builder, and publish when you're happy. Your 7-day free trial starts when you publish."
 cta = "Start my store"
+hypothesis = "Adds the trial terms, to see whether knowing they won't pay yet helps them start."
 quality = { value = 95, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, the section builder lets you change any page of a cloned store. Start with one you like."
 cta = "Try the section builder"
+hypothesis = "Leads with the section builder, to see whether control beats speed in the body too."
 quality = { value = 90, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, you signed up but haven't started yet. It takes a few minutes: clone a store to start from, then make it yours."
 cta = "Start now"
+hypothesis = "Reminds them they signed up and says it takes minutes, because a reminder plus low effort may restart them."
 quality = { value = 105, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, one plan, $40/month, and you won't pay anything until your 7-day trial ends. First, clone a store to start from."
 cta = "Clone a store"
+hypothesis = "States the price and that nothing is paid until the trial ends, to see whether removing price doubt helps."
 quality = { value = 100, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, you don't have to start from nothing. Clone a store to start from, then use the section builder to make every page yours."
 cta = "Start my first draft"
+hypothesis = "Reassures them they don't start from nothing, then names both features."
 quality = { value = 110, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, your store doesn't have to start empty. Clone a store you like and change what you need."
 cta = "Clone a store"
+hypothesis = "A shorter cloning pitch, to see whether fewer words get more clicks."
 quality = { value = 120, placeholder = true }

@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, NamedTuple
 
 from winback.lifecycle import Approach
-from winback.loop import LoopReport, VariantRecord
+from winback.loop import LoopReport, VersionRecord
 from winback.outcomes import OfferSummary, SegmentOutcome
 from winback.replays import Replays
 from winback.segments import Segment
@@ -183,26 +183,53 @@ def _offers_section(settings: Settings, offers: OfferSummary) -> list[str]:
 def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
     """What the AI loop has tried, what leads now, and which timing and offer each segment favours."""
 
-    def variants(heading: str, records: list[VariantRecord]) -> list[str]:
-        out = [f"| {heading} | Hidden quality | Sends | Human clicks | Now |", "|---|---|---|---|---|"]
-        for i, v in enumerate(records):
-            words = v.text + (f" **[{v.cta}]**" if v.cta else "") + (" (your first draft)" if i == 0 else "")
-            status = "retired" if v.retired else "leading" if v.leading else "in play"
-            out.append(f"| {words} | {v.quality:g} | {v.sends:,} | {_share(v.clicks, v.sends)} | {status} |")
-        return out
-
     lines = [
         "### What the AI loop is sending",
         "",
-        "Idle tests subjects and bodies against each other and learns from human clicks. Hidden quality is "
-        "visible only because this is a simulation: 100 is your first draft, and every other number is a placeholder.",
+        "Idle's email comes in versions. v0 is your first draft and starts as the champion. Each challenger is the "
+        "champion with one part changed, and comes with a hypothesis. While a test runs the challenger gets "
+        f"{settings.loop.challenger_share:.0%} of Idle's emails and the champion the rest, and the "
+        f"test ends at a week's end once the loop is {settings.loop.verdict_confidence:.0%} sure: the challenger won "
+        "on human clicks (and is crowned, unless its goal-action rate is clearly worse), the champion won, the two "
+        f"are the same (within {settings.loop.same_margin * 100:g} click point), or, after {settings.loop.test_max_weeks} weeks "
+        f"or {settings.loop.test_max_sends:,} emails for either, too close to call: "
+        + ("the version ahead on clicks stays, kept but not proven. " if settings.loop.keep_ahead_at_limit else "the champion stays. ")
+        + "Hidden quality is visible only because this is a simulation: 100 is your first draft, and every other number is a placeholder.",
         "",
-        *variants("Subject", loop.subjects),
+        "#### Versions",
         "",
-        *variants("Body", loop.bodies),
+        "| Version | Subject | Body | Changed | Hidden quality (subject, body) | Written by | From day | Now | Sends | Human clicks |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+        *(
+            f"| v{v.number} | {v.subject} | {v.body} **[{v.cta}]** | {v.changed or 'your email'} | {v.quality[0]:g}, {v.quality[1]:g} | {v.by} | "
+            f"{v.introduced_day:.0f} | {_status(v)} | {v.sends:,} | {_share(v.clicks, v.sends)} |"
+            for v in loop.versions
+        ),
+        "",
+        *(
+            [f"Champion at the end of week {loop.weekly_leaders[-1].week}: v{loop.weekly_leaders[-1].champion}. Week by week: "
+             + ", ".join(f"{w.week}: v{w.champion}" + (f" against v{w.challenger}" if w.challenger is not None else "") for w in loop.weekly_leaders) + ".", ""]
+            if loop.weekly_leaders
+            else []
+        ),
+        "#### Playbook",
+        "",
+        "Every test, newest last: what the challenger changed and why, the evidence from the test itself (clicks are "
+        "known at once; goal actions only once each email's miss window has closed), and the verdict.",
+        "",
+        "| Test | Days | Champion | Challenger | Hypothesis | Champion: sends, clicks, goal actions | Challenger: sends, clicks, goal actions | Ending | Conclusion |",
+        "|---|---|---|---|---|---|---|---|---|",
+        *(
+            f"| {e.test} | {e.started:.0f}–{e.ended:.0f} | v{e.champion} | v{e.challenger} | {e.hypothesis} | "
+            f"{e.champion_sends:,}, {_share(e.champion_clicks, e.champion_sends)}, {_share(e.champion_goals, e.champion_goals_judged)} | "
+            f"{e.challenger_sends:,}, {_share(e.challenger_clicks, e.challenger_sends)}, {_share(e.challenger_goals, e.challenger_goals_judged)} | "
+            f"{e.ending.value} | {e.conclusion} |"
+            for e in loop.playbook
+        ),
+        *([] if loop.playbook else ["No test has ended yet."]),
         "",
         f"Carry-over from Idle: {loop.carry_over:.0%}. Drafters and Trialists get their own first drafts, plus this share "
-        "of the edge the Idle leader has over your Idle first draft"
+        "of the edge the Idle champion has over your Idle first draft"
         + (
             ", so any win over the hand-written email there comes from what the AI loop tests in that segment."
             if loop.carry_over == 0
@@ -242,6 +269,14 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         ),
     ]
     return lines + [""]
+
+
+def _status(v: VersionRecord) -> str:
+    if v.status == "champion":
+        return "champion" + (f" (crowned day {v.crowned_day:.0f})" if v.crowned_day is not None else "")
+    if v.status == "challenger":
+        return "challenger"
+    return f"sunset day {v.sunset_day:.0f}"
 
 
 def _share(part: int, whole: int) -> str:

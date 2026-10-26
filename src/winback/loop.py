@@ -1,18 +1,24 @@
-"""The AI loop's scorer: Thompson sampling over subjects, bodies, timing and Trialist offers, with a stand-in writer.
+"""The AI loop: champion against challenger for Idle's email, Thompson sampling for timing and Trialist offers,
+and a stand-in writer.
 
-Every choice the loop can make (a subject, a body, a timing for one segment, an offer) has a Beta posterior
-over how often it is rewarded. To choose, the loop draws once from each posterior and takes the highest
-draw, so choices that look better get more traffic while uncertain ones still get tried.
+Idle's email comes in versions. Version 0 is your first draft and starts as the champion. The writer brings a
+challenger, the champion with one part changed and a hypothesis saying why, and the two share Idle's traffic
+evenly until the test ends with a verdict (ADR 0007). Every verdict, won or lost, goes into the playbook.
+
+Timing and offers are not part of a version: every choice there (a timing for one segment, an offer) has a
+Beta posterior over how often it is rewarded, and the loop draws once from each and takes the highest draw.
 """
 
 import math
 import random
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TypeVar
 
 from winback.segments import Segment
 from winback.settings import SegmentSettings, Settings, Variant
 from winback.trialist import Offer
+from winback.world import DAYS_PER_WEEK, last_entry_day
 
 
 K = TypeVar("K")
@@ -67,25 +73,79 @@ class _Posterior:
 
 @dataclass
 class LoopVariant:
-    """A subject or body in play: its words, its hidden quality and appeal, and what the loop has seen."""
+    """A subject or body: its words, its hidden quality, appeal and follow-through, and every send it went out in."""
 
     text: str
     cta: str
     quality: float
     appeal: float  # the hidden quality as a shift on the log-odds of reading (subject) or clicking (body)
+    follow_through: float = 1.0  # hidden: how likely a merchant who clicks is to act, against your first draft
     posterior: _Posterior = field(default_factory=_Posterior)
-    retired: bool = False
+
+
+@dataclass
+class _Version:
+    """A whole Idle email: a subject and a body with its button."""
+
+    number: int
+    subject: LoopVariant
+    body: LoopVariant
+    hypothesis: str
+    by: str
+    changed: str | None  # the part changed from the champion it was tested against; None for your email
+    introduced: float
+    crowned: float | None = None
+    sunset: float | None = None
+    sends: int = 0
+    clicks: int = 0
+    goals_judged: int = 0
+    goals: int = 0
+
+
+@dataclass
+class _Arm:
+    """One version's results inside one test."""
+
+    version: _Version
+    sends: int = 0
+    clicks: int = 0
+    goals_judged: int = 0  # emails whose miss window has closed
+    goals: int = 0
+
+    def clicks_posterior(self) -> _Posterior:
+        return _Posterior(1.0 + self.clicks, 1.0 + self.sends - self.clicks)
+
+    def goals_posterior(self) -> _Posterior:
+        return _Posterior(1.0 + self.goals, 1.0 + self.goals_judged - self.goals)
+
+
+@dataclass
+class _Test:
+    number: int
+    started: float
+    champion: _Arm
+    challenger: _Arm
+
+
+class Ending(Enum):
+    CHALLENGER_WON = "challenger won"
+    CHAMPION_WON = "champion won"
+    SAME = "the same"
+    LIMIT = "too close to call"
 
 
 @dataclass(frozen=True)
 class Copy:
-    """The words one email goes out with, and their hidden appeal as shifts on the log-odds of reading
-    (subject) and clicking (body)."""
+    """The words one email goes out with, their hidden appeal as shifts on the log-odds of reading (subject)
+    and clicking (body), and their hidden follow-through. An Idle email names its version and test."""
 
     subject: LoopVariant
     body: LoopVariant
     subject_appeal: float
     body_appeal: float
+    follow_through: float = 1.0
+    version: int | None = None
+    test: int | None = None
 
 
 @dataclass(frozen=True)
@@ -95,8 +155,56 @@ class VariantRecord:
     quality: float
     sends: int
     clicks: int
-    retired: bool
-    leading: bool
+    retired: bool  # in neither the champion nor the challenger at the end
+    leading: bool  # in the champion at the end
+
+
+@dataclass(frozen=True)
+class VersionRecord:
+    """One Idle version, from when it was written to the end of the weeks. Its sends and clicks count every
+    email it went out in; goals count those whose miss window has closed and that reached the goal in it."""
+
+    number: int
+    subject: str
+    body: str
+    cta: str
+    hypothesis: str
+    by: str
+    changed: str | None
+    quality: tuple[float, float]  # hidden: the subject's and the body's
+    introduced_day: float
+    crowned_day: float | None  # when it won a test; your email is the champion from the start
+    sunset_day: float | None
+    status: str  # "champion", "challenger" or "sunset"
+    sends: int
+    clicks: int
+    goals_judged: int
+    goals: int
+
+
+@dataclass(frozen=True)
+class PlaybookEntry:
+    """One finished test: the two versions, the hypothesis, each one's evidence in the test, how it ended,
+    and what was concluded."""
+
+    test: int
+    champion: int
+    challenger: int
+    hypothesis: str
+    changed: str
+    started: float
+    ended: float
+    ending: Ending
+    champion_sends: int
+    champion_clicks: int
+    champion_goals_judged: int
+    champion_goals: int
+    challenger_sends: int
+    challenger_clicks: int
+    challenger_goals_judged: int
+    challenger_goals: int
+    chance_better: float  # how likely the challenger's click rate is above the champion's
+    conclusion: str
 
 
 @dataclass(frozen=True)
@@ -132,33 +240,38 @@ class SegmentCopyRecord:
 
 @dataclass(frozen=True)
 class CopyChange:
-    """A subject or body the writer added to Idle's tests, or one the loop dropped, and when."""
+    """A subject or body that entered Idle's tests in a new version, or left them with a sunset version, and when."""
 
     day: float
     slot: str  # "subject" or "body"
     change: str  # "written" or "dropped"
     text: str
     cta: str
-    sends: int  # so far; 0 when written
+    sends: int  # of the version it left with; 0 when written
     clicks: int
     by: str  # who wrote it: "you" (your first draft) or "stand-in writer"
 
 
 @dataclass(frozen=True)
 class WeekLeaders:
-    """The Idle subject and body leading at the end of a week."""
+    """Idle's champion at the end of a week, and the challenger being tested against it, if any."""
 
     week: int
     subject: str
     body: str
     cta: str
+    champion: int
+    challenger: int | None
 
 
 @dataclass(frozen=True)
 class LoopReport:
-    """What the AI loop has tried and where it stands: Idle subjects and bodies in the order the writer
-    added them (your first draft first), what Drafters and Trialists were sent, and each segment's timings."""
+    """What the AI loop has tried and where it stands: Idle's versions and the playbook of its tests; the
+    subjects and bodies those versions used, in the order they were written (your first draft first); what
+    Drafters and Trialists were sent; and each segment's timings and the Trialist offers."""
 
+    versions: list[VersionRecord]
+    playbook: list[PlaybookEntry]
     subjects: list[VariantRecord]
     bodies: list[VariantRecord]
     segment_copy: dict[Segment, SegmentCopyRecord]
@@ -172,14 +285,13 @@ class LoopReport:
 class AiLoop:
     """Chooses what each emailed merchant gets and learns from what happens.
 
-    - Idle tests a few subjects and bodies at a time and learns from human clicks, at send time.
-      Until every variant in play has enough sends to be judged, they share the traffic evenly;
-      otherwise Thompson sampling would starve a poor variant before it could ever be judged, and
-      the writer would never get another turn (ADR 0004). Once the leader is clearly better than
-      another variant, that variant is retired and the writer adds the next one from its list. The
-      newcomer starts from a cautious prior, so a few lucky clicks don't make it the leader at once.
+    - Idle runs one test at a time: the champion against a challenger, which gets a third of Idle's emails. A test
+      ends at the end of a week once the loop is sure enough (ADR 0007): the challenger won on clicks
+      without clearly fewer goal actions, the champion won, the two are the same, or the test hit its limit
+      (too close to call: the version ahead on clicks stays, kept but not proven). Then the writer brings the next
+      challenger, so no test ever waits.
     - Drafters and Trialists get their own first drafts, plus the carry-over share of the edge the
-      Idle leader has over your Idle first draft.
+      Idle champion has over your Idle first draft.
     - Every segment learns timing from the goal action of every merchant assigned that timing,
       judged when the horizon closes. Trialist offers learn the same way, from the revenue each
       Trialist brought, so a discounted payment counts as half.
@@ -194,15 +306,18 @@ class AiLoop:
         self.today = 0.0
         self.history: list[CopyChange] = []
         self.weekly_leaders: list[WeekLeaders] = []
+        self.playbook: list[PlaybookEntry] = []
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
         self.waiting = {"subject": list(settings.prewritten_subjects), "body": list(settings.prewritten_bodies)}
-        self.variants: dict[str, list[LoopVariant]] = {"subject": [], "body": []}
-        self._add("subject", Variant(draft.subject, "", 100.0, placeholder=False), _Posterior(), by="you")
-        self._add("body", Variant(draft.body, draft.cta, 100.0, placeholder=False), _Posterior(), by="you")
-        for slot in self.variants:
-            while len(self._active(slot)) < self.rules.active_variants and self.waiting[slot]:
-                self._add(slot, self.waiting[slot].pop(0), _Posterior())
+        self.next_change = "subject"
+        self.last_signup_day = last_entry_day(settings)  # no new Idle merchant arrives after it, so no test starts
+        subject = self._part("subject", Variant(draft.subject, "", 100.0, placeholder=False), by="you")
+        body = self._part("body", Variant(draft.body, draft.cta, 100.0, placeholder=False), by="you")
+        self.versions = [_Version(0, subject, body, "Your email.", "you", None, 0.0)]
+        self.champion = self.versions[0]
+        self.test: _Test | None = None
+        self._next_challenger()
         # A Drafter or Trialist first draft is never replaced; its posteriors only count sends and clicks.
         self.own_first_drafts = {
             s: (LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0))
@@ -219,43 +334,79 @@ class AiLoop:
         return self._draw_best(Segment.TRIALIST, self.offers)
 
     def choose_copy(self, segment: Segment) -> Copy:
-        """The words for one email: an Idle subject and body drawn from those in play, or the segment's
-        own first draft with the carry-over share of the Idle leaders' appeal."""
+        """The words for one email: in Idle the champion or, for its share while a test runs, the challenger; else
+        the segment's own first draft with the carry-over share of the Idle champion's appeal."""
         if segment is Segment.IDLE:
-            subject, body = self._draw_variant("subject"), self._draw_variant("body")
-            return Copy(subject, body, subject.appeal, body.appeal)
+            version = self.champion
+            if self.test is not None and self.rngs[Segment.IDLE].random() < self.rules.challenger_share:
+                version = self.test.challenger.version
+            subject, body = version.subject, version.body
+            test = self.test.number if self.test is not None else None
+            return Copy(subject, body, subject.appeal, body.appeal, subject.follow_through * body.follow_through, version.number, test)
         carry = self.rules.carry_over
         subject, body = self.own_first_drafts[segment]
-        return Copy(subject, body, carry * self._leader("subject").appeal, carry * self._leader("body").appeal)
+        return Copy(subject, body, carry * self.champion.subject.appeal, carry * self.champion.body.appeal)
 
     def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool, day: float) -> None:
-        """An email went out on this day. An Idle subject and body learn whether a human clicked; a
-        Drafter or Trialist first draft only counts its sends and clicks. Every click counts as human
-        until scanner clicks are simulated (#10)."""
+        """An email went out on this day, and a human clicked it or not. Every click counts as human until
+        scanner clicks are simulated (#10)."""
         self.today = day
-        for slot, variant in (("subject", copy.subject), ("body", copy.body)):
+        for variant in (copy.subject, copy.body):
             variant.posterior.learn(clicked)
-            if segment is Segment.IDLE:
-                self._review(slot)
+        if copy.version is None:
+            return
+        version = self.versions[copy.version]
+        version.sends, version.clicks = version.sends + 1, version.clicks + clicked
+        arm = self._arm(copy)
+        if arm is not None:
+            arm.sends, arm.clicks = arm.sends + 1, arm.clicks + clicked
+        # The limit holds between week ends too, so a test started mid-week never runs past it.
+        test = self.test
+        if test is not None and (max(test.champion.sends, test.challenger.sends) >= self.rules.test_max_sends or day - test.started >= self.rules.test_max_weeks * DAYS_PER_WEEK):
+            self._end_test(test, Ending.LIMIT)
+
+    def learn_from_goal(self, copy: Copy, reached: bool) -> None:
+        """An Idle email's miss window closed: the merchant reached the goal in it or not."""
+        if copy.version is None:
+            return
+        version = self.versions[copy.version]
+        version.goals_judged, version.goals = version.goals_judged + 1, version.goals + reached
+        arm = self._arm(copy)
+        if arm is not None:
+            arm.goals_judged, arm.goals = arm.goals_judged + 1, arm.goals + reached
 
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
 
     def end_week(self, week: int) -> None:
-        """Note which Idle subject and body lead as this week ends."""
-        subject, body = self._leader("subject"), self._leader("body")
-        self.weekly_leaders.append(WeekLeaders(week, subject.text, body.text, body.cta))
+        """At the end of each week, the test running in Idle may reach its verdict; then note the champion and the challenger."""
+        self.today = week * DAYS_PER_WEEK
+        if self.test is not None:
+            ending = self._verdict(self.test)
+            if ending is not None:
+                self._end_test(self.test, ending)
+        challenger = self.test.challenger.version.number if self.test is not None else None
+        c = self.champion
+        self.weekly_leaders.append(WeekLeaders(week, c.subject.text, c.body.text, c.body.cta, c.number, challenger))
 
     def learn_from_revenue(self, offer: Offer, revenue_share: float) -> None:
         """A Trialist assigned this offer reached its horizon having brought this share of the full price."""
         self.offers[offer].learn(revenue_share)
 
     def report(self) -> LoopReport:
+        in_play = [self.champion] + ([self.test.challenger.version] if self.test is not None else [])
+
         def records(slot: str) -> list[VariantRecord]:
-            leader = self._leader(slot)
+            parts: list[LoopVariant] = []
+            for version in self.versions:
+                part = version.subject if slot == "subject" else version.body
+                if all(part is not p for p in parts):
+                    parts.append(part)
+            current = [v.subject if slot == "subject" else v.body for v in in_play]
+            champion_part = self.champion.subject if slot == "subject" else self.champion.body
             return [
-                VariantRecord(v.text, v.cta, v.quality, v.posterior.tries, v.posterior.full_rewards, v.retired, v is leader)
-                for v in self.variants[slot]
+                VariantRecord(p.text, p.cta, p.quality, p.posterior.tries, p.posterior.full_rewards, all(p is not c for c in current), p is champion_part)
+                for p in parts
             ]
 
         timings = {}
@@ -268,54 +419,134 @@ class AiLoop:
             segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.full_rewards)
             for segment, (subject, body) in self.own_first_drafts.items()
         }
-        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers, list(self.history), list(self.weekly_leaders))
+        versions = [self._record(v) for v in self.versions]
+        return LoopReport(
+            versions, list(self.playbook), records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers,
+            list(self.history), list(self.weekly_leaders),
+        )
 
-    def _add(self, slot: str, variant: Variant, prior: _Posterior, by: str = "stand-in writer") -> None:
+    def _record(self, v: _Version) -> VersionRecord:
+        status = "champion" if v is self.champion else "challenger" if self.test is not None and v is self.test.challenger.version else "sunset"
+        return VersionRecord(
+            v.number, v.subject.text, v.body.text, v.body.cta, v.hypothesis, v.by, v.changed, (v.subject.quality, v.body.quality),
+            v.introduced, v.crowned, v.sunset, status, v.sends, v.clicks, v.goals_judged, v.goals,
+        )
+
+    def _part(self, slot: str, variant: Variant, by: str) -> LoopVariant:
         reference = self.read_rate if slot == "subject" else self.click_rate
         # A certain or impossible chance can't be shifted, so there quality has no effect.
         certain = reference <= 0 or reference >= 1
         appeal = 0.0 if certain else _logit(min(0.999, reference * variant.quality / 100)) - _logit(reference)
-        self.variants[slot].append(LoopVariant(variant.text, variant.cta, variant.quality, appeal, prior))
         self.history.append(CopyChange(self.today, slot, "written", variant.text, variant.cta, 0, 0, by))
+        return LoopVariant(variant.text, variant.cta, variant.quality, appeal, variant.follow_through / 100)
 
-    def _active(self, slot: str) -> list[LoopVariant]:
-        return [v for v in self.variants[slot] if not v.retired]
+    def _next_challenger(self) -> None:
+        """The writer's next challenger: the champion with one part changed, subjects and bodies in turn."""
+        order = [self.next_change, "body" if self.next_change == "subject" else "subject"]
+        slot = next((s for s in order if self.waiting[s]), None)
+        if slot is None or self.today >= self.last_signup_day:
+            self.test = None  # the writer has nothing left, or no merchants are left to test on: the champion is sent alone
+            return
+        self.next_change = "body" if slot == "subject" else "subject"
+        variant = self.waiting[slot].pop(0)
+        part = self._part(slot, variant, by="stand-in writer")
+        c = self.champion
+        version = _Version(
+            len(self.versions), part if slot == "subject" else c.subject, part if slot == "body" else c.body,
+            variant.hypothesis, "stand-in writer", slot, self.today,
+        )
+        self.versions.append(version)
+        number = len(self.playbook) + 1
+        self.test = _Test(number, self.today, _Arm(c), _Arm(version))
 
-    def _leader(self, slot: str) -> LoopVariant:
-        return max(self._active(slot), key=lambda v: v.posterior.mean)
+    def _arm(self, copy: Copy) -> _Arm | None:
+        """The arm of the running test this email was sent for, if that test is still running."""
+        if self.test is None or copy.test != self.test.number:
+            return None
+        return self.test.champion if copy.version == self.test.champion.version.number else self.test.challenger
 
-    def _draw_variant(self, slot: str) -> LoopVariant:
-        active = self._active(slot)
-        rng = self.rngs[Segment.IDLE]
-        if any(v.posterior.tries < self.rules.min_sends for v in active):
-            return rng.choice(active)  # an even share, until every variant can be judged
-        return active[self._draw_best(Segment.IDLE, {i: v.posterior for i, v in enumerate(active)})]
+    def _verdict(self, test: _Test) -> Ending | None:
+        """How the test ends this week, if it does."""
+        champion, challenger, sure = test.champion, test.challenger, self.rules.verdict_confidence
+        if min(champion.sends, challenger.sends) >= self.rules.min_sends:
+            better = _chance_better(challenger.clicks_posterior(), champion.clicks_posterior())
+            if better >= sure:
+                return Ending.CHALLENGER_WON
+            if better <= 1 - sure:
+                return Ending.CHAMPION_WON
+            if _chance_within(challenger.clicks_posterior(), champion.clicks_posterior(), self.rules.same_margin) >= sure:
+                return Ending.SAME
+        if self.today - test.started >= self.rules.test_max_weeks * DAYS_PER_WEEK - 1e-9:
+            return Ending.LIMIT
+        return None
+
+    def _end_test(self, test: _Test, ending: Ending) -> None:
+        champion, challenger = test.champion, test.challenger
+        better = _chance_better(challenger.clicks_posterior(), champion.clicks_posterior())
+        fewer_goals = _chance_better(champion.goals_posterior(), challenger.goals_posterior()) >= self.rules.verdict_confidence
+        clickbait = ending is Ending.CHALLENGER_WON and fewer_goals
+        if clickbait:
+            ending = Ending.CHAMPION_WON
+        # Too close to call: the version ahead on clicks stays, if the settings say so; it is kept, not proven better.
+        kept_ahead = ending is Ending.LIMIT and self.rules.keep_ahead_at_limit and better > 0.5 and not fewer_goals
+        winner = challenger if ending is Ending.CHALLENGER_WON or kept_ahead else champion
+        loser = champion if winner is challenger else challenger
+        loser.version.sunset = self.today
+        if winner is challenger:
+            challenger.version.crowned = self.today
+            self.champion = challenger.version
+        slot = challenger.version.changed or "subject"
+        gone = loser.version.subject if slot == "subject" else loser.version.body
+        self.history.append(CopyChange(self.today, slot, "dropped", gone.text, gone.cta, loser.version.sends, loser.version.clicks, ""))
+        self.playbook.append(
+            PlaybookEntry(
+                test.number, champion.version.number, challenger.version.number, challenger.version.hypothesis, slot, test.started, self.today, ending,
+                champion.sends, champion.clicks, champion.goals_judged, champion.goals,
+                challenger.sends, challenger.clicks, challenger.goals_judged, challenger.goals,
+                better, _conclusion(test, ending, better, clickbait or (ending is Ending.LIMIT and better > 0.5 and fewer_goals), kept_ahead),
+            )
+        )
+        self._next_challenger()
 
     def _draw_best(self, segment: Segment, posteriors: "dict[K, _Posterior]") -> K:
         rng = self.rngs[segment]
         draws = {key: rng.betavariate(p.a, p.b) for key, p in posteriors.items()}
         return max(draws, key=lambda key: draws[key])
 
-    def _review(self, slot: str) -> None:
-        """Retire a variant once the leader is clearly better, and let the writer replace it."""
-        active, leader = self._active(slot), self._leader(slot)
-        for variant in active:
-            if variant is leader or min(variant.posterior.tries, leader.posterior.tries) < self.rules.min_sends:
-                continue
-            if _chance_better(leader.posterior, variant.posterior) < self.rules.retire_confidence:
-                continue
-            variant.retired = True
-            sends, clicks = variant.posterior.tries, variant.posterior.full_rewards
-            self.history.append(CopyChange(self.today, slot, "dropped", variant.text, variant.cta, sends, clicks, ""))
-            if self.waiting[slot]:
-                staying = self._active(slot)
-                average = sum(v.posterior.mean for v in staying) / len(staying)
-                strength = self.rules.prior_sends
-                self._add(slot, self.waiting[slot].pop(0), _Posterior(average * strength, (1 - average) * strength))
-            return
+
+def _rate(part: int, whole: int) -> float:
+    return part / whole if whole else 0.0
+
+
+def _conclusion(test: _Test, ending: Ending, better: float, clickbait: bool, kept_ahead: bool) -> str:
+    """One line a reader can act on: the change, how it did on clicks, how sure the loop is, and what happened."""
+    champion, challenger = test.champion, test.challenger
+    points = (_rate(challenger.clicks, challenger.sends) - _rate(champion.clicks, champion.sends)) * 100
+    change = f"v{challenger.version.number} (new {challenger.version.changed}) against v{champion.version.number}: {points:+.1f} click points, {better:.0%} sure it is better"
+    if clickbait:
+        goal_points = (_rate(challenger.goals, challenger.goals_judged) - _rate(champion.goals, champion.goals_judged)) * 100
+        return f"{change}, but {goal_points:+.1f} goal points: more clicks, fewer goal actions, so it lost and is sunset."
+    if kept_ahead:
+        return f"{change}; too close to call at the test's limit, but ahead, so it takes over as champion (kept, not proven) and v{champion.version.number} is sunset."
+    return change + {
+        Ending.CHALLENGER_WON: f"; crowned, and v{champion.version.number} is sunset.",
+        Ending.CHAMPION_WON: f"; it lost and is sunset, v{champion.version.number} stays.",
+        Ending.SAME: f"; the same within the margin, so v{champion.version.number} stays and v{challenger.version.number} is sunset.",
+        Ending.LIMIT: f"; too close to call at the test's limit, so v{champion.version.number} stays and v{challenger.version.number} is sunset.",
+    }[ending]
 
 
 def _chance_better(leader: _Posterior, other: _Posterior) -> float:
     """How likely the leader's true rate is above the other's, by the normal approximation to both posteriors."""
     spread = math.sqrt(leader.variance + other.variance)
     return 0.5 * (1 + math.erf((leader.mean - other.mean) / (spread * math.sqrt(2))))
+
+
+def _chance_within(one: _Posterior, other: _Posterior, margin: float) -> float:
+    """How likely the two true rates are within the margin of each other, by the same normal approximation."""
+    spread, gap = math.sqrt(one.variance + other.variance), one.mean - other.mean
+
+    def below(x: float) -> float:
+        return 0.5 * (1 + math.erf((x - gap) / (spread * math.sqrt(2))))
+
+    return below(margin) - below(-margin)

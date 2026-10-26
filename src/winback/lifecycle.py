@@ -14,7 +14,7 @@ from enum import Enum
 
 from winback import trialist
 from winback.draws import draw
-from winback.loop import AiLoop, LoopReport, Timing, read_shift
+from winback.loop import AiLoop, Copy, LoopReport, Timing, read_shift
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
 from winback.trialist import Offer
@@ -64,6 +64,7 @@ class Stay:
     clicked: bool  # a human clicked the email's button
     subject: str | None  # the words the email went out with (sent emails only)
     body: str | None
+    version: int | None  # the AI loop's Idle version it went out as
 
 
 @dataclass(frozen=True)
@@ -164,6 +165,7 @@ class _OpenStay:
     clicked: bool = False
     subject: str | None = None
     body: str | None = None
+    copy: Copy | None = None  # what the AI loop sent
 
     @property
     def received_offer(self) -> Offer | None:
@@ -171,7 +173,8 @@ class _OpenStay:
         return self.offer if self.email is EmailFate.SENT else None
 
     def freeze(self) -> Stay:
-        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked, self.subject, self.body)
+        version = self.copy.version if self.copy is not None else None
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked, self.subject, self.body, version)
 
 
 @dataclass
@@ -295,7 +298,7 @@ class _Calendar:
         stay.subject, stay.body = draft.subject, draft.body
         copy = None
         if self.loop is not None:
-            copy = self.loop.choose_copy(stay.segment)
+            copy = stay.copy = self.loop.choose_copy(stay.segment)
             stay.subject, stay.body = copy.subject.text, copy.body.text
             subject_appeal, body_appeal, timing_shift = copy.subject_appeal, copy.body_appeal, read_shift(day - stay.entered, behaviour)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
@@ -303,6 +306,8 @@ class _Calendar:
         if self.loop is not None and copy is not None:
             self.loop.learn_from_click(stay.segment, copy, clicked, day)
         act_rate = trialist.act_rate(offers, behaviour.act_rate, stay.received_offer)
+        if copy is not None and copy.follow_through != 1.0:
+            act_rate *= copy.follow_through
         if clicked and stay.draws.chance("act") < act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):
@@ -334,6 +339,8 @@ class _Calendar:
     def _close_miss_window(self, state: _MerchantState, stay: _OpenStay, day: float) -> None:
         assert stay.email_sent_at is not None
         hit = stay.left is not None  # events run in date order, and the email only went out while the merchant stayed
+        if self.loop is not None and stay.copy is not None:
+            self.loop.learn_from_goal(stay.copy, hit)
         self.email_results.append(EmailResult(state.merchant.key, stay.segment, stay.entered, stay.email_sent_at, day, stay.left, hit))
 
 

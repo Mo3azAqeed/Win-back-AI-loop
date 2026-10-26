@@ -80,8 +80,11 @@ extension_pay_lift = { value = 0.3, placeholder = true, note = "How much more li
 discount_pay_lift = { value = 0.7, placeholder = true, note = "How much more likely a Trialist who clicks is to pay when offered the first month at 50% off (0.7 = 70% more)." }
 
 [ai_loop]
-active_variants = { value = 2, placeholder = false, note = "The AI loop tests at most this many Idle subjects, and this many bodies, at a time." }
-min_sends = { value = 120, placeholder = false, note = "A variant is judged only once it and the leader each have this many sends; until then the variants in play share Idle traffic evenly." }
-retire_confidence = { value = 0.9, placeholder = false, note = "A variant is retired once the leader is this likely to be better." }
-prior_sends = { value = 10, placeholder = false, note = "A replacement starts as if it had this many sends at its slot's average, so a few lucky clicks don't make it the leader at once." }
-carry_over = { value = 0, placeholder = false, note = "Drafters and Trialists get their own first drafts, plus this share (0 to 1) of the edge the Idle leader has over your Idle first draft. 0 means none carries over, so the AI loop can beat the hand-written email there only through what it tests in that segment (founder's choice)." }
+min_sends = { value = 120, placeholder = false, note = "In a test, the champion and the challenger each need this many sends before a verdict on clicks." }
+verdict_confidence = { value = 0.9, placeholder = false, note = "A test ends with a winner, or as the same, once the loop is this sure (founder's choice)." }
+same_margin_points = { value = 1, placeholder = false, note = "Click rates closer than this many points count as the same (founder's choice)." }
+test_max_weeks = { value = 2, placeholder = false, note = "A test that hasn't ended after this many weeks ends as too close to call, and the champion stays (founder's choice)." }
+test_max_sends = { value = 1000, placeholder = false, note = "A test also ends as too close to call once either version has this many sends in it (founder's choice)." }
+challenger_share = { value = 0.33, placeholder = false, note = "While a test runs, the challenger gets this share of Idle's emails and the champion the rest, so an untried version costs less. Chosen over half each: the AI loop led the hand-written email in 34 of 40 replays instead of 27 (ADR 0007)." }
+keep_ahead_at_limit = { value = 1, placeholder = false, note = "1: when a test is too close to call, the version ahead on clicks stays (unless its goal actions are clearly worse), recorded as kept, not proven. 0: the champion always stays." }
+carry_over = { value = 0, placeholder = false, note = "Drafters and Trialists get their own first drafts, plus this share (0 to 1) of the edge the Idle champion has over your Idle first draft. 0 means none carries over, so the AI loop can beat the hand-written email there only through what it tests in that segment (founder's choice)." }
