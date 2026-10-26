@@ -101,5 +101,5 @@ subject_max_characters = { value = 60, placeholder = false, note = "Subjects lon
 quality_per_point = { value = 0.1, placeholder = true, note = "Each point the judge rates a draft above your first draft (1-10 scale) raises its hidden quality by about 10%." }
 rating_noise = { value = 0.1, placeholder = true, note = "The judge is not always right: hidden quality is also moved by random noise of about this size (0.1 = about 10%)." }
 spend_warning = { value = 5.0, placeholder = false, note = "When a run's OpenRouter spend passes this many dollars, it warns and keeps going." }
-spend_stop = { value = 10.0, placeholder = false, note = "When a run's OpenRouter spend reaches this many dollars, it makes no more live calls; later replays reuse what was already written and judged." }
+spend_stop = { value = 10.0, placeholder = false, note = "When a run's OpenRouter spend reaches this many dollars, it makes no more live calls (the call that crossed it is already made); later replays reuse what was already written and judged." }
 challengers_per_part = { value = 8, placeholder = false, note = "The AI writer brings at most this many new subjects, and this many new bodies, per run (as many as the stand-in list)." }

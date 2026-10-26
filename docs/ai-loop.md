@@ -30,7 +30,7 @@ The two jobs are different, so they get different kinds of model.
 
 **Cost per full run.** Each new subject or body is written and judged once per run and reused by every replay, so a full run makes a few dozen calls: cents with either judge. Cost isn't the main reason; the main gain is rating quality and predictability.
 
-**The spending cap (#14).** The run sums the cost OpenRouter reports for each call. Past `writer.spend_warning` ($5) it warns and keeps going. At `writer.spend_stop` ($10) it makes no more live calls: the loop goes on with the variants already written and judged, so every replay still finishes and the report is complete. The report's "Writer and judge" section states the total spend and how many replays made live calls against how many reused earlier variants.
+**The spending cap (#14).** The run sums the cost OpenRouter reports for each call. Past `writer.spend_warning` ($5) it warns and keeps going. At `writer.spend_stop` ($10) it makes no more live calls: the loop goes on with the variants already written and judged, so every replay still finishes and the report is complete, though the loop tests fewer challengers. The call that crosses the limit has already been made, so a run can end above it by one call's cost (a fraction of a cent). The report's "Writer and judge" section states the total spend and how many replays made live calls against how many reused earlier variants.
 
 **Caveats.**
 

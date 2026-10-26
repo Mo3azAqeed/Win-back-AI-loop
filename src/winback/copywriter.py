@@ -162,7 +162,9 @@ class AiCopywriter:
         self.cache: dict[tuple[str, int], Variant | None] = {}
         self.ratings: dict[tuple[str, str, str], float] = {}
         # The spending cap (#14): a warning once spend passes one limit, no live call once it reaches the other.
-        self.warn, self.warning = warn, ""
+        self.warn = warn
+        self.warning: str | None = None  # what was said when spend passed the warning limit
+        self.skipped = 0  # challengers not written, or not judged, because spend had reached the stop limit
         self.replay_calls: list[int] = []  # calls made in each replay so far, the last one still running
         draft = settings.first_drafts["idle"]
         self.placeholders = {p for e in settings.first_drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body} {e.cta}")}
@@ -181,12 +183,14 @@ class AiCopywriter:
         feedback: list[str] = []
         for _ in range(self.settings.writer.max_attempts):
             if self.stopped:
+                self.skipped += 1
                 return None  # past the cap: no live call, so the loop keeps the variants already written and judged
             text, cta, hypothesis = self.writer.write(slot, champion, conclusions, tried, feedback)
-            self._called()
+            self._record_call()
             found = problems(slot, text, cta if slot == "body" else "", self.settings.fact_sheet, self.settings.writer, self.placeholders)
             if not found:
                 if self.stopped and (slot, text, cta) not in self.ratings:
+                    self.skipped += 1
                     return None  # written, but the cap leaves no call to judge it, and an unjudged draft is never sent
                 return Variant(text, cta if slot == "body" else "", self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
             self.spend.rejected.append(f"{slot} “{text}”: {'; '.join(found)}")
@@ -197,19 +201,19 @@ class AiCopywriter:
         key = (slot, text, cta)
         if key not in self.ratings:
             self.ratings[key] = self.judge.rate(slot, text, cta)
-            self._called()
+            self._record_call()
         return self.ratings[key]
 
     @property
     def stopped(self) -> bool:
         return self.spend.cost >= self.settings.writer.spend_stop
 
-    def _called(self) -> None:
+    def _record_call(self) -> None:
         self.spend.calls += 1
         if self.replay_calls:
             self.replay_calls[-1] += 1
         limit = self.settings.writer.spend_warning
-        if not self.warning and self.spend.cost > limit:
+        if self.warning is None and self.spend.cost > limit:
             self.warning = f"Spend passed the ${limit:,.2f} warning limit (${self.spend.cost:,.2f} so far); the run keeps going."
             self.warn(self.warning)
 
@@ -231,7 +235,9 @@ class AiCopywriter:
             "",
             f"- {live} of {len(self.replay_calls)} replays made live calls; {len(self.replay_calls) - live} reused variants already written and judged in this run.",
             *([f"- {self.warning}"] if self.warning else []),
-            *([f"- Spend reached the ${rules.spend_stop:,.2f} stop: no live calls after that, and the loop went on with the variants already written and judged."] if self.stopped else []),
+            *([f"- Spend reached the ${rules.spend_stop:,.2f} stop: no live calls after that (the call that crossed it was already made). "
+               f"{self.skipped} challenger{'s' if self.skipped != 1 else ''} went unwritten, so the loop tested fewer; every replay finished on the variants already written and judged."]
+              if self.stopped else []),
             *(f"- Rejected and rewritten: {r}" for r in self.spend.rejected),
         ]
 
