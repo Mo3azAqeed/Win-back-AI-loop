@@ -95,16 +95,17 @@ The Lambda can already read this parameter, and no other. Never put the key in G
 
 The stack includes a web app: one page to start a run and see every run's summary, timeline, funnel and emails. Its link is in **CloudFormation → Stacks → winback → Outputs → WebAppUrl**. Anyone with the link can look (every number is simulated); starting a run needs an access code. Do this once:
 
-1. **Let the app read reports.** The permissions boundary from step 2 now also allows reading reports. In CloudShell, update that stack with the same commands as step 2:
+1. **Let the app read reports.** The permissions boundary from step 2 now also allows reading reports. In CloudShell, update that stack:
 
    ```bash
    cd Win-back-AI-loop && git pull
    aws cloudformation deploy \
      --stack-name winback-github-deploy \
      --template-file infra/github-deploy-role.yaml \
-     --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides CreateOidcProvider=false
+     --capabilities CAPABILITY_NAMED_IAM
    ```
+
+   Leave out `--parameter-overrides`: the stack keeps the settings it already has. Passing `CreateOidcProvider=false` to a stack that created the GitHub OIDC provider deletes the provider, and the next deploy fails with "The web identity token provided could not be validated". If that happens, run the command again with `--parameter-overrides CreateOidcProvider=true`.
 
 2. **Create the access code.** Open **Systems Manager → Parameter Store → Create parameter**. Name: `/winback/web-access-code`. Tier: Standard. Type: **SecureString**. Value: a code you choose. Share it only with people who should start runs.
 
