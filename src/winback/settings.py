@@ -103,6 +103,8 @@ class WriterSettings:
     quality_per_point: float  # each rating point above your first draft's multiplies hidden quality by e to this
     rating_noise: float  # spread of the judge's error, on the same scale
     challengers_per_part: int  # how many new subjects, and bodies, the writer brings in a run
+    spend_warning: float  # dollars of OpenRouter spend in one run that bring a warning (#14)
+    spend_stop: float  # dollars of OpenRouter spend in one run after which no live call is made
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,8 @@ def load_settings(path: Path) -> Settings:
             quality_per_point=value("writer.quality_per_point"),
             rating_noise=value("writer.rating_noise"),
             challengers_per_part=int(value("writer.challengers_per_part")),
+            spend_warning=value("writer.spend_warning"),
+            spend_stop=value("writer.spend_stop"),
         ),
         entries=tuple(entries.values()),
     )
