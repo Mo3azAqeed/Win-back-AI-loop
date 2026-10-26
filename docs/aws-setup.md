@@ -89,7 +89,7 @@ CloudFormation cannot create encrypted parameters, so add this one by hand:
 1. Open **Systems Manager → Parameter Store → Create parameter**.
 2. Name: `/winback/openrouter-api-key`. Tier: Standard. Type: **SecureString**. Value: your key.
 
-The Lambda can already read this parameter, and no other. Never put the key in GitHub. Set a spending limit on the key in OpenRouter (Settings → Keys) as a safety net until the spending cap (#14) is built.
+The Lambda can already read this parameter, and no other. Never put the key in GitHub. Each run has its own spending cap (#14): it warns at $5 of OpenRouter spend and makes no more live calls at $10, finishing the remaining replays on what was already written and judged (both limits are `writer.spend_warning` and `writer.spend_stop` in `settings.toml`). A monthly limit on the key in OpenRouter (Settings → Keys) is still a good safety net across runs.
 
 **Check the plumbing once.** Open **Lambda → the `winback-SimulationFunction-…` function → Test**, and run the test event `{"plumbing": true}`. It makes one real round trip: DeepSeek writes a new Idle subject, the checks run, and Jev rates it against your first draft's subject. The result shows the draft, its hypothesis, its rating and what it cost (a fraction of a cent). An error there names what to fix: usually the key's name, or OpenRouter refusing the key.
 

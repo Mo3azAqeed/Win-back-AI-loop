@@ -28,7 +28,9 @@ The two jobs are different, so they get different kinds of model.
 2. **It is fast and cheap.** Per its OpenRouter page: $0.042 per million input tokens, free output, about 0.1 s per answer.
 3. **It can't share the writer's biases.** It is a different kind of model, not a sibling of the writer. The spec already requires the judge to be a different model from the writer, so the judge isn't grading its own homework; the run will refuse to start if they are the same.
 
-**Cost per full run.** About 18,000 judgements of roughly 1,500 tokens (200 replays × 2 starting sizes) come to about $1 with Jev, against roughly $2–4 with a cheap chat model. Both are well under the $10 cap per run, so cost isn't the main reason. The main gain is rating quality and predictability.
+**Cost per full run.** Each new subject or body is written and judged once per run and reused by every replay, so a full run makes a few dozen calls: cents with either judge. Cost isn't the main reason; the main gain is rating quality and predictability.
+
+**The spending cap (#14).** The run sums the cost OpenRouter reports for each call. Past `writer.spend_warning` ($5) it warns and keeps going. At `writer.spend_stop` ($10) it makes no more live calls: the loop goes on with the variants already written and judged, so every replay still finishes and the report is complete. The report's "Writer and judge" section states the total spend and how many replays made live calls against how many reused earlier variants.
 
 **Caveats.**
 

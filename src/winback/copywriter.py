@@ -16,6 +16,7 @@ import json
 import math
 import random
 import re
+import sys
 import urllib.error
 import urllib.request
 import zlib
@@ -53,6 +54,10 @@ class Copywriter(Protocol):
         """The nth new part for this slot ("subject" or "body") in this replay, written against this champion."""
         ...
 
+    def start_replay(self) -> None:
+        """A new replay begins, so the copywriter can say how many replays made live calls."""
+        ...
+
     def summary(self) -> list[str]:
         """What the report says about who wrote and judged, and what it cost; nothing for the stand-in writer."""
         ...
@@ -68,6 +73,9 @@ class StandIn:
     def challenger(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         waiting = self.settings.prewritten_subjects if slot == "subject" else self.settings.prewritten_bodies
         return waiting[nth] if nth < len(waiting) else None
+
+    def start_replay(self) -> None:
+        pass
 
     def summary(self) -> list[str]:
         return []
@@ -141,7 +149,8 @@ class Spend:
 class AiCopywriter:
     """The real writer and judge behind one interface, with the checks in front and a cache shared by every replay."""
 
-    def __init__(self, settings: Settings, writer: Writer, judge: Judge, spend: Spend | None = None, seed: int = 0) -> None:
+    def __init__(self, settings: Settings, writer: Writer, judge: Judge, spend: Spend | None = None, seed: int = 0,
+                 warn: Callable[[str], None] = lambda message: print(message, file=sys.stderr)) -> None:
         if writer.model == judge.model:
             raise ValueError(f"The writer and the judge must be different models, not both {writer.model}")
         self.settings, self.writer, self.judge, self.seed = settings, writer, judge, seed
@@ -152,6 +161,9 @@ class AiCopywriter:
         # its number of replays. A part changes one thing, so it still fits a later champion's other part.
         self.cache: dict[tuple[str, int], Variant | None] = {}
         self.ratings: dict[tuple[str, str, str], float] = {}
+        # The spending cap (#14): a warning once spend passes one limit, no live call once it reaches the other.
+        self.warn, self.warning = warn, ""
+        self.replay_calls: list[int] = []  # calls made in each replay so far, the last one still running
         draft = settings.first_drafts["idle"]
         self.placeholders = {p for e in settings.first_drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body} {e.cta}")}
         self.reference = {"subject": self._rating("subject", draft.subject, ""), "body": self._rating("body", draft.body, draft.cta)}
@@ -168,10 +180,14 @@ class AiCopywriter:
         tried = [v.text for (s, _), v in self.cache.items() if v is not None and s == slot]
         feedback: list[str] = []
         for _ in range(self.settings.writer.max_attempts):
+            if self.stopped:
+                return None  # past the cap: no live call, so the loop keeps the variants already written and judged
             text, cta, hypothesis = self.writer.write(slot, champion, conclusions, tried, feedback)
-            self.spend.calls += 1
+            self._called()
             found = problems(slot, text, cta if slot == "body" else "", self.settings.fact_sheet, self.settings.writer, self.placeholders)
             if not found:
+                if self.stopped and (slot, text, cta) not in self.ratings:
+                    return None  # written, but the cap leaves no call to judge it, and an unjudged draft is never sent
                 return Variant(text, cta if slot == "body" else "", self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
             self.spend.rejected.append(f"{slot} “{text}”: {'; '.join(found)}")
             feedback = found
@@ -181,8 +197,24 @@ class AiCopywriter:
         key = (slot, text, cta)
         if key not in self.ratings:
             self.ratings[key] = self.judge.rate(slot, text, cta)
-            self.spend.calls += 1
+            self._called()
         return self.ratings[key]
+
+    @property
+    def stopped(self) -> bool:
+        return self.spend.cost >= self.settings.writer.spend_stop
+
+    def _called(self) -> None:
+        self.spend.calls += 1
+        if self.replay_calls:
+            self.replay_calls[-1] += 1
+        limit = self.settings.writer.spend_warning
+        if not self.warning and self.spend.cost > limit:
+            self.warning = f"Spend passed the ${limit:,.2f} warning limit (${self.spend.cost:,.2f} so far); the run keeps going."
+            self.warn(self.warning)
+
+    def start_replay(self) -> None:
+        self.replay_calls.append(0)
 
     def _quality(self, slot: str, text: str, cta: str) -> float:
         """The judge's rating against your first draft's, as hidden quality (100 = your first draft), with noise
@@ -192,8 +224,14 @@ class AiCopywriter:
         return 100 * math.exp(rules.quality_per_point * (self._rating(slot, text, cta) - self.reference[slot]) + noise)
 
     def summary(self) -> list[str]:
+        rules, live = self.settings.writer, sum(1 for calls in self.replay_calls if calls)
         return [
-            f"Written by {self.writer.model}, judged by {self.judge.model}: {self.spend.calls:,} calls, ${self.spend.cost:,.2f} reported by OpenRouter.",
+            f"Written by {self.writer.model}, judged by {self.judge.model}: {self.spend.calls:,} calls, ${self.spend.cost:,.2f} reported by OpenRouter"
+            f" (warn at ${rules.spend_warning:,.2f}, stop at ${rules.spend_stop:,.2f}).",
+            "",
+            f"- {live} of {len(self.replay_calls)} replays made live calls; {len(self.replay_calls) - live} reused variants already written and judged in this run.",
+            *([f"- {self.warning}"] if self.warning else []),
+            *([f"- Spend reached the ${rules.spend_stop:,.2f} stop: no live calls after that, and the loop went on with the variants already written and judged."] if self.stopped else []),
             *(f"- Rejected and rewritten: {r}" for r in self.spend.rejected),
         ]
 

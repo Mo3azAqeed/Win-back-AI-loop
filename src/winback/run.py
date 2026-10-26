@@ -56,6 +56,7 @@ def run_simulation(settings: Settings, seed: int, replays: int | None = 1, copyw
     for start in settings.start_sizes:
         stats = []
         for i, this_seed in enumerate(seeds):
+            copywriter.start_replay()
             result = _run_from(settings, start, this_seed, copywriter)
             if i == 0:
                 by_start[start] = result
