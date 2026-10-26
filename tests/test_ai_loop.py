@@ -188,3 +188,9 @@ def test_the_report_states_the_carry_over_it_used() -> None:
     report = run_simulation(settings, seed=1).report
 
     assert "Carry-over from Idle: 50%" in report
+
+
+def test_a_carry_over_outside_0_to_1_is_refused() -> None:
+    for carry_over in (-0.1, 1.5):
+        with pytest.raises(ValueError, match="carry_over"):
+            run_simulation(with_carry_over(load_settings(SETTINGS), carry_over), seed=1)

@@ -145,6 +145,8 @@ class AiLoop:
     luck of another's choices."""
 
     def __init__(self, settings: Settings, rngs: dict[Segment, random.Random]) -> None:
+        if not 0 <= settings.loop.carry_over <= 1:
+            raise ValueError(f"ai_loop.carry_over must be between 0 and 1, not {settings.loop.carry_over:g}")
         self.rules, self.rngs = settings.loop, rngs
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
@@ -155,8 +157,9 @@ class AiLoop:
         for slot in self.variants:
             while len(self._active(slot)) < self.rules.active_variants and self.waiting[slot]:
                 self._add(slot, self.waiting[slot].pop(0), _Posterior())
-        self.own_drafts = {
-            s: (LoopVariant(d.subject, "", 100.0, 0.0), LoopVariant(d.body, d.cta, 100.0, 0.0))
+        # A Drafter or Trialist first draft is never replaced; its posteriors only count sends and clicks.
+        self.own_first_drafts = {
+            s: (LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0))
             for s in (Segment.DRAFTER, Segment.TRIALIST)
             for d in [settings.first_drafts[s.value]]
         }
@@ -172,19 +175,17 @@ class AiLoop:
             subject, body = self._draw_variant("subject"), self._draw_variant("body")
             return Copy(subject, body, subject.appeal, body.appeal)
         carry = self.rules.carry_over
-        subject, body = self.own_drafts[segment]
+        subject, body = self.own_first_drafts[segment]
         return Copy(subject, body, carry * self._leader("subject").appeal, carry * self._leader("body").appeal)
 
     def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool) -> None:
         """An email went out. An Idle subject and body learn whether a human clicked; a Drafter or
         Trialist first draft only counts its sends and clicks. Every click counts as human until
         scanner clicks are simulated (#10)."""
-        if segment is not Segment.IDLE:
-            copy.subject.posterior.learn(clicked)
-            return
         for slot, variant in (("subject", copy.subject), ("body", copy.body)):
             variant.posterior.learn(clicked)
-            self._review(slot)
+            if segment is Segment.IDLE:
+                self._review(slot)
 
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
@@ -202,8 +203,8 @@ class AiLoop:
             best = max(posteriors, key=lambda t: posteriors[t].mean)
             timings[segment] = [TimingRecord(t.label, p.tries, p.rewards, t is best) for t, p in posteriors.items()]
         segment_copy = {
-            segment: SegmentCopyRecord(subject.text, body.text, body.cta, subject.posterior.tries, subject.posterior.rewards)
-            for segment, (subject, body) in self.own_drafts.items()
+            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.rewards)
+            for segment, (subject, body) in self.own_first_drafts.items()
         }
         return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings)
 

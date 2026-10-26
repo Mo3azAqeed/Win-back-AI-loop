@@ -4,4 +4,6 @@ Drafter and Trialist segments are too small to test subjects and bodies, so the 
 
 With carry-over 0, the AI loop trails the hand-written email slightly in Drafter and Trialist (about −0.2 points, 10 seeds at 1,500 merchants): +2 days is already the best timing there, and testing the other two costs a little. At the placeholder rates, 13 weeks can't tell Drafter timings apart.
 
-Each segment's choices now draw from their own random stream, so changing carry-over (or anything else in Drafter and Trialist) never changes Idle's results.
+Each segment's choices now draw from their own random stream, so changing carry-over (or anything else in Drafter and Trialist) never changes Idle's results. Switching to these streams reshuffled the AI loop's luck once: single seeds moved, averages did not (Idle lift over 10 seeds is the same; carry-over 1 matches the old Drafter and Trialist results on average, +1.72 against +1.74 points and +2.58 against +2.43, but not seed for seed).
+
+Drafters and Trialists get no prewritten variants of their own: they learn timing only (and Trialists offers, #8), so there is nothing to test their words against yet. Their own variants arrive with the real writer (#13).
