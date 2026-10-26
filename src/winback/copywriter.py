@@ -200,22 +200,32 @@ class AiCopywriter:
 
     def _write(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         tried = [v.text for (s, _), v in self.cache.items() if v is not None and s == slot]
+        drafted = self._checked(slot, slot, lambda feedback: self.writer.write(slot, champion, conclusions, tried, feedback))
+        if drafted is None or (self.stopped and (slot, drafted[0], drafted[1]) not in self.ratings):
+            # Every draft failed a check (the loop tries the other part), or the cap left no call to write or judge
+            # it: an unjudged draft is never sent, and the loop keeps the variants already written and judged.
+            self.skipped += self.stopped
+            return None
+        text, cta, hypothesis = drafted
+        return Variant(text, cta, self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
+
+    def _checked(self, slot: str, label: str, draft: Callable[[list[str]], tuple[str, str, str]]) -> tuple[str, str, str] | None:
+        """The first draft that passes every check, with its button (empty for a subject) and what else the writer
+        said; a failing draft is rewritten with the reasons, and is never sent. None if every attempt failed, or
+        if spend had reached the stop limit before one passed."""
         feedback: list[str] = []
         for _ in range(self.settings.writer.max_attempts):
             if self.stopped:
-                self.skipped += 1
-                return None  # past the cap: no live call, so the loop keeps the variants already written and judged
-            text, cta, hypothesis = self.writer.write(slot, champion, conclusions, tried, feedback)
+                return None
+            text, cta, said = draft(feedback)
             self._record_call()
-            found = problems(slot, text, cta if slot == "body" else "", self.settings.fact_sheet, self.settings.writer, self.placeholders)
+            cta = cta if slot == "body" else ""
+            found = problems(slot, text, cta, self.settings.fact_sheet, self.settings.writer, self.placeholders)
             if not found:
-                if self.stopped and (slot, text, cta) not in self.ratings:
-                    self.skipped += 1
-                    return None  # written, but the cap leaves no call to judge it, and an unjudged draft is never sent
-                return Variant(text, cta if slot == "body" else "", self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
-            self.spend.rejected.append(f"{slot} “{text}”: {'; '.join(found)}")
+                return text, cta, said
+            self.spend.rejected.append(f"{label} “{text}”: {'; '.join(found)}")
             feedback = found
-        return None  # every draft failed a check, so nothing is sent; the loop tries the other part
+        return None
 
     def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
         key = (segment, slot, text, cta)
@@ -225,20 +235,11 @@ class AiCopywriter:
 
     def _adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
         """Through the same checks as a challenger; no judge, since how much it helps is the carry-over setting."""
-        feedback: list[str] = []
-        for _ in range(self.settings.writer.max_attempts):
-            if self.stopped:
-                self.unborrowed += 1
-                return None
-            words, button = self.writer.adapt(segment, slot, own, text, cta, hypothesis, feedback)
-            self._record_call()
-            button = button if slot == "body" else ""
-            found = problems(slot, words, button, self.settings.fact_sheet, self.settings.writer, self.placeholders)
-            if not found:
-                return words, button
-            self.spend.rejected.append(f"{segment} {slot} “{words}”: {'; '.join(found)}")
-            feedback = found
-        return None
+        drafted = self._checked(slot, f"{segment} {slot}", lambda feedback: (*self.writer.adapt(segment, slot, own, text, cta, hypothesis, feedback), ""))
+        if drafted is None:
+            self.unborrowed += self.stopped
+            return None
+        return drafted[0], drafted[1]
 
     def _rating(self, slot: str, text: str, cta: str) -> float:
         key = (slot, text, cta)
@@ -341,7 +342,7 @@ class OpenRouterWriter:
             "State only facts from this fact sheet, with numbers and prices exactly as written there, never any other:\n- " + "\n- ".join(facts.facts)
             + "\nNever use these phrases: " + ", ".join(facts.banned_phrases)
             + f". Never start a subject with Re: or Fwd:. Keep subjects under {self.settings.writer.subject_max_characters} characters. "
-            + "You may use these placeholders and no others: " + ", ".join(placeholders) + ". Offers (more trial days, a discount) are only for Trialists: never mention them here."
+            + "You may use these placeholders and no others: " + ", ".join(placeholders) + ". Never mention offers (more trial days, a discount): the app adds them to Trialist emails itself."
             + "\nThe founder's own emails, for tone:\n" + "\n".join(f"- {stage}: {e.subject} / {e.body} [{e.cta}]" for stage, e in drafts.items())
         )
         schema = {

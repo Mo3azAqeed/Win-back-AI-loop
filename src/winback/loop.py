@@ -282,6 +282,16 @@ class SegmentVersionRecord:
 
 
 @dataclass(frozen=True)
+class NotBorrowed:
+    """A change a won Idle test proved that a segment didn't get: the writer had no words for it there that
+    passed the checks, or the spending cap stopped it. The segment kept its email."""
+
+    segment: Segment
+    test: int
+    day: float
+
+
+@dataclass(frozen=True)
 class CopyChange:
     """A subject or body that entered Idle's tests in a new version, or left them with a sunset version, and when."""
 
@@ -319,6 +329,7 @@ class LoopReport:
     bodies: list[VariantRecord]
     segment_copy: dict[Segment, SegmentCopyRecord]  # the words each was last sent, and all its sends and clicks
     segment_versions: dict[Segment, list[SegmentVersionRecord]]
+    not_borrowed: list[NotBorrowed]
     carry_over: float
     timings: dict[Segment, list[TimingRecord]]
     offers: list[OfferRecord]
@@ -364,6 +375,7 @@ class AiLoop:
         self.champion = self.versions[0]
         self.test: _Test | None = None
         self._next_challenger()
+        self.not_borrowed: list[NotBorrowed] = []
         self.segment_versions = {
             s: [_SegmentVersion(0, LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0), 0.0)]
             for s in (Segment.DRAFTER, Segment.TRIALIST)
@@ -389,7 +401,8 @@ class AiLoop:
             test = self.test.number if self.test is not None else None
             return Copy(subject, body, subject.appeal, body.appeal, subject.follow_through * body.follow_through, version.number, test)
         latest = self.segment_versions[segment][-1]
-        return Copy(latest.subject, latest.body, latest.subject.appeal, latest.body.appeal, version=latest.number, segment=segment)
+        follow_through = latest.subject.follow_through * latest.body.follow_through
+        return Copy(latest.subject, latest.body, latest.subject.appeal, latest.body.appeal, follow_through, latest.number, segment=segment)
 
     def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool, day: float) -> None:
         """An email went out on this day, and a human clicked it or not. Every click counts as human until
@@ -476,7 +489,7 @@ class AiLoop:
         }
         versions = [self._record(v) for v in self.versions]
         return LoopReport(
-            versions, list(self.playbook), records("subject"), records("body"), segment_copy, segment_versions, self.rules.carry_over, timings, offers,
+            versions, list(self.playbook), records("subject"), records("body"), segment_copy, segment_versions, list(self.not_borrowed), self.rules.carry_over, timings, offers,
             list(self.history), list(self.weekly_leaders),
         )
 
@@ -578,15 +591,19 @@ class AiLoop:
     def _borrow(self, test: int, won: _Version) -> None:
         """Drafters and Trialists take the change a won Idle test proved, in their own words, with no test of
         their own. The borrowed part gets the carry-over share of the Idle part's appeal: at 0, none."""
-        slot = won.changed or "subject"
+        slot, carry = won.changed, self.rules.carry_over
+        assert slot is not None, "only a challenger wins a test, and it changed one part"
         idle_part = won.subject if slot == "subject" else won.body
         for segment, versions in self.segment_versions.items():
             latest = versions[-1]
             own = Email(latest.subject.text, latest.body.text, latest.body.cta)
-            words = self.copywriter.adapt(segment.value, slot, own, idle_part.text, idle_part.cta, won.hypothesis)
-            if words is None:
-                continue  # the writer has no words for it here, so the segment keeps its email
-            part = LoopVariant(words[0], words[1], idle_part.quality, self.rules.carry_over * idle_part.appeal)
+            adapted = self.copywriter.adapt(segment.value, slot, own, idle_part.text, idle_part.cta, won.hypothesis)
+            if adapted is None:
+                self.not_borrowed.append(NotBorrowed(segment, test, self.today))  # the segment keeps its email
+                continue
+            text, cta = adapted
+            # Hidden appeal and follow-through both carry over by the same share: at 0, the part is exactly as good as before.
+            part = LoopVariant(text, cta, idle_part.quality, carry * idle_part.appeal, 1 + carry * (idle_part.follow_through - 1))
             versions.append(_SegmentVersion(
                 len(versions), part if slot == "subject" else latest.subject, part if slot == "body" else latest.body,
                 self.today, test, won.number, slot, won.hypothesis,

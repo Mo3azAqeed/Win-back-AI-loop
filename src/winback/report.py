@@ -256,6 +256,11 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
             for segment, versions in loop.segment_versions.items()
             for v in versions
         ),
+        *(
+            ["", *(f"- Idle test {n.test}'s change wasn't borrowed by {SEGMENT_TEXT[n.segment].label}s (week {week_of(n.day)}): the writer had no words for it "
+                   "there that passed the checks, or the spending cap stopped it, so they kept their email." for n in loop.not_borrowed)]
+            if loop.not_borrowed else []
+        ),
         "",
         "Each segment learns timing from every merchant assigned it, judged when the horizon closes, "
         "including merchants who acted before their email went out (the holdout aside). "

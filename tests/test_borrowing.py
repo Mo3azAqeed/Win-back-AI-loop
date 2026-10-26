@@ -6,6 +6,7 @@ import dataclasses
 from winback import Segment, Settings, load_settings, run_simulation
 from winback.copywriter import AiCopywriter, problems
 from winback.loop import Ending, LoopReport
+from winback.settings import Variant
 
 from conftest import SETTINGS, only, with_segment
 from test_copywriter import FakeJudge, FakeWriter
@@ -25,7 +26,7 @@ def better_first_subject(settings: Settings, quality: float = 300) -> Settings:
 
 def nothing_to_borrow(settings: Settings) -> Settings:
     """The stand-in writer has no Drafter or Trialist words for any change, so nothing is ever borrowed."""
-    def strip(variants: tuple) -> tuple:  # type: ignore[type-arg]
+    def strip(variants: tuple[Variant, ...]) -> tuple[Variant, ...]:
         return tuple(dataclasses.replace(v, adapted=()) for v in variants)
 
     return dataclasses.replace(settings, prewritten_subjects=strip(settings.prewritten_subjects), prewritten_bodies=strip(settings.prewritten_bodies))
@@ -123,3 +124,18 @@ def test_the_ai_writer_adapts_a_won_change_once_per_segment_through_the_same_che
     assert words is not None and "3 free months" not in words[0]
     assert writer.feedback[-1]  # the draft with an invented offer was rejected and rewritten with the reason
     assert len([r for r in copywriter.spend.rejected if "3 free months" in r]) == 1
+
+
+def test_a_won_change_a_segment_has_no_words_for_is_reported_and_the_segment_keeps_its_email() -> None:
+    settings = better_first_subject(load_settings(SETTINGS))
+    first = settings.prewritten_subjects[0]
+    no_trialist_words = dataclasses.replace(first, adapted=tuple(a for a in first.adapted if a[0] != "trialist"))
+    settings = dataclasses.replace(settings, prewritten_subjects=(no_trialist_words, *settings.prewritten_subjects[1:]))
+
+    result = run_simulation(only(settings, 1000), seed=1)
+    loop = result.by_start[1000].loop
+
+    assert [v.borrowed_from_test for v in loop.segment_versions[Segment.DRAFTER]][1] == 1
+    assert len(loop.segment_versions[Segment.TRIALIST]) == 1 or loop.segment_versions[Segment.TRIALIST][1].borrowed_from_test != 1
+    assert [(n.segment, n.test) for n in loop.not_borrowed][:1] == [(Segment.TRIALIST, 1)]
+    assert "Idle test 1's change wasn't borrowed by Trialists" in result.report

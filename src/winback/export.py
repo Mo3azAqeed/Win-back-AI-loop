@@ -98,6 +98,7 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
                 for s, versions in loop.segment_versions.items()
                 for v in versions
             ],
+            "not_borrowed": [{"segment": n.segment.value, "test": n.test, "week": week_of(n.day)} for n in loop.not_borrowed],
             "timings": [
                 {"segment": s.value, "label": SEGMENT_TEXT[s].label, "timing": t.label, "assigned": t.assigned, "reached": t.reached, "leading": t.leading}
                 for s, timings in loop.timings.items()

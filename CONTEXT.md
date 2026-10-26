@@ -94,7 +94,7 @@ _Avoid_: Transfer, spillover
 One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; in Idle they come together as versions.
 
 **Version**:
-A whole Idle email: a subject and a body with its button. Version 0 (v0) is the founder's first draft; each later version is numbered in the order the writer brought it, changes one part of the champion it was tested against, and carries a hypothesis. Send time is not part of a version (ADR 0007).
+A whole email: a subject and a body with its button. In Idle, version 0 (v0) is the founder's first draft; each later version is numbered in the order the writer brought it, changes one part of the champion it was tested against, and carries a hypothesis. Drafters and Trialists have versions too: v0 is their first draft, and each later one is a borrowed version. Send time is not part of a version (ADR 0007).
 _Avoid_: Variation, draft (a draft is the merchant's store)
 
 **Champion**:
