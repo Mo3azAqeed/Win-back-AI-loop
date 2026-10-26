@@ -101,7 +101,7 @@ class VariantRecord:
 @dataclass(frozen=True)
 class TimingRecord:
     label: str
-    assigned: int  # emailed merchants judged at the horizon
+    assigned: int  # merchants assigned it and judged at the horizon (emailed or skipped; never the holdout)
     reached: int
     leading: bool
 
@@ -109,7 +109,7 @@ class TimingRecord:
 @dataclass(frozen=True)
 class OfferRecord:
     offer: Offer
-    assigned: int  # emailed Trialists judged at the horizon
+    assigned: int  # Trialists assigned it and judged at the horizon (emailed or skipped; never the holdout)
     revenue_share: float  # their first-month revenue, in full prices: a discounted payment counts as half
     leading: bool
 
@@ -206,7 +206,7 @@ class AiLoop:
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
 
-    def learn_offer(self, offer: Offer, revenue_share: float) -> None:
+    def learn_from_revenue(self, offer: Offer, revenue_share: float) -> None:
         """A Trialist assigned this offer reached its horizon having brought this share of the full price."""
         self.offers[offer].learn(revenue_share)
 

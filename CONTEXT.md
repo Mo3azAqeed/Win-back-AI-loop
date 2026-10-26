@@ -98,7 +98,7 @@ An incentive in a Trialist's email: none, a 7-day trial extension, or the first 
 _Avoid_: Promo, deal
 
 **Would have paid anyway**:
-A merchant who paid with the discount but, with no email at all, would have paid the full price within its Trialist horizon. Known only in a simulation, by looking at the same merchant in the no-email run; it is what a discount costs.
+A merchant who paid with the discount but, with no email at all, would have paid the full price at some point. Known only in a simulation, by looking at the same merchant in the no-email run; it is what a discount costs.
 
 **Lesson**:
 A written finding about what works for a segment, stored with the evidence behind it. Lessons from one segment can seed the others.

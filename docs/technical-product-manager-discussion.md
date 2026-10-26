@@ -306,7 +306,7 @@ Short versions, each with the situation, what I did and the result.
 - **Result:** a test that fails for the right reason, and a product finding for the report: Drafter timing is not learnable at this volume, so offers (#8) are the AI loop's only real lever there.
 - **Lesson:** a test passing on a handful of seeds is a sample, not a proof. When a stochastic test flips, measure it over many seeds before deciding who is wrong.
 
-**9. "More customers, less money."**
+**9. "More merchants paying, less money."**
 - **Situation:** with offers in, the AI loop beat the hand-written email on the headline: more Trialists paid (+3.6 against +2.0 points over 10 runs).
 - **What I did:** the spec had insisted on reporting first-month revenue next to the pay rate for exactly this case, and on counting how many discounted payers would have paid full price anyway (the simulation knows, by replaying the same merchant with no email).
 - **Result:** revenue was slightly *lower* ($3,202 against $3,224): 70% of discounted payers would have paid $40 anyway. The loop does learn this (the discount's share falls from about 31% early in a run to about 10% late, and it never ends up ahead) because offers are rewarded by revenue, not by payments. But 13 weeks isn't long enough to finish learning.

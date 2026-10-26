@@ -3,9 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
+from winback import Approach, Offer, RunResult, Segment, Settings, load_settings, run_simulation
 from winback.lifecycle import EmailFate, Journey
-from winback.offers import Offer
 
 SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 

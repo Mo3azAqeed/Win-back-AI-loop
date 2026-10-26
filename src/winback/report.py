@@ -168,6 +168,8 @@ def _offers_section(settings: Settings, offers: OfferSummary) -> list[str]:
         "Each AI loop Trialist email carries one offer, added as a line to your Trialist first draft. "
         "The hand-written email never carries one.",
         "",
+        "Emails sent count the Trialists entered by the end of the weeks of signups.",
+        "",
         "| Offer | Line added to the email | Emails sent |",
         "|---|---|---|",
         *(f"| {labels[o]} | {settings.offers.lines[o] or '–'} | {offers.sent[o]:,} |" for o in Offer),
@@ -214,7 +216,8 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
             for segment, c in loop.segment_copy.items()
         ),
         "",
-        "Each segment learns timing from every emailed merchant assigned it, judged when the horizon closes. "
+        "Each segment learns timing from every merchant assigned it, judged when the horizon closes, "
+        "including merchants who acted before their email went out (the holdout aside). "
         "With a few hundred merchants per timing, the one ahead so far may still be ahead by chance.",
         "",
         "| Segment | Timing | Merchants judged | Reached the goal | Now |",
@@ -226,8 +229,8 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
     labels = _offer_labels(settings)
     lines += [
         "",
-        "Trialist offers learn the same way, from the first-month revenue of every emailed Trialist assigned "
-        "them, so a discounted payment counts as half.",
+        "Trialist offers learn the same way, from the first-month revenue of every Trialist assigned them, "
+        "so a discounted payment counts as half.",
         "",
         "| Offer | Trialists judged | First-month revenue per Trialist | Now |",
         "|---|---|---|---|",

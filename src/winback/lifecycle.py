@@ -157,7 +157,7 @@ class _OpenStay:
     email_sent_at: float | None = None
 
     @property
-    def offered(self) -> Offer | None:
+    def received_offer(self) -> Offer | None:
         """The offer the merchant has actually received: one sent in an email, not a ghost send's."""
         return self.offer if self.email is EmailFate.SENT else None
 
@@ -268,7 +268,7 @@ class _Calendar:
             return
         behaviour, offers = self.settings.segments[stay.segment], self.settings.offers
         stay.email, stay.email_sent_at, state.last_email = EmailFate.SENT, day, day
-        if stay.offered is Offer.EXTENSION:
+        if stay.received_offer is Offer.EXTENSION:
             # More trial days: a merchant who would have paid on its own just after the trial now can.
             stay.deadline += offers.extra_trial_days
             if stay.goal_day is None and stay.organic_day is not None and stay.organic_day <= stay.deadline:
@@ -288,7 +288,7 @@ class _Calendar:
         clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
         if self.loop is not None and copy is not None:
             self.loop.learn_from_click(stay.segment, copy, clicked)
-        act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.offered]) if stay.offered is not None else behaviour.act_rate
+        act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.received_offer]) if stay.received_offer is not None else behaviour.act_rate
         if clicked and stay.draws.chance("act") < act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)
             if prompted <= stay.deadline and (stay.goal_day is None or prompted < stay.goal_day):
@@ -303,7 +303,7 @@ class _Calendar:
         following = NEXT_SEGMENT[stay.segment]
         if following is None:
             # A discount email that arrived before the payment halves it, even for a merchant who would have paid anyway.
-            discounted = stay.offered is Offer.DISCOUNT and stay.email_sent_at is not None and stay.email_sent_at <= day
+            discounted = stay.received_offer is Offer.DISCOUNT and stay.email_sent_at is not None and stay.email_sent_at <= day
             price_share = self.settings.offers.discount_price_share if discounted else 1.0
             state.paid_at, stay.first_month_revenue = day, self.settings.monthly_price * price_share
         else:
@@ -314,7 +314,7 @@ class _Calendar:
         if self.loop is not None and stay.timing is not None and not state.merchant.holdout:
             self.loop.learn_from_assignment(stay.segment, stay.timing, reached)
             if stay.offer is not None:
-                self.loop.learn_offer(stay.offer, stay.first_month_revenue / self.settings.monthly_price)
+                self.loop.learn_from_revenue(stay.offer, stay.first_month_revenue / self.settings.monthly_price)
         self.results.append(
             StayResult(state.merchant.key, stay.segment, stay.entered, day, stay.left, reached, state.merchant.holdout, stay.first_month_revenue)
         )
@@ -435,11 +435,12 @@ class OfferSummary:
 
 
 def offer_summary(runs: dict[Approach, CalendarRun], monthly_price: float) -> OfferSummary:
-    """Counted Trialist stays only. A merchant would have paid anyway if, with no email, it paid within
-    its Trialist horizon: the simulation knows by looking at the same merchant in the no-email run."""
+    """Counted Trialist stays only (only they have results), whether the merchant would be a Trialist with
+    no email or an earlier email pushed it there. A merchant would have paid anyway if, with no email at all,
+    it paid at some point in the run: the simulation knows by looking at the same merchant in the no-email run."""
     stays = [s for j in runs[Approach.AI_LOOP].journeys for s in j.stays if s.segment is Segment.TRIALIST and s.counted]
     sent = {o: sum(s.offer is o and s.email is EmailFate.SENT for s in stays) for o in Offer}
     paid = [r for r in runs[Approach.AI_LOOP].results if r.segment is Segment.TRIALIST and r.reached]
     discounted = {r.merchant_key for r in paid if r.first_month_revenue < monthly_price}
-    paid_alone = {r.merchant_key for r in runs[Approach.NO_EMAIL].results if r.segment is Segment.TRIALIST and r.reached}
+    paid_alone = {j.merchant.key for j in runs[Approach.NO_EMAIL].journeys if j.paid_at is not None}
     return OfferSummary(sent, len(discounted), len(discounted & paid_alone))

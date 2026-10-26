@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from winback import Approach, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
+import re
+import tomllib
+
+from winback import Approach, Offer, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
 from winback.lifecycle import EmailFate, Stay
-from winback.offers import Offer
 
 SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
 
@@ -124,7 +126,18 @@ def test_discounted_payers_who_would_have_paid_anyway_are_those_who_paid_with_no
     discounted = {
         r.merchant_key for r in start.results[Approach.AI_LOOP] if r.segment is Segment.TRIALIST and r.reached and received(stays[(r.merchant_key, r.entered)], Offer.DISCOUNT)
     }
-    paid_alone = {r.merchant_key for r in start.results[Approach.NO_EMAIL] if r.segment is Segment.TRIALIST and r.reached}
+    paid_alone = {j.merchant.key for j in start.journeys[Approach.NO_EMAIL] if j.paid_at is not None}
 
     assert start.offers.discounted_payers == len(discounted)
     assert start.offers.would_have_paid_anyway == len(discounted & paid_alone)
+
+
+def test_each_offer_line_is_on_the_fact_sheet_and_matches_the_offer_settings() -> None:
+    settings = load_settings(SETTINGS)
+    fact_sheet = tomllib.loads((SETTINGS.parent / "fact_sheet.toml").read_text())
+    lines = settings.offers.lines
+
+    assert set(fact_sheet["offers"].values()) == {lines[Offer.EXTENSION], lines[Offer.DISCOUNT]}
+    assert re.findall(r"\d+", lines[Offer.EXTENSION]) == [f"{settings.offers.extra_trial_days:g}"]
+    discounted, full = re.findall(r"\$(\d+)", lines[Offer.DISCOUNT])
+    assert (float(discounted), float(full)) == (settings.monthly_price * settings.offers.discount_price_share, settings.monthly_price)
