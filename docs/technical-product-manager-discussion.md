@@ -337,6 +337,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Planted-bug audit of #22 and #8: 24 of 35 caught at first. Closed every real gap with tests (offer pay lifts, the day-14 limit, the default carry-over, report tables, the revenue-based reward); now 32 of 35, and the last 3 cannot change any result. |
 | 2026-10-26 | Founder decided the discount works only through the email's link (ADR 0006). With it, the AI loop brings more Trialists to pay (+3.6 against +2.0 points) **and** more money than the hand-written email ($3,350 against $3,224); 26% of discounted payers would have paid anyway, down from 70%. |
 | 2026-10-26 | Built #8 (Trialist offers). The AI loop now gets more Trialists to pay than the hand-written email (+3.6 against +2.0 points, 10 seeds at 1,500 merchants) but brings slightly less money ($3,202 against $3,224): 70% of discounted payers would have paid the full $40 anyway. The loop learns to drop the discount, but 13 weeks is too short to finish. |
 | 2026-10-26 | Built #22: Drafters and Trialists send their own first drafts; carry-over of Idle's edge defaults to 0 (ADR 0005). Honest result: without offers, the AI loop trails the hand-written email by about 0.2 points in Drafter and Trialist. Found the timing test had passed on lucky seeds and rebuilt it, proven against a planted biased judge. |

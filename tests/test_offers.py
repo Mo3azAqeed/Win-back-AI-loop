@@ -197,3 +197,16 @@ def test_the_report_shows_what_each_offer_has_earned_per_trialist(run: RunResult
     discount = next(o for o in start.loop.offers if o.offer is Offer.DISCOUNT)
 
     assert f"| First month 50% off | {discount.assigned:,} | ${40 * discount.revenue_share / discount.assigned:,.2f} |" in from_1000
+
+
+def test_each_offers_settings_are_read_for_that_offer() -> None:
+    settings = load_settings(SETTINGS)
+    written = tomllib.loads(SETTINGS.read_text())["offers"]
+
+    assert settings.offers.pay_lift == {
+        Offer.NONE: 0.0,
+        Offer.EXTENSION: written["extension_pay_lift"]["value"],
+        Offer.DISCOUNT: written["discount_pay_lift"]["value"],
+    }
+    assert settings.offers.pay_lift[Offer.EXTENSION] != settings.offers.pay_lift[Offer.DISCOUNT]
+    assert (settings.offers.extra_trial_days, settings.offers.discount_price_share) == (written["extra_trial_days"]["value"], written["discount_price_share"]["value"])
