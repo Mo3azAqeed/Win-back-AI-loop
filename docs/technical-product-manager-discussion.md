@@ -306,6 +306,13 @@ Short versions, each with the situation, what I did and the result.
 - **Result:** a test that fails for the right reason, and a product finding for the report: Drafter timing is not learnable at this volume, so offers (#8) are the AI loop's only real lever there.
 - **Lesson:** a test passing on a handful of seeds is a sample, not a proof. When a stochastic test flips, measure it over many seeds before deciding who is wrong.
 
+**9. "More merchants paying, less money."**
+- **Situation:** with offers in, the AI loop beat the hand-written email on the headline: more Trialists paid (+3.6 against +2.0 points over 10 runs).
+- **What I did:** the spec had insisted on reporting first-month revenue next to the pay rate for exactly this case, and on counting how many discounted payers would have paid full price anyway (the simulation knows, by replaying the same merchant with no email).
+- **Result:** revenue was slightly *lower* ($3,202 against $3,224): 70% of discounted payers would have paid $40 anyway. The loop does learn this (the discount's share falls from about 31% early in a run to about 10% late, and it never ends up ahead) because offers are rewarded by revenue, not by payments. But 13 weeks isn't long enough to finish learning.
+- **Then a product question changed the answer:** I had assumed the discount applied to the account automatically, so everyone who *received* the email paid half. I put the question to the founder instead of guessing: it only works through the email's link. With that one rule, only clickers pay half, 26% of discounted payers would have paid anyway (down from 70%), and the AI loop brings more money than the hand-written email ($3,350 against $3,224) as well as more payers.
+- **Lesson:** pick the metric that pays the bills before you build the optimiser; optimising "more people paid" would have rewarded giving money away. And surface the assumptions that decide the answer: here one product rule flipped the verdict.
+
 ---
 
 ## 8. Vocabulary I use
@@ -330,6 +337,9 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Planted-bug audit of #22 and #8: 24 of 35 caught at first. Closed every real gap with tests (offer pay lifts, the day-14 limit, the default carry-over, report tables, the revenue-based reward); now 32 of 35, and the last 3 cannot change any result. |
+| 2026-10-26 | Founder decided the discount works only through the email's link (ADR 0006). With it, the AI loop brings more Trialists to pay (+3.6 against +2.0 points) **and** more money than the hand-written email ($3,350 against $3,224); 26% of discounted payers would have paid anyway, down from 70%. |
+| 2026-10-26 | Built #8 (Trialist offers). The AI loop now gets more Trialists to pay than the hand-written email (+3.6 against +2.0 points, 10 seeds at 1,500 merchants) but brings slightly less money ($3,202 against $3,224): 70% of discounted payers would have paid the full $40 anyway. The loop learns to drop the discount, but 13 weeks is too short to finish. |
 | 2026-10-26 | Built #22: Drafters and Trialists send their own first drafts; carry-over of Idle's edge defaults to 0 (ADR 0005). Honest result: without offers, the AI loop trails the hand-written email by about 0.2 points in Drafter and Trialist. Found the timing test had passed on lucky seeds and rebuilt it, proven against a planted biased judge. |
 | 2026-10-26 | PR [#24](https://github.com/Mo3azAqeed/Win-back-AI-loop/pull/24) merged and deployed: #19 is live on AWS. Ticked the acceptance criteria on every closed ticket; two #17 checks wait on a console test and the first Monday run. Set two demo points: the simulation verdict (#22, #8, #11, #23) and the real AI writer (#9, #13, #14). |
 | 2026-10-26 | Four decisions answered: carry-over of Idle's edge defaults to 0, so Drafter and Trialist wins must be earned (opened [#22](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/22)); opened the action report as its own ticket [#23](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/23); ship #19 once CI is green; delete the shared doc, so the notes file is the single source. |

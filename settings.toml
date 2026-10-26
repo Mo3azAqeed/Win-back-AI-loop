@@ -70,6 +70,12 @@ response_mean_days = { value = 0.3, placeholder = true, note = "Average days bet
 read_shift_1_hour = { value = -0.5, placeholder = true, note = "How an email sent 1 hour after the trigger changes reading, on the log-odds scale, against +2 days (0). Trialists read best a couple of days into the trial." }
 read_shift_5_days = { value = -0.3, placeholder = true, note = "How an email sent 5 days after the trigger changes reading, on the log-odds scale, against +2 days (0). The spec's hidden truth: +2 days is best for Trialists." }
 
+[offers]
+extra_trial_days = { value = 7, placeholder = false, note = "A Trialist offered more trial days can pay this many days after the trial would have ended (founder's offer)." }
+discount_price_share = { value = 0.5, placeholder = false, note = "With the discount, the first month costs this share of the price: $20 instead of $40 (founder's offer)." }
+extension_pay_lift = { value = 0.3, placeholder = true, note = "How much more likely a Trialist who clicks is to pay when offered more trial days (0.3 = 30% more)." }
+discount_pay_lift = { value = 0.7, placeholder = true, note = "How much more likely a Trialist who clicks is to pay when offered the first month at 50% off (0.7 = 70% more)." }
+
 [ai_loop]
 active_variants = { value = 2, placeholder = false, note = "The AI loop tests at most this many Idle subjects, and this many bodies, at a time." }
 min_sends = { value = 120, placeholder = false, note = "A variant is judged only once it and the leader each have this many sends; until then the variants in play share Idle traffic evenly." }

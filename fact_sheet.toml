@@ -10,6 +10,11 @@ length = "7 days"
 starts = "when the merchant publishes their store"
 no_payment_until_trial_ends = "You won't pay anything until the trial ends."
 
+[offers]
+# Only the AI loop's Trialist emails carry an offer, and at most one.
+extension = "Need more time? We've added 7 more days to your trial."
+discount = "Your first month is $20 instead of $40."
+
 [features]
 store_cloning = "Clone a store to start from."
 section_builder = "Make every page yours with the section builder."

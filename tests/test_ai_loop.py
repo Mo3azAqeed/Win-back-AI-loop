@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from winback import Approach, RunResult, Segment, Settings, load_settings, run_simulation
-from winback.lifecycle import EmailFate
+from winback import Approach, RunResult, Segment, Settings, StartResult, load_settings, run_simulation
+from winback.lifecycle import EmailFate, SegmentOutcome
 
 ROOT = Path(__file__).resolve().parent.parent
 SETTINGS = ROOT / "settings.toml"
@@ -178,7 +178,11 @@ def test_changing_the_carry_over_never_changes_idle_results() -> None:
     settings = dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,))
     none, full = (run_simulation(with_carry_over(settings, c), seed=1).by_start[1000] for c in (0.0, 1.0))
 
-    assert none.outcomes[Segment.IDLE] == full.outcomes[Segment.IDLE]
+    # Paying within 30 days of signing up depends on the Trialist email that comes later, so it may change.
+    def idle(start: StartResult) -> dict[Approach, SegmentOutcome]:
+        return {a: dataclasses.replace(o, paid_in_window=0) for a, o in start.outcomes[Segment.IDLE].items()}
+
+    assert idle(none) == idle(full)
     assert (none.loop.subjects, none.loop.bodies, none.loop.timings[Segment.IDLE]) == (full.loop.subjects, full.loop.bodies, full.loop.timings[Segment.IDLE])
     assert none.outcomes[Segment.TRIALIST] != full.outcomes[Segment.TRIALIST]
 
@@ -194,3 +198,14 @@ def test_a_carry_over_outside_0_to_1_is_refused() -> None:
     for carry_over in (-0.1, 1.5):
         with pytest.raises(ValueError, match="carry_over"):
             run_simulation(with_carry_over(load_settings(SETTINGS), carry_over), seed=1)
+
+
+def test_by_default_none_of_idles_edge_carries_over_and_the_report_shows_each_segments_own_email(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+
+    assert start.loop.carry_over == 0
+    assert "Carry-over from Idle: 0%" in from_1000
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        copy = start.loop.segment_copy[segment]
+        assert f"| {segment.value.title()} | {copy.subject}: {copy.body} **[{copy.cta}]** | {copy.sends:,} |" in from_1000

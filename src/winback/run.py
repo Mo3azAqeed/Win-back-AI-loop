@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
+from winback.lifecycle import Approach, EmailResult, Journey, OfferSummary, SegmentOutcome, StayResult, offer_summary, run_calendar, segment_outcomes
 from winback.loop import LoopReport
 from winback.settings import Settings
 from winback.segments import Segment
@@ -27,6 +27,7 @@ class StartResult:
     pushed: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants an earlier email pushed into the segment
     baselines: dict[Segment, SegmentOutcome]  # the holdout, never emailed
     loop: LoopReport  # what the AI loop tried and where it stands at the end
+    offers: OfferSummary  # the AI loop's Trialist offers
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         pushed=outcomes.pushed,
         baselines=outcomes.baselines,
         loop=_loop_report(calendars[Approach.AI_LOOP].loop),
+        offers=offer_summary(calendars, settings.monthly_price),
     )
 
 
