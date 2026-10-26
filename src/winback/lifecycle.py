@@ -61,6 +61,8 @@ class Stay:
     counted: bool
     offer: Offer | None  # the AI loop's choice for a Trialist; None for every other stay
     clicked: bool  # a human clicked the email's button
+    subject: str | None  # the words the email went out with (sent emails only)
+    body: str | None
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,8 @@ class _OpenStay:
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
     clicked: bool = False
+    subject: str | None = None
+    body: str | None = None
 
     @property
     def received_offer(self) -> Offer | None:
@@ -164,7 +168,7 @@ class _OpenStay:
         return self.offer if self.email is EmailFate.SENT else None
 
     def freeze(self) -> Stay:
-        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked)
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked, self.subject, self.body)
 
 
 @dataclass
@@ -286,9 +290,12 @@ class _Calendar:
             self.run_end = max(self.run_end, closes)
             self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
         subject_appeal, body_appeal, timing_shift = FIRST_DRAFT.subject_appeal, FIRST_DRAFT.body_appeal, 0.0
+        draft = self.settings.first_drafts[stay.segment.value]
+        stay.subject, stay.body = draft.subject, draft.body
         copy = None
         if self.loop is not None:
             copy = self.loop.choose_copy(stay.segment)
+            stay.subject, stay.body = copy.subject.text, copy.body.text
             subject_appeal, body_appeal, timing_shift = copy.subject_appeal, copy.body_appeal, read_shift(day - stay.entered, behaviour)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
         clicked = stay.clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)

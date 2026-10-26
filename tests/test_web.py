@@ -287,3 +287,43 @@ def test_the_simulation_sends_your_emails_as_the_hand_written_email_and_starts_t
     assert loop["subjects"][0]["text"] == "Your store is waiting" and loop["bodies"][0]["cta"] == "Clone a store"
     assert [c["subject"] for c in loop["segment_copy"]] == ["Publish {store_name} today", "Keep {store_name} going"]
     assert "Your store is waiting" in bucket.objects["runs/2026-10-26-seed7-start1000.md"]
+
+
+def test_every_version_shows_how_it_did_against_your_email() -> None:
+    settings = load_settings(SETTINGS)
+    result = run_simulation(settings, seed=7, replays=1)
+    segments = {s["segment"]: s for s in run_data(settings, result, seed=7, created=TODAY)["starts"][0]["segments"]}
+    detail = result.by_start[1000]
+
+    idle = segments["idle"]["versions"]
+    # Every subject and body the AI loop tried is listed once, your first draft first.
+    assert [v["text"] for v in idle["ai"] if v["part"] == "subject"] == [v.text for v in detail.loop.subjects]
+    assert idle["ai"][0]["by"] == "you" and idle["ai"][0]["written_week"] == 1
+    # Each email the AI loop sent counts once for its subject and once for its body.
+    ai_sent = sum(s.segment is Segment.IDLE and s.email.value == "sent" for j in detail.journeys[Approach.AI_LOOP] for s in j.stays)
+    assert sum(v["sends"] for v in idle["ai"] if v["part"] == "subject") == sum(v["sends"] for v in idle["ai"] if v["part"] == "body") == ai_sent
+    # Worked example of "against yours": a version's rate minus your email's, in points.
+    yours = idle["yours"]
+    for v in idle["ai"]:
+        if v["sends"]:
+            assert v["click_rate_vs_yours"] == pytest.approx((v["clicks"] / v["sends"] - yours["clicks"] / yours["sends"]) * 100)
+        if v["status"] == "dropped":
+            assert v["dropped_week"] is not None and v["dropped_week"] >= v["written_week"]
+    # A secretly better version clicks better than your email; a dropped weak one does worse.
+    best = max((v for v in idle["ai"] if v["sends"] > 300), key=lambda v: v["click_rate"])
+    assert best["click_rate_vs_yours"] > 0
+    assert [o["label"] for o in segments["trialist"]["versions"]["offers"]] == ["No offer", "7 more trial days", "First month 50% off"]
+    assert segments["drafter"]["versions"]["offers"] == []
+
+
+def test_every_version_can_be_downloaded_as_a_spreadsheet(saved: FakeBucket) -> None:
+    status, csv_text, _ = call(saved, "GET", "/api/runs/2026-10-26-seed7-start1000/versions.csv")
+
+    lines = csv_text.strip().splitlines()
+    assert status == 200
+    assert lines[0] == "merchants,stage,version,part,words,button,written_by,status,from_week,dropped_week,sends,click_rate,goal_rate,click_vs_yours_pts,goal_vs_yours_pts"
+    data = json.loads(saved.objects["runs/2026-10-26-seed7-start1000.json"])
+    idle = data["starts"][0]["segments"][0]["versions"]
+    assert len(lines) == 1 + sum(1 + len(s["versions"]["ai"]) + len(s["versions"]["offers"]) for s in data["starts"][0]["segments"])
+    assert lines[1].startswith("1000,Idle,Your email,email,")
+    assert any(idle["ai"][1]["text"] in line for line in lines)

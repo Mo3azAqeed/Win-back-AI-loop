@@ -45,7 +45,7 @@ def run_data(settings: Settings, result: "RunResult", *, seed: int, created: dat
 
 
 def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartResult") -> dict[str, Any]:
-    labels = offer_labels(settings)
+    labels = offer_labels(settings)  # used by the offers below and by each segment's versions
     loop = detail.loop
     offer_records = {o.offer: o for o in loop.offers}
     return {
@@ -67,6 +67,7 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
                 "ai_did_better": replays.did_better(s),
                 "weekly": {a.value: replays.weekly(s, a) for a in Approach},
                 "weeks": _weeks(detail, s, len(replays.weekly(s, Approach.AI_LOOP))),
+                "versions": _versions(detail, s, labels),
                 "funnel": {
                     a.value: {
                         "merchants": detail.outcomes[s][a].counted + detail.pushed[s][a].counted,
@@ -162,3 +163,54 @@ def _leading(loop: LoopReport, segment: Segment, week: int) -> dict[str, str]:
 
 def _change(c: CopyChange) -> dict[str, Any]:
     return {"part": c.slot, "text": c.text, "cta": c.cta, "sends": c.sends, "clicks": c.clicks, "by": c.by}
+
+
+def _sent(detail: "StartResult", approach: Approach, segment: Segment) -> list[Any]:
+    return [s for j in detail.journeys[approach] for s in j.stays if s.segment is segment and s.email is EmailFate.SENT]
+
+
+def _tally(stays: list[Any]) -> dict[str, Any]:
+    sends, clicks, goals = len(stays), sum(s.clicked for s in stays), sum(s.left is not None for s in stays)
+    return {"sends": sends, "clicks": clicks, "goal_actions": goals, "click_rate": clicks / sends if sends else None, "goal_rate": goals / sends if sends else None}
+
+
+def _against(yours: dict[str, Any], tally: dict[str, Any]) -> dict[str, Any]:
+    """A version's rates minus your email's, in points: how much better or worse it did."""
+    return {
+        f"{rate}_vs_yours": (tally[rate] - yours[rate]) * 100 if tally[rate] is not None and yours[rate] is not None else None
+        for rate in ("click_rate", "goal_rate")
+    }
+
+
+def _versions(detail: "StartResult", segment: Segment, offer_labels_: dict[Offer, str]) -> dict[str, Any]:
+    """Every version of this segment's email in the first replay, and how it did against yours: your email
+    (the hand-written approach), each subject and body the AI loop tried (when it was written and dropped,
+    and by whom), and for Trialists each offer. Goal rate counts the emailed merchants who went on to the
+    segment's goal action."""
+    yours = _tally(_sent(detail, Approach.HAND_WRITTEN, segment))
+    ai_sent = _sent(detail, Approach.AI_LOOP, segment)
+    loop = detail.loop
+    versions: list[dict[str, Any]] = []
+    if segment is Segment.IDLE:
+        for part, records in (("subject", loop.subjects), ("body", loop.bodies)):
+            for record in records:
+                changes = [c for c in loop.history if c.slot == part and c.text == record.text]
+                written = next((c for c in changes if c.change == "written"), None)
+                dropped = next((c for c in changes if c.change == "dropped"), None)
+                tally = _tally([s for s in ai_sent if (s.subject if part == "subject" else s.body) == record.text])
+                status = "dropped" if record.retired else "leading" if record.leading else "in play"
+                versions.append({
+                    "part": part, "text": record.text, "cta": record.cta, "by": written.by if written else "you", "status": status,
+                    "written_week": _week_of(written.day) if written else 1, "dropped_week": _week_of(dropped.day) if dropped else None,
+                    **tally, **_against(yours, tally),
+                })
+    else:
+        own = loop.segment_copy[segment]
+        tally = _tally(ai_sent)
+        versions.append({"part": "email", "text": own.subject, "cta": own.cta, "by": "you", "status": "leading", "written_week": 1, "dropped_week": None, **tally, **_against(yours, tally)})
+    offers = []
+    if segment is Segment.TRIALIST:
+        for offer in Offer:
+            tally = _tally([s for s in ai_sent if s.offer is offer])
+            offers.append({"offer": offer.value, "label": offer_labels_[offer], **tally, **_against(yours, tally)})
+    return {"yours": yours, "ai": versions, "offers": offers, "ai_overall": {**_tally(ai_sent), **_against(yours, _tally(ai_sent))}}

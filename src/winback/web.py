@@ -5,7 +5,9 @@ Parameter Store, so nobody else can spend the account's Lambda time. Only one ru
 """
 
 import base64
+import csv
 import hmac
+import io
 import json
 import os
 import re
@@ -63,6 +65,10 @@ def respond(
         return _json(200, {"runs": _finished(store), "running": _running(store, now)})
     parts = path.removeprefix("/api/runs/").split("/")
     if method == "GET" and path.startswith("/api/runs/") and RUN_NAME.match(parts[0]) and len(parts) <= 2:
+        if len(parts) == 2 and parts[1] == "versions.csv":
+            data = store.get(f"runs/{parts[0]}.json")
+            if data is not None:
+                return Response(200, "text/csv; charset=utf-8", versions_csv(json.loads(data)))
         key = f"runs/{parts[0]}.json" if len(parts) == 1 else f"runs/{parts[0]}.md" if parts[1] == "report" else None
         text = store.get(key) if key else None
         if text is not None:
@@ -100,6 +106,32 @@ def _start(
     store.put(f"pending/{name}.json", json.dumps({"run": name, "requested": now.isoformat(), "replays": replays}))
     start_run({"seed": seed, **payload})
     return _json(202, {"run": name})
+
+
+def versions_csv(data: dict[str, Any]) -> str:
+    """Every version of every email in a run, and how it did against yours, as a spreadsheet."""
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["merchants", "stage", "version", "part", "words", "button", "written_by", "status", "from_week", "dropped_week", "sends", "click_rate", "goal_rate", "click_vs_yours_pts", "goal_vs_yours_pts"])
+    drafts = {d["segment"]: d for d in data["first_drafts"]}
+
+    def rate(value: float | None, digits: int) -> str:
+        return "" if value is None else f"{value:.{digits}f}"
+
+    for start in data["starts"]:
+        for seg in start["segments"]:
+            versions, draft = seg["versions"], drafts[seg["segment"]]
+            yours = versions["yours"]
+            rows = [["Your email", "email", f"{draft['subject']} / {draft['body']}", draft["cta"], "you", "reference", 1, "", yours, None]]
+            rows += [["AI loop", v["part"], v["text"], v["cta"], v["by"], v["status"], v["written_week"], v["dropped_week"] or "", v, v] for v in versions["ai"]]
+            rows += [["Offer", "offer", o["label"], "", "AI loop", "", "", "", o, o] for o in versions["offers"]]
+            for version, part, words, button, by, status, start_week, dropped, tally, diff in rows:
+                writer.writerow([
+                    start["merchants"], seg["label"], version, part, words, button, by, status, start_week, dropped, tally["sends"],
+                    rate(tally["click_rate"], 4), rate(tally["goal_rate"], 4),
+                    rate(diff["click_rate_vs_yours"], 2) if diff else "", rate(diff["goal_rate_vs_yours"], 2) if diff else "",
+                ])
+    return out.getvalue()
 
 
 def _drafts() -> list[dict[str, str]]:
