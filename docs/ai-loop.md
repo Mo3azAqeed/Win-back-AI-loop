@@ -2,7 +2,7 @@
 
 ![How the AI loop works](diagrams/ai-loop.drawio.svg)
 
-One turn of the loop: a writer drafts email variants, fixed checks throw out anything untrue or misleading, a judge rates how appealing each variant is, and a scorer picks what each merchant gets. What merchants then do feeds back into the scorer, and, through retired variants and lessons, into the writer.
+One turn of the loop: a writer drafts email variants, fixed checks throw out anything untrue or misleading, a judge rates how appealing each variant is, and a scorer picks what each merchant gets. What merchants then do feeds back into the scorer, and, through the playbook of finished tests, into the writer.
 
 Today the scorer, a stand-in writer (a prewritten list of variants) and the simulation work. The real writer, the checks and the judge come in #13; lessons come in #9.
 
@@ -10,7 +10,7 @@ Today the scorer, a stand-in writer (a prewritten list of variants) and the simu
 
 - **Writer (an LLM).** Reads the fact sheet ($40/month, store cloning, the section builder, the 7-day trial, the three offers and their lines, your first drafts) and the current lessons, and returns new subject and body variants as JSON. Planned: DeepSeek V4.1 Flash via OpenRouter.
 - **Judge (a System 1 decision model).** Only used in the simulation, where it stands in for merchants. It rates each variant's appeal to each segment once, from 1 to 10, and the simulation turns that rating into the variant's hidden appeal plus random noise, so the judge is never treated as always right. Planned: TypeSafe Jev 1.14 via OpenRouter's Decisions API.
-- **Scorer (statistics, not an LLM).** Thompson sampling over subject, body, timing and, for Trialists, offer. It decides what each merchant gets and keeps every choice's record. The 8% holdout never gets an email; the scorer only picks a ghost send time for them.
+- **Scorer (statistics, not an LLM).** In Idle, a test of the champion version against one challenger at a time; Thompson sampling over timing and, for Trialists, offer. It decides what each merchant gets and keeps every choice's record. The 8% holdout never gets an email; the scorer only picks a ghost send time for them.
 
 The writer writes and the scorer chooses ([ADR 0002](adr/0002-llm-writes-scorer-chooses.md)). We don't let the LLM pick from a log of wins and fails, because email outcomes are noisy and sparse: an LLM reads patterns into a handful of results, and nobody could tell real improvement from chance. With a scorer, every variant has a measured record, and every lesson carries the evidence behind it.
 
@@ -42,13 +42,12 @@ Each part of the email learns from a different signal, at a different time ([ADR
 
 | Slot | Learns from | When |
 |---|---|---|
-| Subject (Idle) | Human clicks (scanner clicks left out) | At send time |
-| Body (Idle) | Human clicks (scanner clicks left out) | At send time |
+| Version: subject and body (Idle) | Human clicks (scanner clicks left out), with the goal action as a check against clickbait | Clicks at send time; goal actions when each email's 3-day miss window closes; verdicts at week ends |
 | Timing: +1 hour, +2 days, +5 days (every segment) | The goal action of every merchant assigned it, including those who acted before the email went out | When the horizon closes: 8 days for Idle, 12 for Drafter, 14 for Trialist, from the trigger event |
 | Offer: none, 7 more trial days, 50% off (Trialists) | First-month revenue; a discounted payment counts as half | When the 14-day horizon closes |
 
 - Subjects and bodies are tested in Idle only. Drafters and Trialists send their own first drafts until the real writer gives them variants of their own ([ADR 0005](adr/0005-each-segment-sends-its-own-words.md)).
-- New Idle variants share traffic evenly until each has 120 sends; after that, Thompson sampling decides ([ADR 0004](adr/0004-even-share-until-a-variant-can-be-judged.md)).
-- A variant is retired once the leader is 90% likely to be better (both with 120 sends), and the writer adds a new one.
-- A retirement becomes a lesson (#9) only on strong evidence: the leader is 99% likely to be better and both have 250 sends. A looser rule wrote false lessons when every email was secretly identical.
+- Idle runs one test at a time: the champion (at first v0, your email) against a challenger (the champion with one part changed, and a hypothesis), which gets a third of Idle's emails ([ADR 0007](adr/0007-idle-tests-whole-versions-champion-against-challenger.md)).
+- A test always ends: the challenger won on clicks without clearly fewer goal actions (crowned), the champion won, the two are the same (within 1 click point), or after 2 weeks or 1,000 emails for either it is too close to call and the version ahead on clicks stays (kept, not proven). Each needs 120 sends and 90% certainty for a verdict.
+- Every test writes a playbook entry: both versions, the hypothesis, the evidence, the ending and a one-line conclusion. With every version secretly identical, 5 of 140 tests (4%, 20 seeds) claimed a winner; when a test is too close to call the version ahead stays, and its entry says it was kept, not proven.
 - The discount only works through the email's link ([ADR 0006](adr/0006-the-discount-works-only-through-the-emails-link.md)), so only a Trialist who clicked before paying pays half.

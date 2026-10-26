@@ -24,6 +24,7 @@ def test_the_stand_in_writers_list_has_at_least_8_subjects_and_8_bodies_within_t
         assert not any(phrase in words for phrase in banned), variant.text
         assert not words.startswith(("re:", "fwd:")), variant.text
         assert variant.quality > 0
+        assert variant.hypothesis, variant.text  # every challenger says what it changes and why
 
 
 def with_subjects(settings: Settings, *qualities: float) -> Settings:
@@ -57,17 +58,6 @@ def test_the_ai_loop_never_emails_the_holdout_and_keeps_the_sending_rules(run: R
         assert all(not journey.merchant.holdout for s in sent if s.email is EmailFate.SENT)
 
 
-def test_when_one_subject_is_secretly_much_better_the_ai_loop_ends_up_sending_it_most() -> None:
-    # The first two replacements are poor (quality 20) and get retired; the third is far better than
-    # anything else (quality 250: 2.5 times your first draft's reads).
-    settings = with_subjects(load_settings(SETTINGS), 20, 20, 250)
-    loop = run_simulation(settings, seed=1).by_start[1000].loop
-    best = max(loop.subjects, key=lambda v: v.sends)
-
-    assert best.quality == 250
-    assert best.leading
-
-
 def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early_timing() -> None:
     # Drafters read an email sent 1 hour after saving far less (read shift -2), so +1 hour is truly worst.
     # A third of Drafters publish on their own within days, which a judge counting the window after the
@@ -88,19 +78,14 @@ def test_judging_timing_by_everyone_assigned_does_not_favour_a_truly_worse_early
     assert ahead == 0
 
 
-def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_its_leaders(run: RunResult) -> None:
+def test_the_report_compares_the_ai_loop_with_the_hand_written_email_and_shows_its_timings(run: RunResult) -> None:
+    # Idle's versions and playbook have their own tests (test_versions.py).
     start = run.by_start[1000]
     from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
-    leading_subject = next(v for v in start.loop.subjects if v.leading)
 
     for segment in Segment:
         ai = start.outcomes[segment][Approach.AI_LOOP]
         assert f"| AI loop | {ai.counted:,} | {ai.reached_share:.1%} | {ai.true_lift * 100:+.1f} |" in from_1000
-    loop_part = from_1000.split("### What the AI loop is sending", 1)[1]
-    assert f"| {leading_subject.text} | {leading_subject.quality:g} | {leading_subject.sends:,} |" in loop_part
-    assert loop_part.split(f"| {leading_subject.text} |", 1)[1].split("\n", 1)[0].endswith("| leading |")
-    retired = next(v for v in (*start.loop.subjects, *start.loop.bodies) if v.retired)
-    assert loop_part.split(f"| {retired.text}", 1)[1].split("\n", 1)[0].endswith("| retired |")
     for segment in Segment:
         leading_timing = next(t for t in start.loop.timings[segment] if t.leading)
         assert leading_timing.label in from_1000
@@ -163,7 +148,8 @@ def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_firs
 
 
 def test_changing_the_carry_over_never_changes_idle_results() -> None:
-    settings = only(load_settings(SETTINGS), 1000)
+    # A secretly much better first challenger is crowned, so Idle's champion has an edge to carry over.
+    settings = with_subjects(only(load_settings(SETTINGS), 1000), 300)
     none, full = (run_simulation(with_carry_over(settings, c), seed=1).by_start[1000] for c in (0.0, 1.0))
 
     # Paying within 30 days of signing up depends on the Trialist email that comes later, so it may change.

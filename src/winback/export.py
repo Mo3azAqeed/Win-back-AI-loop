@@ -1,18 +1,17 @@
 """A run's results as data, for the web app: what the report says, in a shape a page can draw."""
 
-import math
 from collections import Counter
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from winback.lifecycle import Approach, EmailFate
-from winback.loop import CopyChange, LoopReport, VariantRecord
+from winback.loop import CopyChange, LoopReport, PlaybookEntry, VariantRecord, VersionRecord
 from winback.replays import Replays
 from winback.report import APPROACH_LABEL, SEGMENT_TEXT, summary_sentences
 from winback.segments import Segment
 from winback.settings import Settings
 from winback.trialist import Offer, offer_labels
-from winback.world import DAYS_PER_WEEK
+from winback.world import week_of
 
 if TYPE_CHECKING:  # run.py imports this module's caller
     from winback.run import RunResult, StartResult
@@ -81,6 +80,9 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
         "revenue": {a.value: replays.revenue(a) for a in Approach},
         "loop": {
             "carry_over": loop.carry_over,
+            "versions": [_version(v) for v in loop.versions],
+            "playbook": [_entry(e) for e in loop.playbook],
+            "weekly_champions": [{"week": w.week, "champion": w.champion, "challenger": w.challenger} for w in loop.weekly_leaders],
             "subjects": [_variant(v) for v in loop.subjects],
             "bodies": [_variant(v) for v in loop.bodies],
             "segment_copy": [
@@ -110,13 +112,28 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
     }
 
 
+def _version(v: VersionRecord) -> dict[str, Any]:
+    return {
+        "number": v.number, "subject": v.subject, "body": v.body, "cta": v.cta, "hypothesis": v.hypothesis, "by": v.by, "changed": v.changed,
+        "quality": list(v.quality), "status": v.status, "written_week": week_of(v.introduced_day),
+        "crowned_week": week_of(v.crowned_day) if v.crowned_day is not None else None, "sunset_week": week_of(v.sunset_day) if v.sunset_day is not None else None,
+        "sends": v.sends, "clicks": v.clicks, "goals_judged": v.goals_judged, "goals": v.goals,
+    }
+
+
+def _entry(e: PlaybookEntry) -> dict[str, Any]:
+    return {
+        "test": e.test, "champion": e.champion, "challenger": e.challenger, "hypothesis": e.hypothesis, "changed": e.changed,
+        "started_week": week_of(e.started), "ended_week": week_of(e.ended), "ending": e.ending.value,
+        "champion_evidence": {"sends": e.champion_sends, "clicks": e.champion_clicks, "goals_judged": e.champion_goals_judged, "goals": e.champion_goals},
+        "challenger_evidence": {"sends": e.challenger_sends, "clicks": e.challenger_clicks, "goals_judged": e.challenger_goals_judged, "goals": e.challenger_goals},
+        "chance_better": e.chance_better, "chance_same": e.chance_same, "conclusion": e.conclusion,
+    }
+
+
 def _variant(v: VariantRecord) -> dict[str, Any]:
-    status = "retired" if v.retired else "leading" if v.leading else "in play"
+    status = "sunset" if v.sunset else "leading" if v.leading else "in play"
     return {"text": v.text, "cta": v.cta, "quality": v.quality, "sends": v.sends, "clicks": v.clicks, "status": status}
-
-
-def _week_of(day: float) -> int:
-    return max(1, math.ceil(day / DAYS_PER_WEEK))
 
 
 def _weeks(detail: "StartResult", segment: Segment, weeks: int) -> list[dict[str, Any]]:
@@ -130,7 +147,7 @@ def _weeks(detail: "StartResult", segment: Segment, weeks: int) -> list[dict[str
             for stay in journey.stays:
                 if stay.segment is not segment or stay.email is not EmailFate.SENT or stay.email_sent_at is None:
                     continue
-                week = _week_of(stay.email_sent_at)
+                week = week_of(stay.email_sent_at)
                 if week > weeks:
                     continue
                 by_week[week - 1].update(sent=1, clicks=int(stay.clicked), goal_actions=int(stay.left is not None))
@@ -142,7 +159,7 @@ def _weeks(detail: "StartResult", segment: Segment, weeks: int) -> list[dict[str
         ai: dict[str, Any] = {key: tallies[Approach.AI_LOOP][week - 1][key] for key in ("sent", "clicks", "goal_actions")}
         ai["leading"] = _leading(loop, segment, week)
         ai["offers"] = dict(offers[week - 1])
-        changes = [c for c in loop.history if _week_of(c.day) == week] if segment is Segment.IDLE else []
+        changes = [c for c in loop.history if week_of(c.day) == week] if segment is Segment.IDLE else []
         ai["written"] = [_change(c) for c in changes if c.change == "written"]
         ai["dropped"] = [_change(c) for c in changes if c.change == "dropped"]
         hand = {key: tallies[Approach.HAND_WRITTEN][week - 1][key] for key in ("sent", "clicks", "goal_actions")}
@@ -192,18 +209,14 @@ def _versions(detail: "StartResult", segment: Segment, offer_labels_: dict[Offer
     loop = detail.loop
     versions: list[dict[str, Any]] = []
     if segment is Segment.IDLE:
-        for part, records in (("subject", loop.subjects), ("body", loop.bodies)):
-            for record in records:
-                changes = [c for c in loop.history if c.slot == part and c.text == record.text]
-                written = next((c for c in changes if c.change == "written"), None)
-                dropped = next((c for c in changes if c.change == "dropped"), None)
-                tally = _tally([s for s in ai_sent if (s.subject if part == "subject" else s.body) == record.text])
-                status = "dropped" if record.retired else "leading" if record.leading else "in play"
-                versions.append({
-                    "part": part, "text": record.text, "cta": record.cta, "by": written.by if written else "you", "status": status,
-                    "written_week": _week_of(written.day) if written else 1, "dropped_week": _week_of(dropped.day) if dropped else None,
-                    **tally, **_against(yours, tally),
-                })
+        for v in loop.versions:
+            tally = _tally([s for s in ai_sent if s.version == v.number])
+            versions.append({
+                "part": f"v{v.number}" + (f" · new {v.changed}" if v.changed else " · your email"), "text": f"{v.subject} / {v.body}", "cta": v.cta,
+                "by": v.by, "status": {"champion": "leading", "challenger": "in play"}.get(v.status, "dropped"),
+                "written_week": week_of(v.introduced_day), "dropped_week": week_of(v.sunset_day) if v.sunset_day is not None else None,
+                "number": v.number, "hypothesis": v.hypothesis, **tally, **_against(yours, tally),
+            })
     else:
         own = loop.segment_copy[segment]
         tally = _tally(ai_sent)

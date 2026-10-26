@@ -220,11 +220,13 @@ def test_each_stage_has_a_week_by_week_story_of_what_was_sent_written_and_droppe
     written = [c for w in idle for c in w["ai"]["written"]]
     dropped = [c for w in idle for c in w["ai"]["dropped"]]
     assert dropped and len(written) == len(detail.loop.subjects) + len(detail.loop.bodies)
-    # A dropped email is never the one leading at the end of its week, and was judged on enough sends.
+    # A dropped email is never the one leading at the end of its week. It left after a verdict on enough
+    # sends, or when its test reached the limit as too close to call.
+    ended_at_limit = {e.ended for e in detail.loop.playbook if e.ending.value == "too close to call"}
     for w in idle:
         for c in w["ai"]["dropped"]:
             assert c["text"] not in (w["ai"]["leading"]["subject"], w["ai"]["leading"]["body"])
-            assert c["sends"] >= settings.loop.min_sends
+            assert c["sends"] >= settings.loop.min_sends or any(w["week"] * 7 - 7 < day <= w["week"] * 7 for day in ended_at_limit)
     # Drafters and Trialists send their own first draft every week, and their words never change.
     for segment in ("drafter", "trialist"):
         for w in segments[segment]["weeks"]:
@@ -295,12 +297,12 @@ def test_every_version_shows_how_it_did_against_your_email() -> None:
     detail = result.by_start[1000]
 
     idle = segments["idle"]["versions"]
-    # Every subject and body the AI loop tried is listed once, your first draft first.
-    assert [v["text"] for v in idle["ai"] if v["part"] == "subject"] == [v.text for v in detail.loop.subjects]
-    assert idle["ai"][0]["by"] == "you" and idle["ai"][0]["written_week"] == 1
-    # Each email the AI loop sent counts once for its subject and once for its body.
+    # Every version the AI loop tried is listed once, your email (v0) first, with its whole email.
+    assert [(v["number"], v["text"]) for v in idle["ai"]] == [(v.number, f"{v.subject} / {v.body}") for v in detail.loop.versions]
+    assert idle["ai"][0]["by"] == "you" and idle["ai"][0]["written_week"] == 1 and idle["ai"][0]["part"] == "v0 · your email"
+    # Each email the AI loop sent counts once, for the version it went out as.
     ai_sent = sum(s.segment is Segment.IDLE and s.email.value == "sent" for j in detail.journeys[Approach.AI_LOOP] for s in j.stays)
-    assert sum(v["sends"] for v in idle["ai"] if v["part"] == "subject") == sum(v["sends"] for v in idle["ai"] if v["part"] == "body") == ai_sent
+    assert sum(v["sends"] for v in idle["ai"]) == ai_sent
     # Worked example of "against yours": a version's rate minus your email's, in points.
     yours = idle["yours"]
     for v in idle["ai"]:
