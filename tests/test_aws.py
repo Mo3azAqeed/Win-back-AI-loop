@@ -130,3 +130,24 @@ def test_the_lambda_handler_saves_to_the_bucket_and_emails_the_alerts_topic(monk
     [(_, email)] = clients["sns"].calls
     assert email["TopicArn"] == "arn:aws:sns:eu-west-1:123456789012:winback-alerts"
     assert email["Message"] == ready_message("winback-reports", "eu-west-1", key)
+
+
+def test_a_lambda_run_with_the_ai_writer_reads_the_key_only_through_the_callback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from winback import copywriter
+
+    from test_copywriter import fake_openrouter
+
+    keys: list[str] = []
+
+    def read_key() -> str:
+        keys.append("read")
+        return "sk-or-from-parameter-store"
+
+    monkeypatch.setattr(copywriter, "_post", fake_openrouter([]))
+    bucket = FakeBucket()
+    key = run_and_save({"seed": 7, "start": 1000, "replays": 1, "writer": "ai"}, today=TODAY, settings_path=SETTINGS, put=bucket.put, openrouter_key=read_key)
+
+    assert keys == ["read"]
+    assert "## Writer and judge" in bucket.objects[key] and "sk-or-from-parameter-store" not in bucket.objects[key]
+    with pytest.raises(ValueError, match="writer"):
+        run_and_save({"writer": "gpt", "replays": 1}, today=TODAY, settings_path=SETTINGS, put=bucket.put)

@@ -20,7 +20,7 @@ from typing import Any, Protocol
 
 import boto3
 
-from winback.aws import BUNDLED_SETTINGS, SEND_AFTER, checked_emails, run_name
+from winback.aws import BUNDLED_SETTINGS, SEND_AFTER, checked_emails, checked_writer, run_name
 from winback.segments import Segment
 from winback.settings import load_settings
 
@@ -94,6 +94,12 @@ def _start(
     if not isinstance(replays, int) or isinstance(replays, bool) or not 1 <= replays <= MAX_REPLAYS:
         return _json(400, {"error": f"Ask for 1 to {MAX_REPLAYS} replays."})
     payload: dict[str, object] = {"replays": replays}
+    try:
+        writer = checked_writer(asked.get("writer"))
+    except ValueError as error:
+        return _json(400, {"error": str(error)})
+    if writer == "ai":
+        payload["writer"] = "ai"
     if "emails" in asked:
         try:
             payload["emails"] = checked_emails(asked["emails"])
@@ -103,7 +109,7 @@ def _start(
         return _json(409, {"error": "A run is already going. Try again when it finishes."})
     seed = new_seed()
     name = run_name(today, seed, None)
-    store.put(f"pending/{name}.json", json.dumps({"run": name, "requested": now.isoformat(), "replays": replays}))
+    store.put(f"pending/{name}.json", json.dumps({"run": name, "requested": now.isoformat(), "replays": replays, "writer": writer}))
     start_run({"seed": seed, **payload})
     return _json(202, {"run": name})
 

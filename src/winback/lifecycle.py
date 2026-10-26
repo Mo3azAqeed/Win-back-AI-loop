@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from winback import trialist
+from winback.copywriter import Copywriter
 from winback.draws import draw
 from winback.loop import AiLoop, Copy, LoopReport, Timing, read_shift
 from winback.segments import NEXT_SEGMENT, Segment
@@ -206,7 +207,7 @@ class _Calendar:
     stay's horizon and paid window have closed; until then merchants keep moving through the
     lifecycle, so a late signup can still pay inside its window."""
 
-    def __init__(self, settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> None:
+    def __init__(self, settings: Settings, merchants: list[Merchant], seed: int, approach: Approach, copywriter: Copywriter | None = None) -> None:
         self.settings, self.seed, self.approach = settings, seed, approach
         self.last_entry_day = last_entry_day(settings)
         self.run_end = self.last_entry_day
@@ -215,7 +216,7 @@ class _Calendar:
         self.sequence = itertools.count()
         self.results: list[StayResult] = []
         self.email_results: list[EmailResult] = []
-        self.loop = AiLoop(settings, {s: random.Random(int(draw(seed, "ai loop", s.value) * 2**53)) for s in Segment}) if approach is Approach.AI_LOOP else None
+        self.loop = AiLoop(settings, {s: random.Random(int(draw(seed, "ai loop", s.value) * 2**53)) for s in Segment}, copywriter) if approach is Approach.AI_LOOP else None
         self.event_days: list[float] = []
         for state in self.merchants:
             self._schedule(state, state.merchant.arrival_day, _Event.ENTER)
@@ -344,6 +345,6 @@ class _Calendar:
         self.email_results.append(EmailResult(state.merchant.key, stay.segment, stay.entered, stay.email_sent_at, day, stay.left, hit))
 
 
-def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach) -> CalendarRun:
-    """Run one approach for every merchant on one shared calendar."""
-    return _Calendar(settings, merchants, seed, approach).run()
+def run_calendar(settings: Settings, merchants: list[Merchant], seed: int, approach: Approach, copywriter: Copywriter | None = None) -> CalendarRun:
+    """Run one approach for every merchant on one shared calendar; the AI loop gets its new words from the copywriter."""
+    return _Calendar(settings, merchants, seed, approach, copywriter).run()

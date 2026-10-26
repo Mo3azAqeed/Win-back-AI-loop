@@ -16,7 +16,8 @@ from enum import Enum
 from typing import TypeVar
 
 from winback.segments import Segment
-from winback.settings import SegmentSettings, Settings, Variant
+from winback.copywriter import Copywriter, StandIn
+from winback.settings import Email, SegmentSettings, Settings, Variant
 from winback.trialist import Offer
 from winback.world import DAYS_PER_WEEK, last_entry_day
 
@@ -304,7 +305,7 @@ class AiLoop:
     Each segment draws from its own random stream, so what happens in one segment never changes the
     luck of another's choices."""
 
-    def __init__(self, settings: Settings, rngs: dict[Segment, random.Random]) -> None:
+    def __init__(self, settings: Settings, rngs: dict[Segment, random.Random], copywriter: Copywriter | None = None) -> None:
         if not 0 <= settings.loop.carry_over <= 1:
             raise ValueError(f"ai_loop.carry_over must be between 0 and 1, not {settings.loop.carry_over:g}")
         self.rules, self.rngs = settings.loop, rngs
@@ -314,7 +315,8 @@ class AiLoop:
         self.playbook: list[PlaybookEntry] = []
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
-        self.waiting = {"subject": list(settings.prewritten_subjects), "body": list(settings.prewritten_bodies)}
+        self.copywriter: Copywriter = copywriter or StandIn(settings)
+        self.asked = {"subject": 0, "body": 0}  # challenger parts asked of the copywriter so far, per part
         self.next_change = "subject"
         self.last_signup_day = last_entry_day(settings)  # no new Idle merchant arrives after it, so no test starts
         subject = self._part("subject", Variant(draft.subject, "", 100.0, placeholder=False), by="you")
@@ -447,18 +449,26 @@ class AiLoop:
 
     def _next_challenger(self) -> None:
         """The writer's next challenger: the champion with one part changed, subjects and bodies in turn."""
-        order = [self.next_change, "body" if self.next_change == "subject" else "subject"]
-        slot = next((s for s in order if self.waiting[s]), None)
-        if slot is None or self.today >= self.last_signup_day:
-            self.test = None  # the writer has nothing left, or no merchants are left to test on: the champion is sent alone
-            return
-        self.next_change = "body" if slot == "subject" else "subject"
-        variant = self.waiting[slot].pop(0)
-        part = self._part(slot, variant, by="stand-in writer")
+        self.test = None  # until a challenger arrives, the champion is sent alone
+        if self.today >= self.last_signup_day:
+            return  # no merchants are left to test on
         c = self.champion
+        champion = Email(c.subject.text, c.body.text, c.body.cta)
+        lessons = [e.conclusion for e in self.playbook]
+        # The preferred part first, then the other: a writer with nothing more for one part, or whose every draft
+        # failed a check, still gets to change the other.
+        for slot in (self.next_change, "body" if self.next_change == "subject" else "subject"):
+            nth, self.asked[slot] = self.asked[slot], self.asked[slot] + 1
+            variant = self.copywriter.challenger(slot, champion, lessons, nth)
+            if variant is not None:
+                break
+        else:
+            return  # nothing from the writer this time: the champion is sent alone
+        self.next_change = "body" if slot == "subject" else "subject"
+        part = self._part(slot, variant, by=self.copywriter.name)
         version = _Version(
             len(self.versions), part if slot == "subject" else c.subject, part if slot == "body" else c.body,
-            variant.hypothesis, "stand-in writer", slot, self.today,
+            variant.hypothesis, self.copywriter.name, slot, self.today,
         )
         self.versions.append(version)
         number = len(self.playbook) + 1

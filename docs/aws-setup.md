@@ -82,14 +82,18 @@ Open the S3 console and find the bucket whose name starts with `winback-reportsb
 
 Running the same seed locally with `uv run winback --seed <n>` gives the same report.
 
-## 7. Add the OpenRouter key (only once #13 lands)
+## 7. Add the OpenRouter key (for the AI writer)
 
 CloudFormation cannot create encrypted parameters, so add this one by hand:
 
 1. Open **Systems Manager → Parameter Store → Create parameter**.
 2. Name: `/winback/openrouter-api-key`. Tier: Standard. Type: **SecureString**. Value: your key.
 
-The Lambda can already read this parameter, and no other. Never put the key in GitHub.
+The Lambda can already read this parameter, and no other. Never put the key in GitHub. Set a spending limit on the key in OpenRouter (Settings → Keys) as a safety net until the spending cap (#14) is built.
+
+**Check the plumbing once.** Open **Lambda → the `winback-SimulationFunction-…` function → Test**, and run the test event `{"plumbing": true}`. It makes one real round trip: DeepSeek writes a new Idle subject, the checks run, and Jev rates it against your first draft's subject. The result shows the draft, its hypothesis, its rating and what it cost (a fraction of a cent). An error there names what to fix: usually the key's name, or OpenRouter refusing the key.
+
+**Use it.** In the web app, pick **AI writer** next to Simulate. From the Lambda console, add `"writer": "ai"` to the event. Without it the stand-in writer's list is used: free, and the same seed always gives the same report.
 
 ## 8. Turn on the web app
 

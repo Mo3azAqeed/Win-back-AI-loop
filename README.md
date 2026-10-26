@@ -11,7 +11,7 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 
 ## Web app
 
-Each deploy also publishes a web app: press Run, then see every run's summary, a timeline and funnel per stage, and every email the AI loop tested. Its link is the stack's `WebAppUrl` output; setting it up takes two steps (see [`docs/aws-setup.md`](docs/aws-setup.md), step 8).
+Each deploy also publishes a web app: write your three emails, press Simulate, then read the decision brief: the journey, your email against the AI loop's champion and why it won, the week-by-week timeline, and every version and test (the playbook). Pick **AI writer** to have DeepSeek write each new version and Jev judge it, through OpenRouter; the stand-in list is the free default. Its link is the stack's `WebAppUrl` output; setting it up takes two steps (see [`docs/aws-setup.md`](docs/aws-setup.md), step 8).
 
 ## How the AI loop works
 
