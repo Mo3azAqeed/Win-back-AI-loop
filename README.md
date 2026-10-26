@@ -1,10 +1,10 @@
 # Win-back AI loop
 
-An email loop that wins back merchants who stall in our store-cloning Shopify app: they sign up and do nothing (**Idle**), save a draft but never publish (**Drafter**), or publish but never pay (**Trialist**). An LLM writes email variants, a statistical scorer picks which one each merchant gets, and every outcome feeds back so the next choices get better.
+An email loop that wins back merchants who stall in our store-cloning Shopify app: they sign up and do nothing (**Idle**), save a draft but never publish (**Drafter**), or publish but never pay (**Trialist**). Your own email is version 0. An LLM writes the next version, the champion's email with one change and a hypothesis; it is checked against a fact sheet, tested against the champion on real clicks, and every test's verdict, won or lost and why, goes into a playbook the writer reads next.
 
-**Milestone 1** is a simulation: made-up merchants, no real email. It answers whether the loop beats one good hand-written email at our real volume, and whether the lessons it learns are true.
+**Milestone 1** is a simulation: made-up merchants, no real email. It answers whether the loop beats one good hand-written email at our real volume, and whether what it concludes is true.
 
-- Spec: [#1](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/1), built in tickets #2–#14 and #16
+- Spec: [#1](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/1); its tickets, done and next, are in the build order below
 - Glossary: [`CONTEXT.md`](CONTEXT.md) · Decisions: [`docs/adr/`](docs/adr) · Research: [`docs/research/win-back-ai-loop.md`](docs/research/win-back-ai-loop.md)
 - How the work is run, as stories: [`docs/technical-product-manager-discussion.md`](docs/technical-product-manager-discussion.md)
 - Throwaway prototype: [`prototypes/win-back-sim.prototype.html`](prototypes/win-back-sim.prototype.html) (open it in a browser)
@@ -17,7 +17,7 @@ Each deploy also publishes a web app: write your three emails, press Simulate, t
 
 ![How the AI loop works](docs/diagrams/ai-loop.drawio.svg)
 
-What the writer, judge and scorer each do, and why the judge is a different kind of model from the writer: [`docs/ai-loop.md`](docs/ai-loop.md).
+What the writer, checks, judge and test each do, and why the judge is a different kind of model from the writer: [`docs/ai-loop.md`](docs/ai-loop.md).
 
 ## How the code fits together
 
@@ -29,18 +29,12 @@ What the writer, judge and scorer each do, and why the judge is a different kind
 
 ## Build order
 
-![Build order of tickets #2 to #14](docs/diagrams/build-order.drawio.svg)
+![Build order of milestone 1: done, in review and next](docs/diagrams/build-order.drawio.svg)
 
 ## Running on AWS
 
 How the simulation runs itself on AWS, and how real emails go out later: [`docs/aws.md`](docs/aws.md) (what changes in the code, and what the free account covers). Built in ticket #17; to switch it on, follow the one-time [AWS setup](docs/aws-setup.md).
 
-### Milestone 1: the simulation runs itself
-
-![Milestone 1 on AWS](docs/diagrams/aws-poc.drawio.svg)
-
-### Milestone 2: real emails to real merchants
-
-![Milestone 2 on AWS](docs/diagrams/aws-production.drawio.svg)
+![The win-back loop on AWS: the simulation running now, real emails planned](docs/diagrams/aws.drawio.svg)
 
 The diagrams are `.drawio.svg` files: GitHub shows them as images, and you can open and edit them directly in [draw.io](https://app.diagrams.net).

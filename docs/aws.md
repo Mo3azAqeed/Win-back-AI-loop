@@ -1,6 +1,6 @@
 # Running on AWS
 
-How the simulation runs on AWS without anyone at a laptop (milestone 1), and how the same engine sends real emails later (milestone 2). Milestone 1 is built (#17). To switch it on, follow the one-time setup in [`aws-setup.md`](aws-setup.md). Milestone 2 is a design only.
+How the simulation runs on AWS without anyone at a laptop, and how the same engine sends real emails later. The simulation part is built (#17); to switch it on, follow the one-time setup in [`aws-setup.md`](aws-setup.md). The real-email part is a design only, drawn dashed in the diagram.
 
 ## Is the code ready for it?
 
@@ -18,29 +18,28 @@ Only the edges assume a laptop:
 
 In codebase-design terms: the seam is already in the right place. The command and the Lambda handler are two thin adapters around the same deep module. There is no need for a "report storage" abstraction inside the engine, because the engine never stores anything.
 
-## Milestone 1: the simulation runs itself
+![The win-back loop on AWS](diagrams/aws.drawio.svg)
 
-![Milestone 1 on AWS](diagrams/aws-poc.drawio.svg)
+## Running now: the simulation runs itself
 
 1. You merge to `main`. GitHub Actions runs the tests and mypy, signs in to AWS through an IAM role (OIDC, so no AWS keys are stored in GitHub), and runs `sam deploy`.
-2. CloudFormation creates or updates everything inside the AWS box from [`template.yaml`](../template.yaml). The one exception is the OpenRouter key: CloudFormation cannot create a SecureString parameter, so you add it once by hand (see the setup guide).
+2. CloudFormation creates or updates everything inside the AWS box from [`template.yaml`](../template.yaml). The two exceptions are the OpenRouter key and the web app's access code: CloudFormation cannot create SecureString parameters, so you add them once by hand (see the setup guide).
 3. EventBridge Scheduler starts the Lambda every week. You can also start it from the console at any time.
-4. The Lambda runs the simulation and saves `runs/<date>-seed<n>.md` and `latest.md` to S3.
+4. The Lambda runs the simulation, with the stand-in writer or, when the run asks for it, the AI writer and judge on OpenRouter, and saves the report and its data to S3 (`runs/<run>.md` and `.json`, `index/`, `latest.md`).
 5. SNS emails you a "report ready" message with the link. It also emails you if a run fails or AWS spending passes $5 in a month.
+6. The web app is a second Lambda behind a public link (a function URL). Anyone with the link can read the runs; starting one needs the access code, and the web app then starts the simulation Lambda with your emails.
 
-## Milestone 2: real emails to real merchants
-
-![Milestone 2 on AWS](diagrams/aws-production.drawio.svg)
+## Planned: real emails to real merchants
 
 The engine stays the same. What changes is the world around it:
 
 - Our Shopify app sends lifecycle events (signup, draft saved, publish, paid) to API Gateway.
 - The lifecycle Lambda keeps each merchant's segment, puts 8% in the holdout for life, picks a timing, and schedules the send. Holdout merchants get a ghost send, with nothing actually sent.
-- At send time, the send Lambda picks the subject, body and offer, and Amazon SES sends the email.
-- SES reports deliveries, clicks, bounces and complaints. The outcome Lambda scores each send and drops clicks that SES flags as likely bots (`isBotEvent`).
+- At send time, the send Lambda sends the champion or, for its share, the challenger, with the timing and offer the loop picked, and Amazon SES sends the email.
+- SES reports deliveries, clicks, bounces and complaints. The outcome Lambda counts each send for its version, drops clicks that SES flags as likely bots (`isBotEvent`), and writes each week's verdict to the playbook. There is no judge in production: real clicks decide.
 - Once a week, the writer Lambda asks OpenRouter for new variants, checks them, and updates the lessons.
 
-DynamoDB is the proposed store because it costs almost nothing at our volume and needs no server. That choice gets its own decision record when milestone 2 starts.
+DynamoDB is the proposed store because it costs almost nothing at our volume and needs no server. That choice gets its own decision record when the real-email work starts.
 
 Before the first real send:
 
@@ -50,15 +49,15 @@ Before the first real send:
 
 ## Will the free account be enough?
 
-For milestone 1, yes. The only real limit is how long the Free plan lasts.
+For the simulation, yes. The only real limit is how long the Free plan lasts.
 
-| Service | Free allowance (from AWS's pricing pages) | Milestone 1 use |
+| Service | Free allowance (from AWS's pricing pages) | Simulation use |
 |---|---|---|
 | Lambda | 1 million requests and 400,000 GB-seconds per month | A few runs a week, seconds each |
 | EventBridge Scheduler | 14 million invocations per month | A few per week |
-| Parameter Store | Standard parameters at no charge | One key |
+| Parameter Store | Standard parameters at no charge | Two secrets |
 | S3, CloudWatch, SNS | Small use | Reports of a few KB, a few log lines, a few emails |
 
 - **The catch:** a new account on the Free plan gets up to $200 in credits. The account closes on its own 6 months after it opens, or when the credits run out, whichever comes first. To keep running after that, upgrade to the Paid plan before then; any leftover credits carry over. At this workload the Paid plan should still cost close to nothing.
 - **What AWS does not pay for:** OpenRouter is billed separately. Budget for its LLM calls on their own.
-- **Milestone 2:** SES charges $0.10 per 1,000 emails. Our volume costs cents a month, and the credits cover it.
+- **Real emails, later:** SES charges $0.10 per 1,000 emails. Our volume costs cents a month, and the credits cover it.
