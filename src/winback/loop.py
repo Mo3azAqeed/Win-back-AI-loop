@@ -126,6 +126,30 @@ class SegmentCopyRecord:
 
 
 @dataclass(frozen=True)
+class CopyChange:
+    """A subject or body the writer added to Idle's tests, or one the loop dropped, and when."""
+
+    day: float
+    slot: str  # "subject" or "body"
+    change: str  # "written" or "dropped"
+    text: str
+    cta: str
+    sends: int  # so far; 0 when written
+    clicks: int
+    by: str  # who wrote it: "you" (your first draft) or "stand-in writer"
+
+
+@dataclass(frozen=True)
+class WeekLeaders:
+    """The Idle subject and body leading at the end of a week."""
+
+    week: int
+    subject: str
+    body: str
+    cta: str
+
+
+@dataclass(frozen=True)
 class LoopReport:
     """What the AI loop has tried and where it stands: Idle subjects and bodies in the order the writer
     added them (your first draft first), what Drafters and Trialists were sent, and each segment's timings."""
@@ -136,6 +160,8 @@ class LoopReport:
     carry_over: float
     timings: dict[Segment, list[TimingRecord]]
     offers: list[OfferRecord]
+    history: list[CopyChange]  # in the order it happened
+    weekly_leaders: list[WeekLeaders]
 
 
 class AiLoop:
@@ -160,12 +186,15 @@ class AiLoop:
         if not 0 <= settings.loop.carry_over <= 1:
             raise ValueError(f"ai_loop.carry_over must be between 0 and 1, not {settings.loop.carry_over:g}")
         self.rules, self.rngs = settings.loop, rngs
+        self.today = 0.0
+        self.history: list[CopyChange] = []
+        self.weekly_leaders: list[WeekLeaders] = []
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
         self.waiting = {"subject": list(settings.prewritten_subjects), "body": list(settings.prewritten_bodies)}
         self.variants: dict[str, list[LoopVariant]] = {"subject": [], "body": []}
-        self._add("subject", Variant(draft.subject, "", 100.0, placeholder=False), _Posterior())
-        self._add("body", Variant(draft.body, draft.cta, 100.0, placeholder=False), _Posterior())
+        self._add("subject", Variant(draft.subject, "", 100.0, placeholder=False), _Posterior(), by="you")
+        self._add("body", Variant(draft.body, draft.cta, 100.0, placeholder=False), _Posterior(), by="you")
         for slot in self.variants:
             while len(self._active(slot)) < self.rules.active_variants and self.waiting[slot]:
                 self._add(slot, self.waiting[slot].pop(0), _Posterior())
@@ -194,10 +223,11 @@ class AiLoop:
         subject, body = self.own_first_drafts[segment]
         return Copy(subject, body, carry * self._leader("subject").appeal, carry * self._leader("body").appeal)
 
-    def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool) -> None:
-        """An email went out. An Idle subject and body learn whether a human clicked; a Drafter or
-        Trialist first draft only counts its sends and clicks. Every click counts as human until
-        scanner clicks are simulated (#10)."""
+    def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool, day: float) -> None:
+        """An email went out on this day. An Idle subject and body learn whether a human clicked; a
+        Drafter or Trialist first draft only counts its sends and clicks. Every click counts as human
+        until scanner clicks are simulated (#10)."""
+        self.today = day
         for slot, variant in (("subject", copy.subject), ("body", copy.body)):
             variant.posterior.learn(clicked)
             if segment is Segment.IDLE:
@@ -205,6 +235,11 @@ class AiLoop:
 
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
+
+    def end_week(self, week: int) -> None:
+        """Note which Idle subject and body lead as this week ends."""
+        subject, body = self._leader("subject"), self._leader("body")
+        self.weekly_leaders.append(WeekLeaders(week, subject.text, body.text, body.cta))
 
     def learn_from_revenue(self, offer: Offer, revenue_share: float) -> None:
         """A Trialist assigned this offer reached its horizon having brought this share of the full price."""
@@ -228,14 +263,15 @@ class AiLoop:
             segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, int(body.posterior.rewards))
             for segment, (subject, body) in self.own_first_drafts.items()
         }
-        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers)
+        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings, offers, list(self.history), list(self.weekly_leaders))
 
-    def _add(self, slot: str, variant: Variant, prior: _Posterior) -> None:
+    def _add(self, slot: str, variant: Variant, prior: _Posterior, by: str = "stand-in writer") -> None:
         reference = self.read_rate if slot == "subject" else self.click_rate
         # A certain or impossible chance can't be shifted, so there quality has no effect.
         certain = reference <= 0 or reference >= 1
         appeal = 0.0 if certain else _logit(min(0.999, reference * variant.quality / 100)) - _logit(reference)
         self.variants[slot].append(LoopVariant(variant.text, variant.cta, variant.quality, appeal, prior))
+        self.history.append(CopyChange(self.today, slot, "written", variant.text, variant.cta, 0, 0, by))
 
     def _active(self, slot: str) -> list[LoopVariant]:
         return [v for v in self.variants[slot] if not v.retired]
@@ -264,6 +300,8 @@ class AiLoop:
             if _chance_better(leader.posterior, variant.posterior) < self.rules.retire_confidence:
                 continue
             variant.retired = True
+            sends, clicks = variant.posterior.tries, int(variant.posterior.rewards)
+            self.history.append(CopyChange(self.today, slot, "dropped", variant.text, variant.cta, sends, clicks, ""))
             if self.waiting[slot]:
                 staying = self._active(slot)
                 average = sum(v.posterior.mean for v in staying) / len(staying)

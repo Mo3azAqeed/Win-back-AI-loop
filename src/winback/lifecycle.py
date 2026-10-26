@@ -17,7 +17,7 @@ from winback.loop import AiLoop, LoopReport, Timing, read_shift
 from winback.offers import Offer
 from winback.segments import NEXT_SEGMENT, Segment
 from winback.settings import Settings
-from winback.world import Merchant, last_entry_day
+from winback.world import DAYS_PER_WEEK, Merchant, last_entry_day
 
 
 class Approach(Enum):
@@ -61,6 +61,8 @@ class Stay:
     counted: bool
     offer: Offer | None  # the AI loop's choice for a Trialist; None for every other stay
     clicked: bool  # a human clicked the email's button
+    subject: str | None  # the words the email went out with (sent emails only)
+    body: str | None
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,8 @@ class _OpenStay:
     email: EmailFate = EmailFate.NOT_PLANNED
     email_sent_at: float | None = None
     clicked: bool = False
+    subject: str | None = None
+    body: str | None = None
 
     @property
     def received_offer(self) -> Offer | None:
@@ -164,7 +168,7 @@ class _OpenStay:
         return self.offer if self.email is EmailFate.SENT else None
 
     def freeze(self) -> Stay:
-        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked)
+        return Stay(self.segment, self.entered, self.left, self.email, self.email_sent_at, self.counted, self.offer, self.clicked, self.subject, self.body)
 
 
 @dataclass
@@ -214,8 +218,12 @@ class _Calendar:
         heapq.heappush(self.queue, _Scheduled(day, event.value, next(self.sequence), event, state.index, stay))
 
     def run(self) -> CalendarRun:
+        week = 1
         while self.queue and self.queue[0].day <= self.run_end:
             item = heapq.heappop(self.queue)
+            while self.loop is not None and item.day > week * DAYS_PER_WEEK:
+                self.loop.end_week(week)
+                week += 1
             self.event_days.append(item.day)
             state = self.merchants[item.merchant]
             if item.event is _Event.ENTER:
@@ -282,14 +290,17 @@ class _Calendar:
             self.run_end = max(self.run_end, closes)
             self._schedule(state, closes, _Event.MISS_WINDOW_CLOSES, stay)
         subject_appeal, body_appeal, timing_shift = FIRST_DRAFT.subject_appeal, FIRST_DRAFT.body_appeal, 0.0
+        draft = self.settings.first_drafts[stay.segment.value]
+        stay.subject, stay.body = draft.subject, draft.body
         copy = None
         if self.loop is not None:
             copy = self.loop.choose_copy(stay.segment)
+            stay.subject, stay.body = copy.subject.text, copy.body.text
             subject_appeal, body_appeal, timing_shift = copy.subject_appeal, copy.body_appeal, read_shift(day - stay.entered, behaviour)
         read = stay.draws.chance("read") < _shifted(behaviour.read_rate, subject_appeal + timing_shift)
         clicked = stay.clicked = read and stay.draws.chance("click") < _shifted(behaviour.click_rate, body_appeal)
         if self.loop is not None and copy is not None:
-            self.loop.learn_from_click(stay.segment, copy, clicked)
+            self.loop.learn_from_click(stay.segment, copy, clicked, day)
         act_rate = behaviour.act_rate * (1 + offers.pay_lift[stay.received_offer]) if stay.received_offer is not None else behaviour.act_rate
         if clicked and stay.draws.chance("act") < act_rate:
             prompted = day + stay.draws.wait_days("response", behaviour.response_mean_days)

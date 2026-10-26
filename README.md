@@ -9,6 +9,10 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 - How the work is run, as stories: [`docs/technical-product-manager-discussion.md`](docs/technical-product-manager-discussion.md)
 - Throwaway prototype: [`prototypes/win-back-sim.prototype.html`](prototypes/win-back-sim.prototype.html) (open it in a browser)
 
+## Web app
+
+Each deploy also publishes a web app: press Run, then see every run's summary, a timeline and funnel per stage, and every email the AI loop tested. Its link is the stack's `WebAppUrl` output; setting it up takes two steps (see [`docs/aws-setup.md`](docs/aws-setup.md), step 8).
+
 ## How the AI loop works
 
 ![How the AI loop works](docs/diagrams/ai-loop.drawio.svg)

@@ -30,7 +30,7 @@ def test_a_run_puts_the_same_report_the_simulation_returns() -> None:
 
     report = run_simulation(load_settings(SETTINGS), seed=7, replays=2).report
     assert key == "runs/2026-10-22-seed7.md"
-    assert bucket.objects == {key: report, "latest.md": report}
+    assert {k: v for k, v in bucket.objects.items() if k.endswith(".md")} == {key: report, "latest.md": report}
 
 
 def test_a_scheduled_run_without_a_seed_uses_the_date_so_each_week_differs() -> None:
@@ -96,7 +96,7 @@ def test_the_lambda_package_finds_its_bundled_settings(tmp_path: Path) -> None:
     ran = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env={"PYTHONPATH": str(package)}, capture_output=True, text=True)
 
     assert ran.returncode == 0, ran.stderr
-    assert ran.stdout == "runs/2026-10-22-seed7.md\n"
+    assert ran.stdout == "runs/2026-10-22-seed7.md\nruns/2026-10-22-seed7.json\nindex/2026-10-22-seed7.json\n"
 
 
 class FakeClient:
@@ -122,10 +122,14 @@ def test_the_lambda_handler_saves_to_the_bucket_and_emails_the_alerts_topic(monk
 
     report = run_simulation(load_settings(SETTINGS), seed=7).report
     key = result["report"].removeprefix("s3://winback-reports/")
-    assert [(c["Key"], c["Body"], c["ContentType"]) for _, c in clients["s3"].calls] == [
-        (key, report.encode(), "text/markdown; charset=utf-8"),
-        ("latest.md", report.encode(), "text/markdown; charset=utf-8"),
+    saved = [(c["Key"], c["ContentType"]) for _, c in clients["s3"].calls]
+    assert saved == [
+        (key, "text/markdown; charset=utf-8"),
+        (key.replace(".md", ".json"), "application/json"),
+        (key.replace("runs/", "index/").replace(".md", ".json"), "application/json"),
+        ("latest.md", "text/markdown; charset=utf-8"),
     ]
+    assert [c["Body"] for _, c in clients["s3"].calls if str(c["Key"]).endswith(".md")] == [report.encode(), report.encode()]
     [(_, email)] = clients["sns"].calls
     assert email["TopicArn"] == "arn:aws:sns:eu-west-1:123456789012:winback-alerts"
     assert email["Message"] == ready_message("winback-reports", "eu-west-1", key)

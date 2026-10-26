@@ -343,6 +343,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Built #28, the web app the CEO will see: a Run button, the run history, and for each run the summary, the journey funnel, a timeline and funnel per stage, revenue, and every email tested. Served from a public Lambda function URL; starting a run needs an access code. |
 | 2026-10-26 | Built #11: 200 replays at 1,000 and 1,500 merchants with a generated plain-English summary, middle-90% ranges and weekly charts. Over 200 replays the AI loop beats the hand-written email in Idle and Trialist (with more revenue) but never in Drafter: there it can only change timing, +2 days is already best, and about a third of replays tie. Review caught that the weekly chart used results that hadn't happened yet; fixed (story 10). Added `docs/ai-loop.md` and its diagram; chose Jev 1.14 (judge) and DeepSeek V4.1 Flash (writer) for #13. |
 | 2026-10-26 | Planted-bug audit of #22 and #8: 24 of 35 caught at first. Closed every real gap with tests (offer pay lifts, the day-14 limit, the default carry-over, report tables, the revenue-based reward); now 32 of 35, and the last 3 cannot change any result. |
 | 2026-10-26 | Founder decided the discount works only through the email's link (ADR 0006). With it, the AI loop brings more Trialists to pay (+3.6 against +2.0 points) **and** more money than the hand-written email ($3,350 against $3,224); 26% of discounted payers would have paid anyway, down from 70%. |
