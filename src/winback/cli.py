@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> None:
     settings = load_settings(args.settings)
     if args.start is not None:
         settings = dataclasses.replace(settings, start_sizes=(args.start,))
-    result = run_simulation(settings, args.seed, args.replays if args.replays is not None else settings.replays)
+    result = run_simulation(settings, args.seed, args.replays)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(result.report)
     print(f"Report written to {args.out}")

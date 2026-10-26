@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 from winback.lifecycle import Approach, EmailFate
 from winback.loop import CopyChange, LoopReport, VariantRecord
-from winback.offers import Offer
 from winback.replays import Replays
-from winback.report import SEGMENT_TEXT, SHORT_LABEL, offer_labels, summary_sentences
+from winback.report import APPROACH_LABEL, SEGMENT_TEXT, summary_sentences
 from winback.segments import Segment
 from winback.settings import Settings
+from winback.trialist import Offer, offer_labels
 from winback.world import DAYS_PER_WEEK
 
 if TYPE_CHECKING:  # run.py imports this module's caller
@@ -45,7 +45,7 @@ def run_data(settings: Settings, result: "RunResult", *, seed: int, created: dat
 
 
 def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartResult") -> dict[str, Any]:
-    labels = offer_labels(settings)  # used by the offers below and by each segment's versions
+    labels = offer_labels(settings.offers)  # used by the offers below and by each segment's versions
     loop = detail.loop
     offer_records = {o.offer: o for o in loop.offers}
     return {
@@ -58,7 +58,7 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
                 "done": SEGMENT_TEXT[s].done,
                 "horizon_days": settings.segments[s].horizon_days,
                 "approaches": [
-                    {"approach": a.value, "label": SHORT_LABEL[a], "average": replays.average(s, a), "low": replays.middle_90(s, a)[0], "high": replays.middle_90(s, a)[1]}
+                    {"approach": a.value, "label": APPROACH_LABEL[a], "average": replays.average(s, a), "low": replays.middle_90(s, a)[0], "high": replays.middle_90(s, a)[1]}
                     for a in Approach
                 ],
                 "ai_ahead": replays.wins(s),
@@ -99,7 +99,7 @@ def _start(settings: Settings, merchants: int, replays: Replays, detail: "StartR
                     "line": settings.offers.lines[o],
                     "sent": detail.offers.sent[o],
                     "assigned": offer_records[o].assigned,
-                    "revenue_per_trialist": offer_records[o].revenue_share * settings.monthly_price / offer_records[o].assigned if offer_records[o].assigned else None,
+                    "revenue_per_trialist": offer_records[o].revenue_per_trialist(settings.monthly_price),
                     "leading": offer_records[o].leading,
                 }
                 for o in Offer

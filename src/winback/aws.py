@@ -53,7 +53,7 @@ def run_and_save(event: Mapping[str, object], *, today: date, settings_path: Pat
     if start is not None:
         settings = dataclasses.replace(settings, start_sizes=(start,))
     name = run_name(today, seed, start)
-    result = run_simulation(settings, seed, replays if replays is not None else settings.replays)
+    result = run_simulation(settings, seed, replays)
     data = run_data(settings, result, seed=seed, created=today)
     put(f"runs/{name}.md", result.report)
     put(f"runs/{name}.json", json.dumps(data))

@@ -11,7 +11,8 @@ starts = "when the merchant publishes their store"
 no_payment_until_trial_ends = "You won't pay anything until the trial ends."
 
 [offers]
-# Only the AI loop's Trialist emails carry an offer, and at most one.
+# Only the AI loop's Trialist emails carry an offer, and at most one: its line is added to the Trialist
+# first draft. The days and prices must match [offers] in settings.toml (a test checks).
 extension = "Need more time? We've added 7 more days to your trial."
 discount = "Your first month is $20 instead of $40."
 

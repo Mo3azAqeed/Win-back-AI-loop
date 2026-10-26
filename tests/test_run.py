@@ -6,7 +6,7 @@ import pytest
 from winback import Approach, Offer, RunResult, Segment, Settings, load_settings, run_simulation
 from winback.lifecycle import EmailFate, Journey
 
-SETTINGS = Path(__file__).resolve().parent.parent / "settings.toml"
+from conftest import SETTINGS, copy_settings, with_segment
 
 # Worked by hand: 1,000 merchants, growth falling linearly from 10% (week 1)
 # to 8% (week 13), each week's growth applied to the base as it stands.
@@ -19,18 +19,13 @@ def with_segments(
     trialist: dict[str, float] | None = None,
 ) -> Settings:
     settings = load_settings(SETTINGS)
-    changes = {Segment.IDLE: idle, Segment.DRAFTER: drafter, Segment.TRIALIST: trialist}
-    segments = {s: dataclasses.replace(b, **(changes[s] or {})) for s, b in settings.segments.items()}
-    return dataclasses.replace(settings, segments=segments)
+    for segment, changes in {Segment.IDLE: idle, Segment.DRAFTER: drafter, Segment.TRIALIST: trialist}.items():
+        settings = with_segment(settings, segment, **(changes or {}))
+    return settings
 
 
 def with_idle(**changes: float) -> Settings:
     return with_segments(idle=changes)
-
-
-@pytest.fixture
-def run() -> RunResult:
-    return run_simulation(load_settings(SETTINGS), seed=1)
 
 
 def test_new_signups_each_week_follow_the_growth_forecast(run: RunResult) -> None:
@@ -244,9 +239,7 @@ def test_a_number_written_without_its_placeholder_flag_is_refused(tmp_path: Path
     broken = SETTINGS.read_text().replace(
         'weeks = { value = 13, placeholder = false, note = "Length of the simulation in weeks." }', "weeks = 13"
     )
-    (tmp_path / "settings.toml").write_text(broken)
-    for companion in ("first_drafts.toml", "prewritten.toml"):
-        (tmp_path / companion).write_text((SETTINGS.parent / companion).read_text())
+    copy_settings(tmp_path).write_text(broken)
 
     with pytest.raises(ValueError, match="growth.weeks"):
         load_settings(tmp_path / "settings.toml")
