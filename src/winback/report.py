@@ -401,7 +401,7 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
                 *(f"    line [{', '.join(f'{v:.2f}' for v in _weekly(r, segment, a))}]" for a in CHART_COLOURS),
                 "```",
                 "",
-                ". ".join(f"{name}: {SHORT_LABEL[a].lower()}" for a, (_, name) in CHART_COLOURS.items())
+                ". ".join(f"{name}: {SHORT_LABEL[a]}" for a, (_, name) in CHART_COLOURS.items())
                 + ". Each week counts the merchants who would have entered the segment by then with no email.",
                 "",
             ]

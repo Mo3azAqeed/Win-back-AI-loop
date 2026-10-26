@@ -112,6 +112,7 @@ def test_the_report_has_a_weekly_true_lift_chart_for_each_segment(run: RunResult
         assert all(len(v) == 13 for v in values) and set(values[0]) == {0.0}
         ai_by_week_13 = statistics.fmean(s.weekly[segment][Approach.AI_LOOP][-1] for s in run.replays[1000].stats) * 100
         assert values[2][-1] == pytest.approx(ai_by_week_13, abs=0.01)
+    assert "Grey: No email. Orange: Hand-written email. Blue: AI loop." in summary
 
 
 def test_the_report_shows_average_trialist_first_month_revenue_per_approach(run: RunResult) -> None:
