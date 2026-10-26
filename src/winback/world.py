@@ -24,6 +24,11 @@ def _whole(x: float) -> int:
     return math.floor(x + 0.5)
 
 
+def week_of(day: float) -> int:
+    """The week a day falls in: days 0 to 7 are week 1."""
+    return max(1, math.ceil(day / DAYS_PER_WEEK))
+
+
 def last_entry_day(settings: Settings) -> float:
     """The end of the weeks of signups. Only stays entered by then are counted; merchants keep moving
     afterwards until every counted stay's horizon, miss window and paid window has closed."""

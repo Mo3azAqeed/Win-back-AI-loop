@@ -117,14 +117,17 @@ def test_a_challenger_with_more_clicks_but_clearly_fewer_goal_actions_is_not_cro
 def test_with_every_version_secretly_identical_every_test_still_ends_and_few_claim_a_winner() -> None:
     settings = all_identical(load_settings(SETTINGS))
     limit = settings.loop.test_max_weeks * DAYS_PER_WEEK
-    entries = []
+    entries, seeds_claiming_a_winner = [], 0
     for seed in range(1, 6):
         loop = loop_of(settings, seed)
         entries += loop.playbook
+        seeds_claiming_a_winner += any(e.ending in (Ending.CHALLENGER_WON, Ending.CHAMPION_WON) for e in loop.playbook)
         # A new challenger enters every time a test ends, until the writer runs out.
         assert len(loop.versions) == len(loop.playbook) + 1 + (loop.weekly_leaders[-1].challenger is not None), seed
         assert all(e.ended - e.started <= limit for e in loop.playbook)
 
+    # In most seeds no entry claims a winner, and across them only a few tests do.
+    assert seeds_claiming_a_winner * 2 < 5
     winners = [e for e in entries if e.ending in (Ending.CHALLENGER_WON, Ending.CHAMPION_WON)]
     assert len(winners) <= 0.25 * len(entries)
     assert all(e.ending in (Ending.SAME, Ending.LIMIT) or e.chance_better >= 0.9 or e.chance_better <= 0.1 for e in entries)

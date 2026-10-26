@@ -9,6 +9,7 @@ from winback.replays import Replays
 from winback.segments import Segment
 from winback.settings import Settings
 from winback.trialist import MISS_WINDOW_FROM, Offer, offer_labels
+from winback.world import week_of
 
 if TYPE_CHECKING:
     from winback.run import StartResult
@@ -198,11 +199,11 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         "",
         "#### Versions",
         "",
-        "| Version | Subject | Body | Changed | Hidden quality (subject, body) | Written by | From day | Now | Sends | Human clicks |",
+        "| Version | Subject | Body | Changed | Hidden quality (subject, body) | Written by | From week | Now | Sends | Human clicks |",
         "|---|---|---|---|---|---|---|---|---|---|",
         *(
             f"| v{v.number} | {v.subject} | {v.body} **[{v.cta}]** | {v.changed or 'your email'} | {v.quality[0]:g}, {v.quality[1]:g} | {v.by} | "
-            f"{v.introduced_day:.0f} | {_status(v)} | {v.sends:,} | {_share(v.clicks, v.sends)} |"
+            f"{week_of(v.introduced_day)} | {_status(v)} | {v.sends:,} | {_share(v.clicks, v.sends)} |"
             for v in loop.versions
         ),
         "",
@@ -217,10 +218,10 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         "Every test, newest last: what the challenger changed and why, the evidence from the test itself (clicks are "
         "known at once; goal actions only once each email's miss window has closed), and the verdict.",
         "",
-        "| Test | Days | Champion | Challenger | Hypothesis | Champion: sends, clicks, goal actions | Challenger: sends, clicks, goal actions | Ending | Conclusion |",
+        "| Test | Weeks | Champion | Challenger | Hypothesis | Champion: sends, clicks, goal actions | Challenger: sends, clicks, goal actions | Ending | Conclusion |",
         "|---|---|---|---|---|---|---|---|---|",
         *(
-            f"| {e.test} | {e.started:.0f}–{e.ended:.0f} | v{e.champion} | v{e.challenger} | {e.hypothesis} | "
+            f"| {e.test} | {week_of(e.started)}–{week_of(e.ended)} | v{e.champion} | v{e.challenger} | {e.hypothesis} | "
             f"{e.champion_sends:,}, {_share(e.champion_clicks, e.champion_sends)}, {_share(e.champion_goals, e.champion_goals_judged)} | "
             f"{e.challenger_sends:,}, {_share(e.challenger_clicks, e.challenger_sends)}, {_share(e.challenger_goals, e.challenger_goals_judged)} | "
             f"{e.ending.value} | {e.conclusion} |"
@@ -272,11 +273,11 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
 
 
 def _status(v: VersionRecord) -> str:
-    if v.status == "champion":
-        return "champion" + (f" (crowned day {v.crowned_day:.0f})" if v.crowned_day is not None else "")
-    if v.status == "challenger":
-        return "challenger"
-    return f"sunset day {v.sunset_day:.0f}"
+    """Where a version stands at the end, with the week it was crowned and the week it was sunset."""
+    crowned = f"crowned week {week_of(v.crowned_day)}" if v.crowned_day is not None else ""
+    sunset = f"sunset week {week_of(v.sunset_day)}" if v.sunset_day is not None else ""
+    now = v.status if v.status != "sunset" else ""
+    return ", ".join(part for part in (now, crowned, sunset) if part)
 
 
 def _share(part: int, whole: int) -> str:

@@ -2,8 +2,8 @@
 and a stand-in writer.
 
 Idle's email comes in versions. Version 0 is your first draft and starts as the champion. The writer brings a
-challenger, the champion with one part changed and a hypothesis saying why, and the two share Idle's traffic
-evenly until the test ends with a verdict (ADR 0007). Every verdict, won or lost, goes into the playbook.
+challenger, the champion with one part changed and a hypothesis saying why, and it gets a third of Idle's
+emails (challenger_share) until the test ends with a verdict (ADR 0007). Every verdict, won or lost, goes into the playbook.
 
 Timing and offers are not part of a version: every choice there (a timing for one segment, an offer) has a
 Beta posterior over how often it is rewarded, and the loop draws once from each and takes the highest draw.
@@ -121,6 +121,8 @@ class _Arm:
 
 @dataclass
 class _Test:
+    """One champion against one challenger, from the day the challenger entered."""
+
     number: int
     started: float
     champion: _Arm
@@ -128,6 +130,8 @@ class _Test:
 
 
 class Ending(Enum):
+    """The four ways a test can end."""
+
     CHALLENGER_WON = "challenger won"
     CHAMPION_WON = "champion won"
     SAME = "the same"
@@ -155,7 +159,7 @@ class VariantRecord:
     quality: float
     sends: int
     clicks: int
-    retired: bool  # in neither the champion nor the challenger at the end
+    sunset: bool  # in neither the champion nor the challenger at the end
     leading: bool  # in the champion at the end
 
 
@@ -204,6 +208,7 @@ class PlaybookEntry:
     challenger_goals_judged: int
     challenger_goals: int
     chance_better: float  # how likely the challenger's click rate is above the champion's
+    chance_same: float  # how likely the two click rates are within the margin of each other
     conclusion: str
 
 
@@ -483,12 +488,14 @@ class AiLoop:
     def _end_test(self, test: _Test, ending: Ending) -> None:
         champion, challenger = test.champion, test.challenger
         better = _chance_better(challenger.clicks_posterior(), champion.clicks_posterior())
+        same = _chance_within(challenger.clicks_posterior(), champion.clicks_posterior(), self.rules.same_margin)
         fewer_goals = _chance_better(champion.goals_posterior(), challenger.goals_posterior()) >= self.rules.verdict_confidence
         clickbait = ending is Ending.CHALLENGER_WON and fewer_goals
         if clickbait:
             ending = Ending.CHAMPION_WON
         # Too close to call: the version ahead on clicks stays, if the settings say so; it is kept, not proven better.
         kept_ahead = ending is Ending.LIMIT and self.rules.keep_ahead_at_limit and better > 0.5 and not fewer_goals
+        held_back_by_goals = ending is Ending.LIMIT and better > 0.5 and fewer_goals  # ahead on clicks, behind on goals
         winner = challenger if ending is Ending.CHALLENGER_WON or kept_ahead else champion
         loser = champion if winner is challenger else challenger
         loser.version.sunset = self.today
@@ -503,7 +510,7 @@ class AiLoop:
                 test.number, champion.version.number, challenger.version.number, challenger.version.hypothesis, slot, test.started, self.today, ending,
                 champion.sends, champion.clicks, champion.goals_judged, champion.goals,
                 challenger.sends, challenger.clicks, challenger.goals_judged, challenger.goals,
-                better, _conclusion(test, ending, better, clickbait or (ending is Ending.LIMIT and better > 0.5 and fewer_goals), kept_ahead),
+                better, same, _conclusion(test, ending, better, same, clickbait or held_back_by_goals, kept_ahead),
             )
         )
         self._next_challenger()
@@ -518,7 +525,7 @@ def _rate(part: int, whole: int) -> float:
     return part / whole if whole else 0.0
 
 
-def _conclusion(test: _Test, ending: Ending, better: float, clickbait: bool, kept_ahead: bool) -> str:
+def _conclusion(test: _Test, ending: Ending, better: float, same: float, clickbait: bool, kept_ahead: bool) -> str:
     """One line a reader can act on: the change, how it did on clicks, how sure the loop is, and what happened."""
     champion, challenger = test.champion, test.challenger
     points = (_rate(challenger.clicks, challenger.sends) - _rate(champion.clicks, champion.sends)) * 100
@@ -531,7 +538,7 @@ def _conclusion(test: _Test, ending: Ending, better: float, clickbait: bool, kep
     return change + {
         Ending.CHALLENGER_WON: f"; crowned, and v{champion.version.number} is sunset.",
         Ending.CHAMPION_WON: f"; it lost and is sunset, v{champion.version.number} stays.",
-        Ending.SAME: f"; the same within the margin, so v{champion.version.number} stays and v{challenger.version.number} is sunset.",
+        Ending.SAME: f"; {same:.0%} sure they are the same within the margin, so v{champion.version.number} stays and v{challenger.version.number} is sunset.",
         Ending.LIMIT: f"; too close to call at the test's limit, so v{champion.version.number} stays and v{challenger.version.number} is sunset.",
     }[ending]
 
