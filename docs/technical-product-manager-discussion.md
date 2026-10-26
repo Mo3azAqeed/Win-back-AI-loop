@@ -313,6 +313,12 @@ Short versions, each with the situation, what I did and the result.
 - **Then a product question changed the answer:** I had assumed the discount applied to the account automatically, so everyone who *received* the email paid half. I put the question to the founder instead of guessing: it only works through the email's link. With that one rule, only clickers pay half, 26% of discounted payers would have paid anyway (down from 70%), and the AI loop brings more money than the hand-written email ($3,350 against $3,224) as well as more payers.
 - **Lesson:** pick the metric that pays the bills before you build the optimiser; optimising "more people paid" would have rewarded giving money away. And surface the assumptions that decide the answer: here one product rule flipped the verdict.
 
+**10. "A chart that knew the future."**
+- **Situation:** #11 added a weekly chart of "true lift so far". It looked fine: smooth, flat lines, and the summary said the AI loop was "ahead from week 1".
+- **What I did:** the spec review pointed out that each week's point used every merchant's *final* result, including goals reached weeks later. The chart was the final answer drawn 13 times, so "ahead from week 1" was an artefact. I redefined a week's point as only the results known by then (horizons that had closed), which is exactly what the AI loop itself could have learned from, and ran the chart to week 15, when the last signup's result is known.
+- **Result:** the chart now shows the loop learning (Idle climbs from +1.8 to +2.0 points while the hand-written email stays flat), and "ahead from week 2" means something. The same review found that "ahead in 0 of 200 replays" for Drafters hid that a third were exact ties, so the report now shows ties too.
+- **Lesson:** a chart can be precise and still answer the wrong question. Ask "what could anyone have known at that point?" before plotting anything over time.
+
 ---
 
 ## 8. Vocabulary I use
@@ -337,6 +343,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Built #11: 200 replays at 1,000 and 1,500 merchants with a generated plain-English summary, middle-90% ranges and weekly charts. Over 200 replays the AI loop beats the hand-written email in Idle and Trialist (with more revenue) but never in Drafter: there it can only change timing, +2 days is already best, and about a third of replays tie. Review caught that the weekly chart used results that hadn't happened yet; fixed (story 10). Added `docs/ai-loop.md` and its diagram; chose Jev 1.14 (judge) and DeepSeek V4.1 Flash (writer) for #13. |
 | 2026-10-26 | Planted-bug audit of #22 and #8: 24 of 35 caught at first. Closed every real gap with tests (offer pay lifts, the day-14 limit, the default carry-over, report tables, the revenue-based reward); now 32 of 35, and the last 3 cannot change any result. |
 | 2026-10-26 | Founder decided the discount works only through the email's link (ADR 0006). With it, the AI loop brings more Trialists to pay (+3.6 against +2.0 points) **and** more money than the hand-written email ($3,350 against $3,224); 26% of discounted payers would have paid anyway, down from 70%. |
 | 2026-10-26 | Built #8 (Trialist offers). The AI loop now gets more Trialists to pay than the hand-written email (+3.6 against +2.0 points, 10 seeds at 1,500 merchants) but brings slightly less money ($3,202 against $3,224): 70% of discounted payers would have paid the full $40 anyway. The loop learns to drop the discount, but 13 weeks is too short to finish. |

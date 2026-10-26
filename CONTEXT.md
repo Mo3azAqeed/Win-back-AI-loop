@@ -115,6 +115,14 @@ The LLM that rates how appealing a variant is to a segment during a simulation. 
 **Simulation**:
 A run of the loop against made-up merchants and made-up email outcomes, using placeholder baselines. No real email is sent.
 
+**Replay**:
+One run of the same 13 weeks with different luck. A full report replays 200 times from each starting size, so one lucky run can't decide the answer; the first replay uses the seed itself and is shown in full.
+_Avoid_: Iteration, trial (a trial is the 7-day free period)
+
+**Middle 90%**:
+Where 90% of replays land, leaving out the luckiest and unluckiest 5% on each side: the range the report gives next to each average.
+_Avoid_: Confidence interval
+
 **True lift**:
 How many more merchants in a segment reached the goal action within the horizon than in the same simulated world with no email at all, in percentage points. Each segment is judged on the same merchants in every approach: the emailed ones who would be in that segment with no email. Merchants an earlier email pushed into a later segment are that earlier email's win; they are reported on their own line, with no lift. Known exactly because the simulation made up every merchant; only exists in a simulation.
 _Avoid_: Measured lift (what real data could show; not reported)

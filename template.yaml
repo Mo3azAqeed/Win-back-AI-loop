@@ -61,7 +61,7 @@ Resources:
       Handler: winback.aws.handler
       Runtime: python3.13
       Architectures: [arm64]
-      MemorySize: 1024
+      MemorySize: 2048  # a full vCPU: 200 replays at 1,000 and 1,500 merchants take a few minutes
       Timeout: 900
       LoggingConfig:
         LogGroup: !Ref SimulationLogs
@@ -140,7 +140,7 @@ Outputs:
     Description: Reports are under runs/, and the newest is always latest.md.
     Value: !Ref ReportsBucket
   FunctionName:
-    Description: 'Run it now from the Lambda console Test tab, with {} or {"seed": 7, "start": 1000}.'
+    Description: 'Run it now from the Lambda console Test tab, with {} or {"seed": 7, "start": 1000, "replays": 5}.'
     Value: !Ref SimulationFunction
   AlertsTopicArn:
     Value: !Ref AlertsTopic

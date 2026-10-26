@@ -9,6 +9,12 @@ An email loop that wins back merchants who stall in our store-cloning Shopify ap
 - How the work is run, as stories: [`docs/technical-product-manager-discussion.md`](docs/technical-product-manager-discussion.md)
 - Throwaway prototype: [`prototypes/win-back-sim.prototype.html`](prototypes/win-back-sim.prototype.html) (open it in a browser)
 
+## How the AI loop works
+
+![How the AI loop works](docs/diagrams/ai-loop.drawio.svg)
+
+What the writer, judge and scorer each do, and why the judge is a different kind of model from the writer: [`docs/ai-loop.md`](docs/ai-loop.md).
+
 ## How the code fits together
 
 ![How the code fits together](docs/diagrams/architecture.drawio.svg)
