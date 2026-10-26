@@ -75,6 +75,17 @@ class LoopVariant:
 
 
 @dataclass(frozen=True)
+class Copy:
+    """The words one email goes out with, and their hidden appeal as shifts on the log-odds of reading
+    (subject) and clicking (body)."""
+
+    subject: LoopVariant
+    body: LoopVariant
+    subject_appeal: float
+    body_appeal: float
+
+
+@dataclass(frozen=True)
 class VariantRecord:
     text: str
     cta: str
@@ -94,12 +105,25 @@ class TimingRecord:
 
 
 @dataclass(frozen=True)
+class SegmentCopyRecord:
+    """The first draft a Drafter or Trialist email goes out with, and how its sends went."""
+
+    subject: str
+    body: str
+    cta: str
+    sends: int
+    clicks: int
+
+
+@dataclass(frozen=True)
 class LoopReport:
     """What the AI loop has tried and where it stands: Idle subjects and bodies in the order the writer
-    added them (your first draft first), and each segment's timings."""
+    added them (your first draft first), what Drafters and Trialists were sent, and each segment's timings."""
 
     subjects: list[VariantRecord]
     bodies: list[VariantRecord]
+    segment_copy: dict[Segment, SegmentCopyRecord]
+    carry_over: float
     timings: dict[Segment, list[TimingRecord]]
 
 
@@ -112,12 +136,18 @@ class AiLoop:
       the writer would never get another turn (ADR 0004). Once the leader is clearly better than
       another variant, that variant is retired and the writer adds the next one from its list. The
       newcomer starts from a cautious prior, so a few lucky clicks don't make it the leader at once.
-    - Drafters and Trialists get whichever Idle subject and body currently lead.
+    - Drafters and Trialists get their own first drafts, plus the carry-over share of the edge the
+      Idle leader has over your Idle first draft.
     - Every segment learns timing from the goal action of every merchant assigned that timing,
-      judged when the horizon closes."""
+      judged when the horizon closes.
 
-    def __init__(self, settings: Settings, rng: random.Random) -> None:
-        self.rules, self.rng = settings.loop, rng
+    Each segment draws from its own random stream, so what happens in one segment never changes the
+    luck of another's choices."""
+
+    def __init__(self, settings: Settings, rngs: dict[Segment, random.Random]) -> None:
+        if not 0 <= settings.loop.carry_over <= 1:
+            raise ValueError(f"ai_loop.carry_over must be between 0 and 1, not {settings.loop.carry_over:g}")
+        self.rules, self.rngs = settings.loop, rngs
         idle, draft = settings.segments[Segment.IDLE], settings.first_drafts[Segment.IDLE.value]
         self.read_rate, self.click_rate = idle.read_rate, idle.click_rate
         self.waiting = {"subject": list(settings.prewritten_subjects), "body": list(settings.prewritten_bodies)}
@@ -127,26 +157,35 @@ class AiLoop:
         for slot in self.variants:
             while len(self._active(slot)) < self.rules.active_variants and self.waiting[slot]:
                 self._add(slot, self.waiting[slot].pop(0), _Posterior())
+        # A Drafter or Trialist first draft is never replaced; its posteriors only count sends and clicks.
+        self.own_first_drafts = {
+            s: (LoopVariant(d.subject, cta="", quality=100.0, appeal=0.0), LoopVariant(d.body, d.cta, quality=100.0, appeal=0.0))
+            for s in (Segment.DRAFTER, Segment.TRIALIST)
+            for d in [settings.first_drafts[s.value]]
+        }
         self.timings = {s: {t: _Posterior() for t in TIMINGS} for s in Segment}
 
     def choose_timing(self, segment: Segment) -> Timing:
-        return self._draw_best(self.timings[segment])
+        return self._draw_best(segment, self.timings[segment])
 
-    def choose_copy(self, segment: Segment) -> tuple[LoopVariant, LoopVariant]:
-        """The subject and body for one email: drawn for Idle, the current Idle leaders otherwise."""
+    def choose_copy(self, segment: Segment) -> Copy:
+        """The words for one email: an Idle subject and body drawn from those in play, or the segment's
+        own first draft with the carry-over share of the Idle leaders' appeal."""
         if segment is Segment.IDLE:
-            return self._draw_variant("subject"), self._draw_variant("body")
-        return self._leader("subject"), self._leader("body")
+            subject, body = self._draw_variant("subject"), self._draw_variant("body")
+            return Copy(subject, body, subject.appeal, body.appeal)
+        carry = self.rules.carry_over
+        subject, body = self.own_first_drafts[segment]
+        return Copy(subject, body, carry * self._leader("subject").appeal, carry * self._leader("body").appeal)
 
-    def learn_from_click(self, segment: Segment, subject: LoopVariant, body: LoopVariant, clicked: bool) -> None:
-        """An email went out. If it was an Idle email, its subject and body learn whether a human
-        clicked; Drafters and Trialists only reuse the Idle leaders. Every click counts as human
-        until scanner clicks are simulated (#10)."""
-        if segment is not Segment.IDLE:
-            return
-        for slot, variant in (("subject", subject), ("body", body)):
+    def learn_from_click(self, segment: Segment, copy: Copy, clicked: bool) -> None:
+        """An email went out. An Idle subject and body learn whether a human clicked; a Drafter or
+        Trialist first draft only counts its sends and clicks. Every click counts as human until
+        scanner clicks are simulated (#10)."""
+        for slot, variant in (("subject", copy.subject), ("body", copy.body)):
             variant.posterior.learn(clicked)
-            self._review(slot)
+            if segment is Segment.IDLE:
+                self._review(slot)
 
     def learn_from_assignment(self, segment: Segment, timing: Timing, reached: bool) -> None:
         self.timings[segment][timing].learn(reached)
@@ -163,7 +202,11 @@ class AiLoop:
         for segment, posteriors in self.timings.items():
             best = max(posteriors, key=lambda t: posteriors[t].mean)
             timings[segment] = [TimingRecord(t.label, p.tries, p.rewards, t is best) for t, p in posteriors.items()]
-        return LoopReport(records("subject"), records("body"), timings)
+        segment_copy = {
+            segment: SegmentCopyRecord(subject.text, body.text, body.cta, body.posterior.tries, body.posterior.rewards)
+            for segment, (subject, body) in self.own_first_drafts.items()
+        }
+        return LoopReport(records("subject"), records("body"), segment_copy, self.rules.carry_over, timings)
 
     def _add(self, slot: str, variant: Variant, prior: _Posterior) -> None:
         reference = self.read_rate if slot == "subject" else self.click_rate
@@ -180,12 +223,14 @@ class AiLoop:
 
     def _draw_variant(self, slot: str) -> LoopVariant:
         active = self._active(slot)
+        rng = self.rngs[Segment.IDLE]
         if any(v.posterior.tries < self.rules.min_sends for v in active):
-            return self.rng.choice(active)  # an even share, until every variant can be judged
-        return active[self._draw_best({i: v.posterior for i, v in enumerate(active)})]
+            return rng.choice(active)  # an even share, until every variant can be judged
+        return active[self._draw_best(Segment.IDLE, {i: v.posterior for i, v in enumerate(active)})]
 
-    def _draw_best(self, posteriors: "dict[K, _Posterior]") -> K:
-        draws = {key: self.rng.betavariate(p.a, p.b) for key, p in posteriors.items()}
+    def _draw_best(self, segment: Segment, posteriors: "dict[K, _Posterior]") -> K:
+        rng = self.rngs[segment]
+        draws = {key: rng.betavariate(p.a, p.b) for key, p in posteriors.items()}
         return max(draws, key=lambda key: draws[key])
 
     def _review(self, slot: str) -> None:

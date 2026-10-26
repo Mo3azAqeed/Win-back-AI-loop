@@ -166,6 +166,17 @@ Two tickets came out of reviews, and two from founder decisions, not the spec. T
 - **#19 (same-merchant lift):** the whole-codebase review found that later segments compared different groups of merchants, which could show the email "hurting" when it helped. It became a ticket instead of a silent fix, because it changes what the headline number means.
 - **#22 (own words per segment)** and **#23 (action report):** both came from a questionnaire of open decisions after #19. #22 stops the simulation assuming an Idle winner works just as well for Drafters and Trialists; I recommended carry-over 0 so any win there is earned, and the founder agreed. #23 adds measured lift against the holdout and a keep/retire/wait line per segment: a scope change, so it waited for the founder's yes.
 
+### Demo plan
+
+Two demos, each one a point where someone outside the build can see a result and make a decision.
+
+| Demo | What it shows | Tickets | Needs from the founder |
+|---|---|---|---|
+| 1. The simulation's verdict | 200 replays at 1,000 and 1,500 merchants: does the AI loop beat a good hand-written email, by how much, by which week, and what to do next per segment. Stand-in writer. | #22, #8, #11, #23 (+ #12 if time) | Decisions as they come up; merge each PR |
+| 2. The real AI writer | The same report with an LLM writing the emails and a different LLM judging them, under a spending cap. | #9, #13, #14 | An OpenRouter key in Parameter Store |
+
+Demo 1 answers the business question. Demo 2 shows the AI working end to end. Real email to real merchants is milestone 2.
+
 ---
 
 ## 5. Running the build
@@ -289,6 +300,12 @@ Short versions, each with the situation, what I did and the result.
 - **Result:** the same case now reads +1.2 points. A test guarantees no lift can be negative when no email can cost a goal action.
 - **A second lesson from the same review:** I first read a difference in the new "pushed" line as a finding (13.5% against 3.4% paying). The spec review checked ten seeds: 19.8% against 17.1%, about 30 merchants each, which is chance. One seed and small groups are not evidence; the report now prints a margin of chance for small groups for exactly this reason.
 
+**8. "A green test that was green by luck."**
+- **Situation:** while building #22, one test failed: "the AI loop never favours a truly worse early timing". My change had only reshuffled the random luck.
+- **What I did:** instead of nudging the test until it passed, I ran 24 seeds on the old code and the new. On the old code, the worse timing came out ahead in 4 of 24 seeds; the test's 6 seeds just happened to miss them. The real finding: at our placeholder Drafter rates, 13 weeks can't tell timings apart at all. The test exists to catch a *biased judge*, so I gave it a world where the email matters enough to learn, then planted the biased judge to prove the test catches it: right judge, 0 of 24 seeds wrong; biased judge, 5 of 24 and a much bigger share.
+- **Result:** a test that fails for the right reason, and a product finding for the report: Drafter timing is not learnable at this volume, so offers (#8) are the AI loop's only real lever there.
+- **Lesson:** a test passing on a handful of seeds is a sample, not a proof. When a stochastic test flips, measure it over many seeds before deciding who is wrong.
+
 ---
 
 ## 8. Vocabulary I use
@@ -313,6 +330,8 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Built #22: Drafters and Trialists send their own first drafts; carry-over of Idle's edge defaults to 0 (ADR 0005). Honest result: without offers, the AI loop trails the hand-written email by about 0.2 points in Drafter and Trialist. Found the timing test had passed on lucky seeds and rebuilt it, proven against a planted biased judge. |
+| 2026-10-26 | PR [#24](https://github.com/Mo3azAqeed/Win-back-AI-loop/pull/24) merged and deployed: #19 is live on AWS. Ticked the acceptance criteria on every closed ticket; two #17 checks wait on a console test and the first Monday run. Set two demo points: the simulation verdict (#22, #8, #11, #23) and the real AI writer (#9, #13, #14). |
 | 2026-10-26 | Four decisions answered: carry-over of Idle's edge defaults to 0, so Drafter and Trialist wins must be earned (opened [#22](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/22)); opened the action report as its own ticket [#23](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/23); ship #19 once CI is green; delete the shared doc, so the notes file is the single source. |
 | 2026-10-25 | Second planted-bug audit after #19: 75 of 77 caught, including every new #19 bug; the 2 left can't change any result. |
 | 2026-10-25 | Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
