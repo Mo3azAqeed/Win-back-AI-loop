@@ -454,12 +454,12 @@ class AiLoop:
             return  # no merchants are left to test on
         c = self.champion
         champion = Email(c.subject.text, c.body.text, c.body.cta)
-        lessons = [e.conclusion for e in self.playbook]
+        conclusions = [e.conclusion for e in self.playbook]
         # The preferred part first, then the other: a writer with nothing more for one part, or whose every draft
         # failed a check, still gets to change the other.
         for slot in (self.next_change, "body" if self.next_change == "subject" else "subject"):
             nth, self.asked[slot] = self.asked[slot], self.asked[slot] + 1
-            variant = self.copywriter.challenger(slot, champion, lessons, nth)
+            variant = self.copywriter.challenger(slot, champion, conclusions, nth)
             if variant is not None:
                 break
         else:

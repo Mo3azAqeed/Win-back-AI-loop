@@ -24,7 +24,7 @@ class FakeWriter:
         self.model, self.script, self.calls = model, list(script or []), 0
         self.feedback: list[list[str]] = []
 
-    def write(self, slot: str, champion: Email, lessons: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
+    def write(self, slot: str, champion: Email, conclusions: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
         self.calls += 1
         self.feedback.append(feedback)
         if self.script:
@@ -63,6 +63,9 @@ def test_a_draft_is_rejected_for_an_invented_number_a_banned_phrase_a_fake_reply
     assert any("$7/month" in p for p in check("body", "Only $7/month to start."))  # a 7 on the sheet is a trial length, not a price
     assert any("20%" in p for p in check("subject", "20% off your first store"))
     assert any("nine" in p for p in check("body", "Hi {first_name}, nine out of ten merchants publish."))
+    assert any("$4" in p for p in check("body", "Only $4 today"))  # part of "$40/month" is not a figure on the sheet
+    assert any('"40' in p for p in check("body", "0 setup fees, 40 templates"))
+    assert check("body", "Hi {first_name}, your 7-day trial starts when you publish.") == []  # 7 days, written another way
     assert any("banned phrase" in p for p in check("subject", "Copy any store in minutes"))
     assert any("reply or a forward" in p for p in check("subject", "Re: your store"))
     assert any("longer than" in p for p in check("subject", "x" * (settings.writer.subject_max_characters + 1)))

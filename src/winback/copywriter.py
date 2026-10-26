@@ -2,7 +2,7 @@
 writer and judge on OpenRouter (#13).
 
 The loop asks a copywriter for the next challenger part: given the champion it will be tested against, the
-lessons so far (the playbook's conclusions) and which part to change, the copywriter returns a variant with
+playbook's conclusions so far and which part to change, the copywriter returns a variant with
 a hypothesis and a hidden quality, or nothing when it has no more.
 
 The real copywriter writes with an LLM, checks every draft against the fact sheet and the sending rules (a
@@ -49,7 +49,7 @@ Post = Callable[[str, dict[str, Any], str], dict[str, Any]]
 class Copywriter(Protocol):
     name: str
 
-    def challenger(self, slot: str, champion: Email, lessons: list[str], nth: int) -> Variant | None:
+    def challenger(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         """The nth new part for this slot ("subject" or "body") in this replay, written against this champion."""
         ...
 
@@ -65,7 +65,7 @@ class StandIn:
     settings: Settings
     name: str = STAND_IN
 
-    def challenger(self, slot: str, champion: Email, lessons: list[str], nth: int) -> Variant | None:
+    def challenger(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         waiting = self.settings.prewritten_subjects if slot == "subject" else self.settings.prewritten_bodies
         return waiting[nth] if nth < len(waiting) else None
 
@@ -76,7 +76,12 @@ class StandIn:
 # Numbers written as words: a draft can't state one, since the fact sheet gives every number in figures.
 NUMBER_WORDS = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand|million|half|double|twice|dozen)\b", re.I)
 # A figure with what makes it a claim: a price, a percentage, a duration or a count of something.
-FIGURE = re.compile(r"\$?\d+(?:[.,]\d+)?(?:\s*(?:%|/\s*month|percent|days?|hours?|minutes?|weeks?|months?)\b|%)?", re.I)
+FIGURE = re.compile(r"\$?\d+(?:[.,]\d+)?(?:[\s-]*(?:%|/\s*month|percent|days?|hours?|minutes?|weeks?|months?)\b|%)?", re.I)
+
+
+def _figure(text: str) -> str:
+    """A figure in one written form: "7-day", "7 days" and "7 Days" are the same figure."""
+    return re.sub(r"[\s-]+", "", text.lower()).removesuffix("s")
 
 
 def problems(slot: str, text: str, cta: str, facts: FactSheet, writer: WriterSettings, placeholders: set[str]) -> list[str]:
@@ -85,8 +90,9 @@ def problems(slot: str, text: str, cta: str, facts: FactSheet, writer: WriterSet
     long, a placeholder the app can't fill, or a body without a button."""
     words, found = re.sub(r"\{[a-z_]+\}", "", f"{text} {cta}"), []
     sheet = " ".join(facts.facts).lower()
+    on_sheet = {_figure(f) for f in FIGURE.findall(sheet)}  # whole figures only: "$4" is not "$40/month"
     for figure in FIGURE.findall(words):
-        if figure.strip().lower() not in sheet:
+        if _figure(figure) not in on_sheet:
             found.append(f'"{figure.strip()}" is not on the fact sheet')
     for word in NUMBER_WORDS.findall(words):
         if not re.search(rf"\b{word.lower()}\b", sheet):  # "one plan" is on the sheet; "nine out of ten" is not
@@ -111,7 +117,7 @@ class Writer(Protocol):
     @property
     def model(self) -> str: ...
 
-    def write(self, slot: str, champion: Email, lessons: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
+    def write(self, slot: str, champion: Email, conclusions: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
         """A new subject (cta empty) or body with its button, and its hypothesis."""
         ...
 
@@ -150,19 +156,19 @@ class AiCopywriter:
         self.placeholders = {p for e in settings.first_drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body} {e.cta}")}
         self.reference = {"subject": self._rating("subject", draft.subject, ""), "body": self._rating("body", draft.body, draft.cta)}
 
-    def challenger(self, slot: str, champion: Email, lessons: list[str], nth: int) -> Variant | None:
+    def challenger(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         key = (slot, nth)
         if nth >= self.settings.writer.challengers_per_part:
             return None
         if key not in self.cache:
-            self.cache[key] = self._write(slot, champion, lessons, nth)
+            self.cache[key] = self._write(slot, champion, conclusions, nth)
         return self.cache[key]
 
-    def _write(self, slot: str, champion: Email, lessons: list[str], nth: int) -> Variant | None:
+    def _write(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         tried = [v.text for (s, _), v in self.cache.items() if v is not None and s == slot]
         feedback: list[str] = []
         for _ in range(self.settings.writer.max_attempts):
-            text, cta, hypothesis = self.writer.write(slot, champion, lessons, tried, feedback)
+            text, cta, hypothesis = self.writer.write(slot, champion, conclusions, tried, feedback)
             self.spend.calls += 1
             found = problems(slot, text, cta if slot == "body" else "", self.settings.fact_sheet, self.settings.writer, self.placeholders)
             if not found:
@@ -200,6 +206,10 @@ def _post(url: str, payload: dict[str, Any], api_key: str) -> dict[str, Any]:
             return body
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"OpenRouter refused the call ({error.code}): {error.read().decode(errors='replace')[:300]}") from None
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(f"Couldn't reach OpenRouter at {url}: {error}") from None
+    except json.JSONDecodeError:
+        raise RuntimeError(f"OpenRouter's answer from {url} wasn't JSON (the Decisions API is in alpha and may have changed)") from None
 
 
 @dataclass(frozen=True)
@@ -212,7 +222,7 @@ class OpenRouterWriter:
     spend: Spend = field(default_factory=Spend)
     post: Post = _post
 
-    def write(self, slot: str, champion: Email, lessons: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
+    def write(self, slot: str, champion: Email, conclusions: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
         facts, drafts = self.settings.fact_sheet, self.settings.first_drafts
         placeholders = sorted({p for e in drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body}")})
         rules = (
@@ -226,7 +236,7 @@ class OpenRouterWriter:
         ask = (
             f"Reader: {IDLE_MERCHANT}\nCurrent best email (the champion):\nSubject: {champion.subject}\nBody: {champion.body}\nButton: {champion.cta}\n\n"
             f"Write a new {slot} that changes one thing about the champion's {slot}, and say what it changes and why (the hypothesis)."
-            + ("\nWhat earlier tests found:\n- " + "\n- ".join(lessons) if lessons else "")
+            + ("\nWhat earlier tests found:\n- " + "\n- ".join(conclusions) if conclusions else "")
             + ("\nAlready tried, so write something different:\n- " + "\n- ".join(tried) if tried else "")
             + ("\nYour last draft was rejected because: " + "; ".join(feedback) if feedback else "")
         )
