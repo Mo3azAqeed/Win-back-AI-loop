@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypeVar
 
-from winback.segments import Segment
 from winback.copywriter import Copywriter, StandIn
+from winback.segments import Segment
 from winback.settings import Email, SegmentSettings, Settings, Variant
 from winback.trialist import Offer
 from winback.world import DAYS_PER_WEEK, last_entry_day

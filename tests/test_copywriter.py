@@ -57,8 +57,12 @@ def test_a_draft_is_rejected_for_an_invented_number_a_banned_phrase_a_fake_reply
         return problems(slot, text, cta, settings.fact_sheet, settings.writer, {"{first_name}", "{store_name}"})
 
     assert check("subject", "Clone a store, then make it yours") == []
-    assert check("body", "Hi {first_name}, your first month is $20 instead of $40.") == []  # both prices are on the fact sheet
-    assert any("$25" in p or "25" in p for p in check("body", "Hi {first_name}, your first month is $25."))
+    assert check("body", "Hi {first_name}, one plan at $40/month, and a 7 days trial.") == []  # as written on the fact sheet
+    assert any("$25" in p for p in check("body", "Hi {first_name}, your first month is $25."))
+    assert any("$20" in p for p in check("body", "Hi {first_name}, your first month is $20 instead of $40."))  # the discount is for Trialists only
+    assert any("$7/month" in p for p in check("body", "Only $7/month to start."))  # a 7 on the sheet is a trial length, not a price
+    assert any("20%" in p for p in check("subject", "20% off your first store"))
+    assert any("nine" in p for p in check("body", "Hi {first_name}, nine out of ten merchants publish."))
     assert any("banned phrase" in p for p in check("subject", "Copy any store in minutes"))
     assert any("reply or a forward" in p for p in check("subject", "Re: your store"))
     assert any("longer than" in p for p in check("subject", "x" * (settings.writer.subject_max_characters + 1)))
@@ -85,14 +89,14 @@ def test_the_run_refuses_a_writer_and_judge_that_are_the_same_model() -> None:
         AiCopywriter(settings_1000(), FakeWriter(model="same/model"), FakeJudge(model="same/model"))
 
 
-def test_each_variant_is_judged_once_and_written_once_for_every_replay() -> None:
-    judge, writer = FakeJudge(), FakeWriter()
-    run_simulation(settings_1000(), seed=1, replays=3, copywriter=AiCopywriter(settings_1000(), writer, judge))
+def test_each_variant_is_judged_once_and_a_run_writes_a_bounded_number_whatever_its_replays() -> None:
+    # Ratings vary, so champions differ between replays; the writer is still asked at most once per new part.
+    judge, writer = FakeJudge({GOOD_SUBJECTS[0]: 9.0, GOOD_SUBJECTS[1]: 2.0}), FakeWriter()
+    settings = settings_1000()
+    run_simulation(settings, seed=1, replays=10, copywriter=AiCopywriter(settings, writer, judge))
 
     assert len(judge.asked) == len(set(judge.asked))  # no part judged twice
-    single = FakeWriter()
-    run_simulation(settings_1000(), seed=1, replays=1, copywriter=AiCopywriter(settings_1000(), single, FakeJudge()))
-    assert writer.calls < 3 * single.calls  # later replays reuse what was written for the same champion
+    assert writer.calls <= 2 * settings.writer.challengers_per_part * settings.writer.max_attempts
 
 
 def test_the_judges_rating_against_your_first_draft_becomes_hidden_quality_plus_noise() -> None:
@@ -107,7 +111,9 @@ def test_the_judges_rating_against_your_first_draft_becomes_hidden_quality_plus_
     assert better.quality > 130  # four points above your first draft: about 1.5 times its quality
     assert 70 < same.quality < 130  # rated the same as your first draft: 100, moved only by noise
     again = AiCopywriter(settings, FakeWriter([("Skip the blank page", "")]), judge).challenger("subject", champion, [], 0)
-    assert again is not None and again.quality == better.quality  # the same words always get the same noise
+    assert again is not None and again.quality == better.quality  # within a run, the same words get the same noise
+    other_run = AiCopywriter(settings, FakeWriter([("Skip the blank page", "")]), judge, seed=2).challenger("subject", champion, [], 0)
+    assert other_run is not None and other_run.quality != better.quality  # another run draws other noise
 
 
 def test_with_the_ai_writer_versions_say_who_wrote_them_and_the_report_says_what_it_cost() -> None:
@@ -152,6 +158,8 @@ def test_the_openrouter_writer_and_jev_judge_send_the_right_requests_and_read_th
     assert written and written[0]["model"] == "deepseek/deepseek-v4.1-flash-1017" and written[0]["response_format"]["type"] == "json_schema"
     assert "v1 lost." in written[0]["messages"][1]["content"]  # the lessons reach the writer
     assert "$40/month" in written[0]["messages"][0]["content"]  # and so does the fact sheet
+    assert "Keep {store_name} live after your trial" in written[0]["messages"][0]["content"]  # and your first drafts
+    assert "$20 instead of $40" not in written[0]["messages"][0]["content"]  # but not the Trialist offers
     assert all(key == "sk-or-test-key" for _, _, key in log)
     assert copywriter.spend.cost > 0
 
@@ -165,10 +173,14 @@ def test_no_api_key_is_ever_written_to_the_report_or_the_run_data() -> None:
     assert result.by_start[1000].loop.versions[1].by == "AI writer (deepseek/deepseek-v4.1-flash-1017)"
 
 
-def test_a_judge_answer_that_is_not_a_score_fails_clearly() -> None:
-    judge = JevJudge("typesafe/jev-1.14", "key", Spend(), lambda url, payload, key: {"error": "model moved"})
+def test_a_judge_answer_that_is_not_a_score_on_the_scale_fails_clearly_and_the_key_never_shows() -> None:
+    judge = JevJudge("typesafe/jev-1.14", "sk-or-hidden", Spend(), lambda url, payload, key: {"error": "model moved"})
     with pytest.raises(RuntimeError, match="Decisions API"):
         judge.rate("subject", "Hello", "")
-    writer = OpenRouterWriter("deepseek/x", "key", settings_1000().fact_sheet, Spend(), lambda url, payload, key: {"choices": []})
+    off_scale = JevJudge("typesafe/jev-1.14", "key", Spend(), lambda url, payload, key: {"answers": {"appeal": {"score": 12}}})
+    with pytest.raises(RuntimeError, match="outside"):
+        off_scale.rate("subject", "Hello", "")
+    assert "sk-or-hidden" not in repr(judge)
+    writer = OpenRouterWriter("deepseek/x", "key", settings_1000(), Spend(), lambda url, payload, key: {"choices": []})
     with pytest.raises(RuntimeError, match="JSON"):
         writer.write("subject", Email("a", "b", "c"), [], [], [])

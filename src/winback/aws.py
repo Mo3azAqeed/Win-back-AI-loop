@@ -9,7 +9,7 @@ from pathlib import Path
 
 import boto3
 
-from winback.copywriter import Copywriter, openrouter, plumbing
+from winback.copywriter import STAND_IN, Copywriter, openrouter, plumbing
 from winback.export import run_data
 from winback.run import run_simulation
 from winback.segments import Segment
@@ -71,10 +71,10 @@ def run_and_save(
     if checked_writer(event.get("writer")) == "ai":
         if openrouter_key is None:
             raise ValueError("The AI writer needs the OpenRouter key")
-        copywriter = openrouter(settings, openrouter_key())
+        copywriter = openrouter(settings, openrouter_key(), seed=seed)
     result = run_simulation(settings, seed, replays, copywriter)
     data = run_data(settings, result, seed=seed, created=today)
-    data["writer"] = copywriter.name if copywriter is not None else "stand-in writer"
+    data["writer"] = copywriter.name if copywriter is not None else STAND_IN
     put(f"runs/{name}.md", result.report)
     put(f"runs/{name}.json", json.dumps(data))
     put(f"index/{name}.json", json.dumps(_index_entry(name, data)))

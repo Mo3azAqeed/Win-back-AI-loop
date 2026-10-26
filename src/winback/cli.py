@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.start is not None:
         settings = dataclasses.replace(settings, start_sizes=(args.start,))
-    result = run_simulation(settings, args.seed, args.replays, openrouter(settings, _key()) if args.writer == "ai" else None)
+    result = run_simulation(settings, args.seed, args.replays, openrouter(settings, _key(), seed=args.seed) if args.writer == "ai" else None)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(result.report)
     print(f"Report written to {args.out}")

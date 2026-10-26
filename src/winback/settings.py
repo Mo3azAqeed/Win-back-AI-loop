@@ -84,7 +84,8 @@ class OfferSettings:
 
 @dataclass(frozen=True)
 class FactSheet:
-    """What the writer may state (every fact on the sheet) and the phrases no email may contain."""
+    """What the writer may state in an Idle email (every fact on the sheet except the Trialist offers) and the
+    phrases no email may contain."""
 
     facts: tuple[str, ...]
     banned_phrases: tuple[str, ...]
@@ -186,7 +187,7 @@ def load_settings(path: Path) -> Settings:
         ),
         replays=int(value("replays.count")),
         fact_sheet=FactSheet(
-            facts=tuple(str(v) for name, section in fact_sheet.items() if name != "rules" for v in section.values()),
+            facts=tuple(str(v) for name, section in fact_sheet.items() if name not in ("rules", "offers") for v in section.values()),
             banned_phrases=tuple(fact_sheet["rules"]["banned_phrases"]),
         ),
         writer=WriterSettings(
