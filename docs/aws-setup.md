@@ -91,6 +91,25 @@ CloudFormation cannot create encrypted parameters, so add this one by hand:
 
 The Lambda can already read this parameter, and no other. Never put the key in GitHub.
 
+## 8. Turn on the web app
+
+The stack includes a web app: one page to start a run and see every run's summary, timeline, funnel and emails. Its link is in **CloudFormation → Stacks → winback → Outputs → WebAppUrl**. Anyone with the link can look (every number is simulated); starting a run needs an access code. Do this once:
+
+1. **Let the app read reports.** The permissions boundary from step 2 now also allows reading reports. In CloudShell, update that stack with the same commands as step 2:
+
+   ```bash
+   cd Win-back-AI-loop && git pull
+   aws cloudformation deploy \
+     --stack-name winback-github-deploy \
+     --template-file infra/github-deploy-role.yaml \
+     --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides CreateOidcProvider=false
+   ```
+
+2. **Create the access code.** Open **Systems Manager → Parameter Store → Create parameter**. Name: `/winback/web-access-code`. Tier: Standard. Type: **SecureString**. Value: a code you choose. Share it only with people who should start runs.
+
+Until step 1 is done the page opens but says AWS refused access; until step 2, it shows results but can't start runs. A quick run (20 replays) takes about a minute, a full run (200) a few minutes; only one run goes at a time.
+
 ## Turning it off
 
 Pause the weekly runs by disabling the schedule in **EventBridge → Schedules**. The next deploy turns it back on. To remove everything, run `aws cloudformation delete-stack --stack-name winback` in CloudShell. The reports bucket is kept on purpose, so you don't lose old reports; delete it by hand if you want it gone.

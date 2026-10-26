@@ -1,6 +1,5 @@
 """The report a non-technical reader can follow."""
 
-import statistics
 from typing import TYPE_CHECKING, NamedTuple
 
 from winback.lifecycle import Approach, OfferSummary, SegmentOutcome
@@ -158,7 +157,7 @@ def _segment_section(
     return lines
 
 
-def _offer_labels(settings: Settings) -> dict[Offer, str]:
+def offer_labels(settings: Settings) -> dict[Offer, str]:
     offers = settings.offers
     return {
         Offer.NONE: "No offer",
@@ -169,7 +168,7 @@ def _offer_labels(settings: Settings) -> dict[Offer, str]:
 
 def _offers_section(settings: Settings, offers: OfferSummary) -> list[str]:
     """The offers the AI loop's Trialist emails carried, and what the discount cost."""
-    labels, price = _offer_labels(settings), settings.monthly_price
+    labels, price = offer_labels(settings), settings.monthly_price
     return [
         "Each AI loop Trialist email carries one offer, added as a line to your Trialist first draft. "
         "The hand-written email never carries one.",
@@ -232,7 +231,7 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
     for segment, timings in loop.timings.items():
         for t in timings:
             lines.append(f"| {SEGMENT_TEXT[segment].label} | {t.label} | {t.assigned:,} | {_share(t.reached, t.assigned)} | {'ahead so far' if t.leading else ''} |")
-    labels = _offer_labels(settings)
+    labels = offer_labels(settings)
     lines += [
         "",
         "Trialist offers learn the same way, from the first-month revenue of every Trialist assigned them, "
@@ -265,53 +264,9 @@ SHORT_LABEL = {Approach.NO_EMAIL: "No email", Approach.HAND_WRITTEN: "Hand-writt
 CHART_COLOURS = {Approach.NO_EMAIL: ("#9ca3af", "Grey"), Approach.HAND_WRITTEN: ("#f59e0b", "Orange"), Approach.AI_LOOP: ("#2563eb", "Blue")}
 
 
-def _average(values: list[float]) -> float:
-    return statistics.fmean(values)
-
-
-def _middle_90(values: list[float]) -> tuple[float, float]:
-    """Where the middle 90% of replays fall: from the 5th to the 95th percentile."""
-    if len(values) < 2:
-        return values[0], values[0]
-    cuts = statistics.quantiles(values, n=20, method="inclusive")
-    return cuts[0], cuts[-1]
-
-
-def _lifts(replays: Replays, segment: Segment, approach: Approach) -> list[float]:
-    return [s.lifts[segment][approach] * 100 for s in replays.stats]
-
-
-def _wins(replays: Replays, segment: Segment) -> int:
-    return sum(a > h for a, h in zip(_lifts(replays, segment, Approach.AI_LOOP), _lifts(replays, segment, Approach.HAND_WRITTEN)))
-
-
-def _ties(replays: Replays, segment: Segment) -> int:
-    """Replays where both approaches lifted exactly as much: with the same merchants and luck, an AI loop
-    that sends the same email at the same time gets the same result."""
-    return sum(a == h for a, h in zip(_lifts(replays, segment, Approach.AI_LOOP), _lifts(replays, segment, Approach.HAND_WRITTEN)))
-
-
-def _weekly(replays: Replays, segment: Segment, approach: Approach) -> list[float]:
-    """The average across replays of the cumulative true lift by the end of each week, in points."""
-    weeks = len(replays.stats[0].weekly[segment][approach])
-    return [_average([s.weekly[segment][approach][w] * 100 for s in replays.stats]) for w in range(weeks)]
-
-
-def _ahead_from(replays: Replays, segment: Segment) -> int | None:
-    """The week from which the AI loop's average cumulative lift stays above the hand-written email's, if any."""
-    ai, hand = _weekly(replays, segment, Approach.AI_LOOP), _weekly(replays, segment, Approach.HAND_WRITTEN)
-    week = None
-    for w in range(len(ai), 0, -1):
-        if ai[w - 1] <= hand[w - 1]:
-            break
-        week = w
-    return week
-
-
-def _did_better(replays: Replays, segment: Segment) -> bool:
-    """Higher average true lift, and ahead in more than half of the replays."""
-    ai, hand = _lifts(replays, segment, Approach.AI_LOOP), _lifts(replays, segment, Approach.HAND_WRITTEN)
-    return _average(ai) > _average(hand) and _wins(replays, segment) * 2 > len(ai)
+def summary_sentences(settings: Settings, replays: dict[int, Replays]) -> list[str]:
+    """The plain-English summary as sentences, without its heading or list marks."""
+    return [line.removeprefix("- ") for line in _summary(settings, replays)[1:] if line]
 
 
 def _summary(settings: Settings, replays: dict[int, Replays]) -> list[str]:
@@ -325,21 +280,21 @@ def _summary(settings: Settings, replays: dict[int, Replays]) -> list[str]:
         "",
     ]
     for start, r in replays.items():
-        better = [s for s in Segment if _did_better(r, s)]
+        better = [s for s in Segment if r.did_better(s)]
         lines += [f"**From {start:,} merchants**, the AI loop did better than the hand-written email in {len(better)} of {len(Segment)} segments.", ""]
         for segment in Segment:
-            ai, hand = _average(_lifts(r, segment, Approach.AI_LOOP)), _average(_lifts(r, segment, Approach.HAND_WRITTEN))
+            ai, hand = r.average(segment, Approach.AI_LOOP), r.average(segment, Approach.HAND_WRITTEN)
             verdict = "did better" if segment in better else "did no better"
-            week = _ahead_from(r, segment)
+            week = r.ahead_from(segment)
             sentence = (
                 f"- In {SEGMENT_TEXT[segment].label} the AI loop {verdict}: {ai:+.1f} points against {hand:+.1f} for the hand-written email, "
-                f"ahead in {_wins(r, segment):,} of {count:,} replays"
-                + (f" and tied in {_ties(r, segment):,}" if _ties(r, segment) else "")
+                f"ahead in {r.wins(segment):,} of {count:,} replays"
+                + (f" and tied in {r.ties(segment):,}" if r.ties(segment) else "")
                 + (f", ahead from week {week} on average" if week is not None else "")
                 + "."
             )
             if segment is Segment.TRIALIST:
-                money = {a: _average([s.revenue[a] for s in r.stats]) for a in (Approach.AI_LOOP, Approach.HAND_WRITTEN)}
+                money = {a: r.revenue(a) for a in (Approach.AI_LOOP, Approach.HAND_WRITTEN)}
                 sentence += (
                     f" Trialists brought ${money[Approach.AI_LOOP]:,.0f} of first-month revenue per replay with the AI loop "
                     f"against ${money[Approach.HAND_WRITTEN]:,.0f} with the hand-written email."
@@ -350,7 +305,7 @@ def _summary(settings: Settings, replays: dict[int, Replays]) -> list[str]:
         (small, fewer), (large, more) = sorted(replays.items())[0], sorted(replays.items())[-1]
 
         def edge(r: Replays, segment: Segment) -> float:
-            return _average(_lifts(r, segment, Approach.AI_LOOP)) - _average(_lifts(r, segment, Approach.HAND_WRITTEN))
+            return r.average(segment, Approach.AI_LOOP) - r.average(segment, Approach.HAND_WRITTEN)
 
         moves = ", ".join(f"{SEGMENT_TEXT[s].label} {edge(fewer, s):+.1f} to {edge(more, s):+.1f}" for s in Segment)
         lines += [f"Starting from {large:,} merchants instead of {small:,}, the AI loop's edge over the hand-written email, in points, moved: {moves}.", ""]
@@ -380,17 +335,16 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
         ]
         for segment in Segment:
             for approach in (Approach.HAND_WRITTEN, Approach.AI_LOOP):
-                values = _lifts(r, segment, approach)
-                low, high = _middle_90(values)
-                won = f"{_wins(r, segment):,} ahead, {_ties(r, segment):,} tied, of {count:,}" if approach is Approach.AI_LOOP else "–"
-                lines.append(f"| {SEGMENT_TEXT[segment].label} | {SHORT_LABEL[approach]} | {_average(values):+.1f} | {low:+.1f} to {high:+.1f} | {won} |")
+                low, high = r.middle_90(segment, approach)
+                won = f"{r.wins(segment):,} ahead, {r.ties(segment):,} tied, of {count:,}" if approach is Approach.AI_LOOP else "–"
+                lines.append(f"| {SEGMENT_TEXT[segment].label} | {SHORT_LABEL[approach]} | {r.average(segment, approach):+.1f} | {low:+.1f} to {high:+.1f} | {won} |")
         lines += [
             "",
             f"Trialist first-month revenue, average per replay (${settings.monthly_price:,.0f} a payment, ${settings.monthly_price * settings.offers.discount_price_share:,.0f} with the discount):",
             "",
             "| Approach | Average first-month revenue |",
             "|---|---|",
-            *(f"| {SHORT_LABEL[a]} | ${_average([s.revenue[a] for s in r.stats]):,.0f} |" for a in Approach),
+            *(f"| {SHORT_LABEL[a]} | ${r.revenue(a):,.0f} |" for a in Approach),
             "",
         ]
         for segment in Segment:
@@ -405,7 +359,7 @@ def _replays_section(settings: Settings, replays: dict[int, Replays]) -> list[st
                 f'    title "{SEGMENT_TEXT[segment].label}: cumulative true lift (pts)"',
                 f'    x-axis "Week" [{", ".join(str(w) for w in range(1, weeks + 1))}]',
                 '    y-axis "True lift (pts)"',
-                *(f"    line [{', '.join(f'{v:.2f}' for v in _weekly(r, segment, a))}]" for a in CHART_COLOURS),
+                *(f"    line [{', '.join(f'{v:.2f}' for v in r.weekly(segment, a))}]" for a in CHART_COLOURS),
                 "```",
                 "",
                 ". ".join(f"{name}: {SHORT_LABEL[a]}" for a, (_, name) in CHART_COLOURS.items())

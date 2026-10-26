@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Win-back AI loop</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2933; --muted: #5f6b7a; --line: #e3e7ed;
+    --none: #9ca3af; --hand: #f59e0b; --ai: #2563eb; --good: #15803d; --bad: #b91c1c; --soft: #eef3ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1419; --card: #182029; --ink: #e6e9ee; --muted: #9aa5b4; --line: #2a3542;
+      --soft: #1c2a44;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 4px 0 0; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 8px 16px 40px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  .stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 700px) { .stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stage .title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .stage .bar { height: 18px; }
+  .stage .count { font-size: 12px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .card h2 { font-size: 17px; margin: 0 0 8px; }
+  .card h3 { font-size: 15px; margin: 16px 0 8px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); padding: 8px 12px; background: var(--card); color: var(--ink); }
+  button.primary { background: var(--ai); border-color: var(--ai); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .buttons { display: grid; gap: 8px; margin-top: 10px; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 1.5em; }
+  .runs { list-style: none; margin: 0; padding: 0; }
+  .runs li { border-top: 1px solid var(--line); }
+  .runs li:first-child { border-top: 0; }
+  .runs a { display: block; padding: 10px 4px; color: inherit; text-decoration: none; }
+  .runs a:hover, .runs a.active { background: var(--soft); border-radius: 8px; }
+  .runs .when { font-weight: 600; }
+  .runs .meta { font-size: 12px; color: var(--muted); }
+  .pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .pill.win { color: var(--good); border-color: var(--good); }
+  .pill.lose { color: var(--muted); }
+  .pill.running { color: var(--ai); border-color: var(--ai); }
+  .summary p { margin: 6px 0; }
+  .tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+  .tabs button.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+  .kpi { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+  .kpi .v { font-size: 20px; font-weight: 650; }
+  .kpi .l { font-size: 12px; color: var(--muted); }
+  .two { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; }
+  @media (max-width: 700px) { .two, .kpis { grid-template-columns: 1fr; } }
+  .chart { position: relative; height: 240px; }
+  .funnel .row { margin: 10px 0; }
+  .funnel .name { font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
+  .bar { height: 14px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 3px; }
+  .bar > span { display: block; height: 100%; }
+  .legend { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; border-top: 0; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  .email { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
+  .email .subj { font-weight: 650; }
+  .email .cta { display: inline-block; margin-top: 8px; background: var(--ai); color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+  .emails { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 900px) { .emails { grid-template-columns: 1fr; } }
+  .status-retired { color: var(--muted); }
+  .status-leading { color: var(--good); font-weight: 600; }
+  .note { font-size: 13px; color: var(--muted); }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  a { color: var(--ai); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Win-back AI loop</h1>
+  <p class="sub">Each run plays out 13 weeks of merchants many times over, comparing no email, the hand-written email and the AI loop on the same merchants. Every number is simulated from placeholder assumptions.</p>
+</header>
+<div class="wrap">
+  <aside>
+    <div class="card">
+      <h2>Start a run</h2>
+      <label for="code">Access code</label>
+      <input id="code" type="password" autocomplete="off" placeholder="Needed to start a run">
+      <div class="buttons">
+        <button id="run-quick" class="primary">Quick run · 20 replays (about a minute)</button>
+        <button id="run-full">Full run · 200 replays (a few minutes)</button>
+      </div>
+      <div class="status" id="run-status"></div>
+    </div>
+    <div class="card">
+      <h2>Runs</h2>
+      <ul class="runs" id="runs"><li class="empty">Loading…</li></ul>
+    </div>
+  </aside>
+  <main id="detail"><div class="card empty">Pick a run, or start one.</div></main>
+</div>
+<script>
+const COLOURS = { no_email: "#9ca3af", hand_written: "#f59e0b", ai_loop: "#2563eb" };
+const LABELS = { no_email: "No email", hand_written: "Hand-written email", ai_loop: "AI loop" };
+let charts = [];
+let current = null;
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v; else if (k === "style") node.style.cssText = v; else node.setAttribute(k, v);
+  }
+  for (const c of children.flat()) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return node;
+}
+const pts = v => (v >= 0 ? "+" : "") + v.toFixed(1);
+const money = v => "$" + Math.round(v).toLocaleString("en-US");
+const pct = (a, b) => b ? (100 * a / b).toFixed(1) + "%" : "–";
+const day = iso => new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+function remembered() { try { return localStorage.getItem("winback-code") || ""; } catch { return ""; } }
+function remember(code) { try { localStorage.setItem("winback-code", code); } catch {} }
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const text = await response.text();
+  let body; try { body = JSON.parse(text); } catch { body = text; }
+  if (!response.ok) throw new Error((body && body.error) || ("Error " + response.status));
+  return body;
+}
+
+async function loadRuns() {
+  const list = document.getElementById("runs");
+  let data;
+  try { data = await api("/api/runs"); } catch (e) { list.replaceChildren(el("li", { class: "empty" }, e.message)); return; }
+  const items = [];
+  for (const r of data.running) {
+    items.push(el("li", {}, el("div", { style: "padding:10px 4px" },
+      el("div", { class: "when" }, "Running now"),
+      el("div", { class: "meta" }, `${r.replays} replays · asked ${new Date(r.requested).toLocaleTimeString()}`),
+      el("div", { class: "pills" }, el("span", { class: "pill running" }, "results on the way")))));
+  }
+  for (const r of data.runs) {
+    const pills = (r.headline && r.headline[0] ? r.headline[0].segments : []).map(s =>
+      el("span", { class: "pill " + (s.ai_did_better ? "win" : "lose") }, `${s.label} ${s.ai_did_better ? "AI ahead" : "no gain"}`));
+    const link = el("a", { href: "#" + r.run, class: r.run === current ? "active" : "" },
+      el("div", { class: "when" }, day(r.created)),
+      el("div", { class: "meta" }, `seed ${r.seed} · ${r.replays} replays`),
+      el("div", { class: "pills" }, pills));
+    items.push(el("li", {}, link));
+  }
+  list.replaceChildren(...(items.length ? items : [el("li", { class: "empty" }, "No runs yet. Start one.")]));
+  document.getElementById("run-quick").disabled = document.getElementById("run-full").disabled = data.running.length > 0;
+  if (data.running.length) setTimeout(loadRuns, 10000);
+  return data;
+}
+
+async function startRun(replays) {
+  const code = document.getElementById("code").value.trim();
+  const status = document.getElementById("run-status");
+  remember(code);
+  status.textContent = "Starting…";
+  try {
+    const started = await api("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, replays }) });
+    status.textContent = `Started. Results appear in the list when ready (${started.run}).`;
+    loadRuns();
+  } catch (e) { status.textContent = e.message; }
+}
+
+function timeline(segment) {
+  const canvas = el("canvas");
+  const box = el("div", { class: "chart" }, canvas);
+  const weeks = segment.weekly.ai_loop.map((_, i) => "Week " + (i + 1));
+  // Weeks before any result is known have nothing to show, not a lift of zero.
+  const known = segment.weekly.ai_loop.findIndex((v, i) => v !== 0 || segment.weekly.hand_written[i] !== 0);
+  const series = a => segment.weekly[a].map((v, i) => (known === -1 || i < known ? null : v));
+  requestAnimationFrame(() => {
+    if (!window.Chart) { box.replaceChildren(el("p", { class: "note" }, "Charts need an internet connection.")); return; }
+    charts.push(new Chart(canvas, {
+      type: "line",
+      data: { labels: weeks, datasets: Object.keys(LABELS).map(a => ({ label: LABELS[a], data: series(a), borderColor: COLOURS[a], backgroundColor: COLOURS[a], pointRadius: 0, borderWidth: a === "no_email" ? 1.5 : 2.5, tension: 0.25 })) },
+      options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${pts(c.parsed.y)} pts` } } },
+        scales: { y: { title: { display: true, text: "True lift so far (pts)" } }, x: { ticks: { maxTicksLimit: 8 } } } }
+    }));
+  });
+  return box;
+}
+
+function funnel(segment) {
+  const most = Math.max(...Object.values(segment.funnel).map(f => f.merchants));
+  return el("div", { class: "funnel" }, Object.keys(LABELS).map(a => {
+    const f = segment.funnel[a];
+    return el("div", { class: "row" },
+      el("div", { class: "name" }, el("span", {}, LABELS[a]), el("span", {}, `${f.reached.toLocaleString()} of ${f.merchants.toLocaleString()} ${segment.done} · ${pct(f.reached, f.merchants)}`)),
+      el("div", { class: "bar" }, el("span", { style: `width:${100 * f.merchants / most}%;background:${COLOURS[a]};opacity:.25` })),
+      el("div", { class: "bar" }, el("span", { style: `width:${100 * f.reached / most}%;background:${COLOURS[a]}` })));
+  }), el("p", { class: "note" }, "Light bar: merchants in this stage (holdout aside). Dark bar: those who took the next step within the horizon. First replay."));
+}
+
+function segmentCard(segment, replays) {
+  const by = Object.fromEntries(segment.approaches.map(a => [a.approach, a]));
+  return el("div", { class: "card" },
+    el("h2", {}, `${segment.label}: ${segment.goal}`),
+    el("div", { class: "kpis" },
+      el("div", { class: "kpi" }, el("div", { class: "v", style: "color:var(--ai)" }, pts(by.ai_loop.average)), el("div", { class: "l" }, `AI loop, true lift (pts) · middle 90% ${pts(by.ai_loop.low)} to ${pts(by.ai_loop.high)}`)),
+      el("div", { class: "kpi" }, el("div", { class: "v", style: "color:var(--hand)" }, pts(by.hand_written.average)), el("div", { class: "l" }, `Hand-written email · middle 90% ${pts(by.hand_written.low)} to ${pts(by.hand_written.high)}`)),
+      el("div", { class: "kpi" }, el("div", { class: "v" }, `${segment.ai_ahead} / ${replays}`), el("div", { class: "l" }, `replays where the AI loop was ahead${segment.ties ? ` (${segment.ties} tied)` : ""}${segment.ahead_from_week ? ` · ahead from week ${segment.ahead_from_week}` : ""}`))),
+    el("div", { class: "two" },
+      el("div", {}, el("h3", {}, "Timeline: true lift so far, week by week"), timeline(segment),
+        el("div", { class: "legend" }, Object.keys(LABELS).map(a => el("span", {}, el("span", { class: "dot", style: `background:${COLOURS[a]}` }), LABELS[a])))),
+      el("div", {}, el("h3", {}, "Funnel"), funnel(segment))));
+}
+
+function variantsTable(title, rows) {
+  return el("div", { class: "scroll" }, el("h3", {}, title), el("table", {},
+    el("tr", {}, el("th", {}, "Words"), el("th", { class: "num" }, "Hidden quality"), el("th", { class: "num" }, "Sends"), el("th", { class: "num" }, "Human clicks"), el("th", {}, "Now")),
+    rows.map((v, i) => el("tr", {},
+      el("td", {}, v.text, v.cta ? el("strong", {}, ` [${v.cta}]`) : "", i === 0 ? el("span", { class: "note" }, " (your first draft)") : ""),
+      el("td", { class: "num" }, v.quality), el("td", { class: "num" }, v.sends.toLocaleString()), el("td", { class: "num" }, pct(v.clicks, v.sends)),
+      el("td", { class: "status-" + v.status.replace(" ", "-") }, v.status)))));
+}
+
+function emailsCard(data, start) {
+  const loop = start.loop;
+  return el("div", { class: "card" },
+    el("h2", {}, "The emails"),
+    el("h3", {}, "Your first drafts (the hand-written email)"),
+    el("div", { class: "emails" }, data.first_drafts.map(d => el("div", { class: "email" },
+      el("div", { class: "note" }, `${d.label} · sent ${d.send_after_days} days in`), el("div", { class: "subj" }, d.subject), el("div", {}, d.body), el("span", { class: "cta" }, d.cta)))),
+    el("p", { class: "note" }, "From here on: what the AI loop tested in the first replay. Hidden quality is visible only because this is a simulation: 100 is your first draft."),
+    variantsTable("Idle subjects", loop.subjects),
+    variantsTable("Idle bodies", loop.bodies),
+    el("div", { class: "scroll" }, el("h3", {}, `Drafter and Trialist emails (carry-over from Idle: ${Math.round(loop.carry_over * 100)}%)`), el("table", {},
+      el("tr", {}, el("th", {}, "Segment"), el("th", {}, "Email"), el("th", { class: "num" }, "Sends"), el("th", { class: "num" }, "Human clicks")),
+      loop.segment_copy.map(c => el("tr", {}, el("td", {}, c.label), el("td", {}, el("strong", {}, c.subject), " ", c.body, el("strong", {}, ` [${c.cta}]`)), el("td", { class: "num" }, c.sends.toLocaleString()), el("td", { class: "num" }, pct(c.clicks, c.sends)))))),
+    el("div", { class: "scroll" }, el("h3", {}, "Timing"), el("table", {},
+      el("tr", {}, el("th", {}, "Segment"), el("th", {}, "Timing"), el("th", { class: "num" }, "Merchants judged"), el("th", { class: "num" }, "Reached the goal"), el("th", {}, "Now")),
+      loop.timings.map(t => el("tr", {}, el("td", {}, t.label), el("td", {}, t.timing), el("td", { class: "num" }, t.assigned.toLocaleString()), el("td", { class: "num" }, pct(t.reached, t.assigned)), el("td", { class: t.leading ? "status-leading" : "" }, t.leading ? "ahead so far" : ""))))),
+    el("div", { class: "scroll" }, el("h3", {}, "Trialist offers"), el("table", {},
+      el("tr", {}, el("th", {}, "Offer"), el("th", {}, "Line added to the email"), el("th", { class: "num" }, "Emails sent"), el("th", { class: "num" }, "Revenue per Trialist"), el("th", {}, "Now")),
+      loop.offers.map(o => el("tr", {}, el("td", {}, o.label), el("td", {}, o.line || "–"), el("td", { class: "num" }, o.sent.toLocaleString()), el("td", { class: "num" }, o.revenue_per_trialist == null ? "–" : "$" + o.revenue_per_trialist.toFixed(2)), el("td", { class: o.leading ? "status-leading" : "" }, o.leading ? "ahead so far" : ""))))),
+    el("p", { class: "note" }, `${loop.discounted_payers} Trialists paid with the discount; ${loop.would_have_paid_anyway} of them would have paid the full price with no email.`));
+}
+
+function journeyCard(start) {
+  // Idle merchants, then how many took each next step. Existing merchants join at their own stage, so a
+  // later stage can hold merchants who never passed through the earlier ones.
+  const [idle, drafter, trialist] = start.segments;
+  const stages = [
+    ["Signed up, no draft yet", a => idle.funnel[a].merchants],
+    ["Started a draft", a => idle.funnel[a].reached],
+    ["Published", a => drafter.funnel[a].reached],
+    ["Paid", a => trialist.funnel[a].reached],
+  ];
+  return el("div", { class: "card" }, el("h2", {}, "The journey: how many merchants took each step"),
+    el("div", { class: "stages" }, stages.map(([title, count]) => {
+      const most = Math.max(...Object.keys(LABELS).map(count));
+      return el("div", { class: "stage" }, el("div", { class: "title" }, title),
+        Object.keys(LABELS).map(a => el("div", {},
+          el("div", { class: "bar" }, el("span", { style: `width:${most ? 100 * count(a) / most : 0}%;background:${COLOURS[a]}` })),
+          el("div", { class: "count" }, `${LABELS[a]}: ${count(a).toLocaleString()}`))));
+    })),
+    el("p", { class: "note" }, "First replay, holdout aside. Existing merchants join at their own stage: some start as Drafters or Trialists."));
+}
+
+function revenueCard(start) {
+  const most = Math.max(...Object.values(start.revenue));
+  return el("div", { class: "card" }, el("h2", {}, "Trialist first-month revenue, average per replay"),
+    el("div", { class: "funnel" }, Object.keys(LABELS).map(a => el("div", { class: "row" },
+      el("div", { class: "name" }, el("span", {}, LABELS[a]), el("span", {}, money(start.revenue[a]))),
+      el("div", { class: "bar" }, el("span", { style: `width:${100 * start.revenue[a] / most}%;background:${COLOURS[a]}` }))))));
+}
+
+function renderStart(data, index) {
+  charts.forEach(c => c.destroy()); charts = [];
+  const start = data.starts[index];
+  const body = document.getElementById("start-body");
+  body.replaceChildren(journeyCard(start), ...start.segments.map(s => segmentCard(s, data.replays)), revenueCard(start), emailsCard(data, start));
+  document.querySelectorAll(".tabs button").forEach((b, i) => b.classList.toggle("on", i === index));
+}
+
+async function showRun(name) {
+  current = name;
+  document.querySelectorAll(".runs a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + name));
+  const detail = document.getElementById("detail");
+  detail.replaceChildren(el("div", { class: "card empty" }, "Loading…"));
+  let data;
+  try { data = await api("/api/runs/" + encodeURIComponent(name)); } catch (e) { detail.replaceChildren(el("div", { class: "card empty" }, e.message)); return; }
+  const summary = el("div", { class: "card summary" },
+    el("h2", {}, `Run of ${day(data.created)} · seed ${data.seed} · ${data.replays} replays`),
+    data.summary.map(line => {
+      const p = el("p");
+      line.split("**").forEach((part, i) => p.append(i % 2 ? el("strong", {}, part) : part));
+      return p;
+    }),
+    el("p", { class: "note" }, el("a", { href: `/api/runs/${name}/report`, target: "_blank", rel: "noopener" }, "Full report (Markdown)"), ` · ${data.placeholders} placeholder settings`));
+  const tabs = el("div", { class: "tabs" }, data.starts.map((s, i) => { const b = el("button", {}, `From ${s.merchants.toLocaleString()} merchants`); b.onclick = () => renderStart(data, i); return b; }));
+  detail.replaceChildren(summary, tabs, el("div", { id: "start-body" }));
+  renderStart(data, 0);
+}
+
+document.getElementById("code").value = remembered();
+document.getElementById("run-quick").onclick = () => startRun(20);
+document.getElementById("run-full").onclick = () => startRun(200);
+window.addEventListener("hashchange", () => location.hash && showRun(location.hash.slice(1)));
+loadRuns().then(data => {
+  const first = location.hash.slice(1) || (data && data.runs.length ? data.runs[0].run : "");
+  if (first) showRun(first);
+});
+</script>
+</body>
+</html>

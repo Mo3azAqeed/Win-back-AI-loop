@@ -11,6 +11,10 @@ Parameters:
     Type: String
     Default: /winback/openrouter-api-key
     Description: Parameter Store name of the OpenRouter key (a SecureString you create once; used from #13).
+  WebAccessCodeParameter:
+    Type: String
+    Default: /winback/web-access-code
+    Description: Parameter Store name of the web app's access code (a SecureString you create once). Starting a run needs it.
 
 Resources:
   ReportsBucket:
@@ -101,6 +105,61 @@ Resources:
     Properties:
       RetentionInDays: 30
 
+  # The web app: one page to start a run and see every run's results, at a public function URL.
+  # Anyone with the link can look (everything is simulated); starting a run needs the access code.
+  WebFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      Description: Serves the web app and starts simulation runs.
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/winback-role-boundary"
+      CodeUri: .
+      Handler: winback.web.handler
+      Runtime: python3.13
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 30
+      LoggingConfig:
+        LogGroup: !Ref WebLogs
+      Environment:
+        Variables:
+          REPORTS_BUCKET: !Ref ReportsBucket
+          SIMULATION_FUNCTION: !Ref SimulationFunction
+          ACCESS_CODE_PARAMETER: !Ref WebAccessCodeParameter
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub "${ReportsBucket.Arn}/*"
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt ReportsBucket.Arn
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt SimulationFunction.Arn
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${WebAccessCodeParameter}"
+      FunctionUrlConfig:
+        AuthType: NONE
+
+  # Since October 2025 a public function URL needs both permissions: InvokeFunctionUrl (SAM adds it) and
+  # InvokeFunction, here limited to calls that come through the URL.
+  WebFunctionPublicInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebFunction
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  WebLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
   RunFailedAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -144,3 +203,6 @@ Outputs:
     Value: !Ref SimulationFunction
   AlertsTopicArn:
     Value: !Ref AlertsTopic
+  WebAppUrl:
+    Description: The web app. Send this link; starting a run needs the access code.
+    Value: !GetAtt WebFunctionUrl.FunctionUrl

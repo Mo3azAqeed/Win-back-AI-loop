@@ -134,10 +134,14 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: WriteReports
+          - Sid: WriteAndReadReports
             Effect: Allow
-            Action: s3:PutObject
+            Action: [s3:PutObject, s3:GetObject]
             Resource: !Sub "arn:${AWS::Partition}:s3:::winback-*/*"
+          - Sid: ListReports
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub "arn:${AWS::Partition}:s3:::winback-*"
           - Sid: SendAlerts
             Effect: Allow
             Action: sns:Publish
