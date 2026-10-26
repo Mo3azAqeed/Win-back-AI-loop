@@ -39,6 +39,10 @@ _Avoid_: Control group (fine in conversation, but use one word)
 **Baseline**:
 The rate at which a segment reaches its goal action without win-back emails, measured on the holdout.
 
+**Pushed merchant**:
+A merchant in Drafter or Trialist who is there only because an earlier email moved them on; with no email they would not have reached that segment during the weeks of signups. Reported on their own line, with no true lift: their arrival is the earlier email's win.
+_Avoid_: Extra, new arrival
+
 **Organic action**:
 A goal action a merchant takes with no email involved. The simulation's placeholder organic rates are what the baseline would measure.
 _Avoid_: Natural conversion
@@ -105,5 +109,5 @@ The LLM that rates how appealing a variant is to a segment during a simulation. 
 A run of the loop against made-up merchants and made-up email outcomes, using placeholder baselines. No real email is sent.
 
 **True lift**:
-How many more merchants in a segment reached the goal action within the horizon than in the same simulated world with no email at all, in percentage points. Known exactly because the simulation made up every merchant; only exists in a simulation.
+How many more merchants in a segment reached the goal action within the horizon than in the same simulated world with no email at all, in percentage points. Each segment is judged on the same merchants in every approach: the emailed ones who would be in that segment with no email. Merchants an earlier email pushed into a later segment are that earlier email's win; they are reported on their own line, with no lift. Known exactly because the simulation made up every merchant; only exists in a simulation.
 _Avoid_: Measured lift (what real data could show; not reported)

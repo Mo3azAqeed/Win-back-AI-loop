@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from winback import report
-from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, holdout_baselines, run_calendar, segment_outcomes
+from winback.lifecycle import Approach, EmailResult, Journey, SegmentOutcome, StayResult, run_calendar, segment_outcomes
 from winback.loop import LoopReport
 from winback.settings import Settings
 from winback.segments import Segment
@@ -23,7 +23,8 @@ class StartResult:
     results: dict[Approach, list[StayResult]]
     email_results: dict[Approach, list[EmailResult]]
     event_days: dict[Approach, list[float]]
-    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants only
+    outcomes: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants who would be in the segment with no email
+    pushed: dict[Segment, dict[Approach, SegmentOutcome]]  # emailed merchants an earlier email pushed into the segment
     baselines: dict[Segment, SegmentOutcome]  # the holdout, never emailed
     loop: LoopReport  # what the AI loop tried and where it stands at the end
 
@@ -48,6 +49,7 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
     calendars = {a: run_calendar(settings, simulated, seed, a) for a in Approach}
     journeys = {a: c.journeys for a, c in calendars.items()}
     results = {a: c.results for a, c in calendars.items()}
+    outcomes = segment_outcomes(calendars, settings.paid_window_days)
     return StartResult(
         existing_merchants=start,
         already_paying=paying,
@@ -58,9 +60,9 @@ def _run_from(settings: Settings, start: int, seed: int) -> StartResult:
         results=results,
         email_results={a: c.email_results for a, c in calendars.items()},
         event_days={a: c.event_days for a, c in calendars.items()},
-        outcomes=segment_outcomes(calendars, settings.paid_window_days),
-        # A holdout merchant is never emailed, so it behaves the same in every emailing approach.
-        baselines=holdout_baselines(calendars[Approach.HAND_WRITTEN], settings.paid_window_days),
+        outcomes=outcomes.judged,
+        pushed=outcomes.pushed,
+        baselines=outcomes.baselines,
         loop=_loop_report(calendars[Approach.AI_LOOP].loop),
     )
 

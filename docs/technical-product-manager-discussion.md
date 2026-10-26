@@ -152,16 +152,19 @@ flowchart TD
     T13 --> T14
     T17["#17 Run on AWS<br/>(independent)"]
     T5 --> T19["#19 Same-merchant lift<br/>(found in review)"]
+    T19 --> T22["#22 Own words per segment<br/>(founder decision)"]
+    T11 --> T23["#23 Action report<br/>(founder decision)"]
 ```
 
 The graph is a straight line through #7, then fans out. That was intentional: everything before the AI loop is foundation and has to be right in order; after it, five tickets can be worked in parallel.
 
 ### Tickets that weren't in the original plan
 
-Two tickets came out of reviews, not the spec. That is normal and healthy. The skill is to make them visible tickets, rather than quietly widening the one in progress.
+Two tickets came out of reviews, and two from founder decisions, not the spec. That is normal and healthy. The skill is to make them visible tickets, rather than quietly widening the one in progress.
 
 - **#16 (one shared calendar):** after #4, review showed the engine played out each merchant's whole life one at a time. Fine for one hand-written email, fatal for an AI loop that must only learn from results that already happened. It also cut off the 30-day payment window at a fixed run end. I made it a ticket and put it in front of #5.
 - **#19 (same-merchant lift):** the whole-codebase review found that later segments compared different groups of merchants, which could show the email "hurting" when it helped. It became a ticket instead of a silent fix, because it changes what the headline number means.
+- **#22 (own words per segment)** and **#23 (action report):** both came from a questionnaire of open decisions after #19. #22 stops the simulation assuming an Idle winner works just as well for Drafters and Trialists; I recommended carry-over 0 so any win there is earned, and the founder agreed. #23 adds measured lift against the holdout and a keep/retire/wait line per segment: a scope change, so it waited for the founder's yes.
 
 ---
 
@@ -280,6 +283,12 @@ Short versions, each with the situation, what I did and the result.
 - **Third problem:** sign-in worked, then the deploy itself failed: "Unrecognized resource types: AWS::Budgets::Budget". Budgets is a global AWS service, and CloudFormation offers it only in us-east-1, not in our region (eu-north-1, Stockholm). We moved the budget alert into its own one-time stack in us-east-1. We also made CI lint the templates for every region we deploy to, so this class of error now fails in a pull request, not in production.
 - **Lesson:** read the error, find the root cause, and fix it without widening access. Then close the gap that let it through: each failure here produced a check or a doc line so it can't recur.
 
+**7. "Our headline number could say an email hurt when it helped."**
+- **Situation:** the report showed the hand-written email at −0.2 points for Trialists, which reads as "the email lost us payments".
+- **What I did:** a review traced it to the definition, not the code. Emails push extra merchants into later segments, so each approach's Trialists were a *different set of merchants*. A merchant-by-merchant check showed no email ever cost anyone a payment. I made it a ticket (#19), not a quiet fix, because it changes what the headline means. Every segment is now judged on the same merchants: those who would be there with no email. Merchants an earlier email pushed in get their own line.
+- **Result:** the same case now reads +1.2 points. A test guarantees no lift can be negative when no email can cost a goal action.
+- **A second lesson from the same review:** I first read a difference in the new "pushed" line as a finding (13.5% against 3.4% paying). The spec review checked ten seeds: 19.8% against 17.1%, about 30 merchants each, which is chance. One seed and small groups are not evidence; the report now prints a margin of chance for small groups for exactly this reason.
+
 ---
 
 ## 8. Vocabulary I use
@@ -304,6 +313,10 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Four decisions answered: carry-over of Idle's edge defaults to 0, so Drafter and Trialist wins must be earned (opened [#22](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/22)); opened the action report as its own ticket [#23](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/23); ship #19 once CI is green; delete the shared doc, so the notes file is the single source. |
+| 2026-10-25 | Second planted-bug audit after #19: 75 of 77 caught, including every new #19 bug; the 2 left can't change any result. |
+| 2026-10-25 | Built #19: Drafter and Trialist lift now compares the same merchants in every approach; the hand-written Trialist lift at 1,500 merchants went from a misleading -0.2 to +1.2 points. |
+| 2026-10-25 | First successful deploy to AWS: stack `winback` live in eu-north-1, weekly runs on. |
 | 2026-10-25 | First AWS deploy. Fixed three blockers from the logs: variables moved to repository variables; the deploy role now trusts GitHub's new identity format (permanent IDs, for repos created after July 2026); the budget alert moved to its own us-east-1 stack, since CloudFormation offers Budgets only there. CI now lints templates per deploy region. |
 | 2026-10-25 | PR [#20](https://github.com/Mo3azAqeed/Win-back-AI-loop/pull/20) merged: AWS deploy (#17), miss windows (#5), holdout (#6), AI loop (#7). Opened [#19](https://github.com/Mo3azAqeed/Win-back-AI-loop/issues/19) (same-merchant lift) from the whole-codebase review. |
 | 2026-10-23 | Whole-codebase review and mutation audit: 70 of 72 planted bugs caught. ADR 0004 (even share) recorded with evidence. |
