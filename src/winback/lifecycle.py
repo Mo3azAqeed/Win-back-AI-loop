@@ -306,7 +306,7 @@ class _Calendar:
         if following is None:
             # The discount only works through the email's link: a merchant who clicked it before paying pays
             # the discounted price, even one who would have paid in full anyway.
-            discounted = stay.received_offer is Offer.DISCOUNT and stay.clicked and stay.email_sent_at is not None and stay.email_sent_at <= day
+            discounted = stay.received_offer is Offer.DISCOUNT and stay.clicked
             price_share = self.settings.offers.discount_price_share if discounted else 1.0
             state.paid_at, stay.first_month_revenue = day, self.settings.monthly_price * price_share
         else:

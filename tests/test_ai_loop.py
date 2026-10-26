@@ -198,3 +198,14 @@ def test_a_carry_over_outside_0_to_1_is_refused() -> None:
     for carry_over in (-0.1, 1.5):
         with pytest.raises(ValueError, match="carry_over"):
             run_simulation(with_carry_over(load_settings(SETTINGS), carry_over), seed=1)
+
+
+def test_by_default_none_of_idles_edge_carries_over_and_the_report_shows_each_segments_own_email(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+
+    assert start.loop.carry_over == 0
+    assert "Carry-over from Idle: 0%" in from_1000
+    for segment in (Segment.DRAFTER, Segment.TRIALIST):
+        copy = start.loop.segment_copy[segment]
+        assert f"| {segment.value.title()} | {copy.subject}: {copy.body} **[{copy.cta}]** | {copy.sends:,} |" in from_1000

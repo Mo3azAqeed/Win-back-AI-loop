@@ -146,3 +146,54 @@ def test_each_offer_line_is_on_the_fact_sheet_and_matches_the_offer_settings() -
     assert re.findall(r"\d+", lines[Offer.EXTENSION]) == [f"{settings.offers.extra_trial_days:g}"]
     discounted, full = re.findall(r"\$(\d+)", lines[Offer.DISCOUNT])
     assert (float(discounted), float(full)) == (settings.monthly_price * settings.offers.discount_price_share, settings.monthly_price)
+
+
+def with_trialist(settings: Settings, **changes: float) -> Settings:
+    return dataclasses.replace(settings, segments={**settings.segments, Segment.TRIALIST: dataclasses.replace(settings.segments[Segment.TRIALIST], **changes)})
+
+
+def test_each_offer_changes_how_likely_a_trialist_who_clicks_is_to_pay_by_its_own_setting() -> None:
+    # Hidden truth: a Trialist who clicks pays 25% of the time with no offer. Here more trial days change
+    # nothing and the discount triples it (pay lift 2.0). Nobody pays on their own, so every payer was the email's.
+    settings = with_trialist(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1500,)), organic_share=0.0, act_rate=0.25)
+    settings = with_pay_lift(with_pay_lift(settings, Offer.EXTENSION, 0.0), Offer.DISCOUNT, 2.0)
+    # The AI loop soon favours the discount, so three seeds are pooled to see enough clicks on every offer.
+    stays = [s for seed in (1, 2, 3) for _, s in trialist_stays(run_simulation(settings, seed=seed).by_start[1500], Approach.AI_LOOP) if s.clicked]
+
+    def pay_rate(offer: Offer) -> float:
+        clicked = [s for s in stays if s.offer is offer]
+        assert len(clicked) > 15
+        return sum(s.left is not None for s in clicked) / len(clicked)
+
+    assert pay_rate(Offer.NONE) < 0.4 and pay_rate(Offer.EXTENSION) < 0.4
+    assert pay_rate(Offer.DISCOUNT) > 0.6
+
+
+def test_a_slow_payer_given_more_trial_days_can_pay_until_day_14_and_no_later() -> None:
+    # Every Trialist would pay on its own about 12 days after publishing, often after day 7 and sometimes after day 14.
+    settings = with_trialist(dataclasses.replace(load_settings(SETTINGS), start_sizes=(1000,)), organic_share=1.0, organic_mean_days=12)
+    stays = [s for _, s in trialist_stays(run_simulation(settings, seed=1).by_start[1000], Approach.AI_LOOP)]
+    extended = [s for s in stays if received(s, Offer.EXTENSION)]
+    paid_after = [s.left - s.entered for s in extended if s.left is not None]
+
+    assert sum(7 < day <= 14 for day in paid_after) > 10
+    assert all(day <= 14 for day in paid_after)
+    assert any(s.left is None for s in extended)  # some would only have paid after day 14
+
+
+def test_the_holdout_never_gets_an_offers_effect(run: RunResult) -> None:
+    start = run.by_start[1000]
+    held = {j.merchant.key for j in start.journeys[Approach.AI_LOOP] if j.merchant.holdout}
+    paid = [(r, s) for r in start.results[Approach.AI_LOOP] if r.merchant_key in held and r.segment is Segment.TRIALIST and r.reached
+            for key, s in trialist_stays(start, Approach.AI_LOOP) if key == r.merchant_key]
+
+    assert paid
+    assert all(r.first_month_revenue == 40 and s.left is not None and s.left - s.entered <= 7 for r, s in paid)
+
+
+def test_the_report_shows_what_each_offer_has_earned_per_trialist(run: RunResult) -> None:
+    start = run.by_start[1000]
+    from_1000 = run.report.split("## Starting from 1,000 merchants", 1)[1].split("## Starting from 1,500", 1)[0]
+    discount = next(o for o in start.loop.offers if o.offer is Offer.DISCOUNT)
+
+    assert f"| First month 50% off | {discount.assigned:,} | ${40 * discount.revenue_share / discount.assigned:,.2f} |" in from_1000
