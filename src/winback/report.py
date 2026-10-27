@@ -192,11 +192,12 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         "",
         "Idle's email comes in versions. v0 is your first draft and starts as the champion. Each challenger is the "
         "champion with one part changed, and comes with a hypothesis. While a test runs the challenger gets "
-        f"{settings.loop.challenger_share:.0%} of Idle's emails and the champion the rest, and the "
-        f"test ends at a week's end once the loop is {settings.loop.verdict_confidence:.0%} sure: the challenger won "
-        "on human clicks (and is crowned, unless its goal-action rate is clearly worse), the champion won, the two "
-        f"are the same (within {settings.loop.same_margin * 100:g} click point), or, after {settings.loop.test_max_weeks} weeks "
-        f"or {settings.loop.test_max_sends:,} emails for either, too close to call: "
+        f"{settings.loop.challenger_share:.0%} of Idle's emails and the champion the rest. The test is judged once, when each "
+        f"version has {settings.loop.test_sends:,} emails or after {settings.loop.test_max_weeks} weeks, whichever comes first "
+        "(judging it every week would let luck cross the bar sooner or later). If the loop is "
+        f"{settings.loop.verdict_confidence:.0%} sure, the challenger won on human clicks (and is crowned, unless its goal-action rate "
+        f"is clearly worse), the champion won, or the two are the same (within {settings.loop.same_margin * 100:g} click point); "
+        "otherwise it is too close to call: "
         + ("the version ahead on clicks stays, kept but not proven. " if settings.loop.keep_ahead_at_limit else "the champion stays. ")
         + "Hidden quality is visible only because this is a simulation: 100 is your first draft, and every other number is a placeholder.",
         "",

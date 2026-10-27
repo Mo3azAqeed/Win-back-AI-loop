@@ -107,7 +107,7 @@ The Idle version being tested against the champion. It gets a third of Idle's em
 What a challenger changes and why, written with it: "Names store cloning in the subject, because it is what sets the app apart." Every challenger has one.
 
 **Test**:
-One champion against one challenger. It always ends, in one of four ways: the challenger won (crowned), the champion won (the challenger is sunset, including when it won clicks but clearly lost goal actions), the same (within 1 click point), or too close to call (at 2 weeks or 1,000 emails per version; the version ahead on clicks stays, kept but not proven). Verdicts on clicks are taken at week ends (ADR 0007).
+One champion against one challenger, each getting half of Idle's emails. It is judged once, when both have 250 emails or after 3 weeks, whichever comes first, and ends in one of four ways: if the loop is 95% sure, the challenger won (crowned), the champion won (the challenger is sunset, including when it won clicks but clearly lost goal actions), or the same (within 1 click point); otherwise too close to call (the version ahead on clicks stays, kept but not proven). Judging once keeps luck from crossing the bar (ADR 0007).
 _Avoid_: Experiment, round
 
 **Borrowed version**:

@@ -66,11 +66,10 @@ class SegmentSettings:
 class LoopSettings:
     """How the AI loop tests a challenger against the champion in Idle, and when a test ends."""
 
-    min_sends: int  # each version's sends in a test before a verdict on clicks
     verdict_confidence: float  # how sure a verdict must be, 0 to 1
     same_margin: float  # click rates closer than this (a share: 0.01 is 1 point) count as the same
     test_max_weeks: int
-    test_max_sends: int  # per version
+    test_sends: int  # the emails each version gets in a test before its one verdict
     challenger_share: float  # the share of Idle emails the challenger gets while a test runs
     keep_ahead_at_limit: bool  # at the limit, the version ahead on clicks stays, rather than always the champion
     carry_over: float  # the share of the Idle leader's edge that Drafter and Trialist emails get, 0 to 1
@@ -177,11 +176,10 @@ def load_settings(path: Path) -> Settings:
         prewritten_subjects=tuple(_variant(v, "subject") for v in prewritten["subject"]),
         prewritten_bodies=tuple(_variant(v, "body") for v in prewritten["body"]),
         loop=LoopSettings(
-            min_sends=int(value("ai_loop.min_sends")),
             verdict_confidence=value("ai_loop.verdict_confidence"),
             same_margin=value("ai_loop.same_margin_points") / 100,
             test_max_weeks=int(value("ai_loop.test_max_weeks")),
-            test_max_sends=int(value("ai_loop.test_max_sends")),
+            test_sends=int(value("ai_loop.test_sends")),
             challenger_share=value("ai_loop.challenger_share"),
             keep_ahead_at_limit=value("ai_loop.keep_ahead_at_limit") == 1,
             carry_over=value("ai_loop.carry_over"),

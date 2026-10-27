@@ -418,13 +418,16 @@ class AiLoop:
             return
         version = self.versions[copy.version]
         version.sends, version.clicks = version.sends + 1, version.clicks + clicked
+        # A test is judged once: when both versions have their planned emails, or at its time limit, whichever
+        # comes first. Judging it every week instead would let luck cross the bar sooner or later.
+        test = self.test
+        if test is not None and self._out_of_time(test):
+            self._end_at_limit(test, day)  # this email came after the limit, so it isn't part of the test
         arm = self._arm(copy)
         if arm is not None:
             arm.sends, arm.clicks = arm.sends + 1, arm.clicks + clicked
-        # The limit holds between week ends too, so a test started mid-week never runs past it.
-        test = self.test
-        if test is not None and (max(test.champion.sends, test.challenger.sends) >= self.rules.test_max_sends or day - test.started >= self.rules.test_max_weeks * DAYS_PER_WEEK):
-            self._end_test(test, Ending.LIMIT)
+        if test is not None and test is self.test and min(test.champion.sends, test.challenger.sends) >= self.rules.test_sends:
+            self._end_test(test, self._verdict(test))
 
     def learn_from_goal(self, copy: Copy, reached: bool) -> None:
         """An Idle email's miss window closed: the merchant reached the goal in it or not."""
@@ -440,12 +443,10 @@ class AiLoop:
         self.timings[segment][timing].learn(reached)
 
     def end_week(self, week: int) -> None:
-        """At the end of each week, the test running in Idle may reach its verdict; then note the champion and the challenger."""
+        """At the end of each week, a test out of time gets its verdict; then note the champion and the challenger."""
         self.today = week * DAYS_PER_WEEK
-        if self.test is not None:
-            ending = self._verdict(self.test)
-            if ending is not None:
-                self._end_test(self.test, ending)
+        if self.test is not None and self._out_of_time(self.test):
+            self._end_at_limit(self.test, self.today)
         challenger = self.test.challenger.version.number if self.test is not None else None
         c = self.champion
         self.weekly_leaders.append(WeekLeaders(week, c.subject.text, c.body.text, c.body.cta, c.number, challenger))
@@ -541,20 +542,27 @@ class AiLoop:
             return None
         return self.test.champion if copy.version == self.test.champion.version.number else self.test.challenger
 
-    def _verdict(self, test: _Test) -> Ending | None:
-        """How the test ends this week, if it does."""
+    def _out_of_time(self, test: _Test) -> bool:
+        return self.today - test.started >= self.rules.test_max_weeks * DAYS_PER_WEEK - 1e-9
+
+    def _end_at_limit(self, test: _Test, now: float) -> None:
+        """Judge a test that ran out of time as of its limit, then carry on from now."""
+        self.today = test.started + self.rules.test_max_weeks * DAYS_PER_WEEK
+        self._end_test(test, self._verdict(test))
+        self.today = now
+
+    def _verdict(self, test: _Test) -> Ending:
+        """The test's one verdict, on everything it has seen: a winner or the same if the loop is sure enough,
+        else too close to call."""
         champion, challenger, sure = test.champion, test.challenger, self.rules.verdict_confidence
-        if min(champion.sends, challenger.sends) >= self.rules.min_sends:
-            better = _chance_better(challenger.clicks_posterior(), champion.clicks_posterior())
-            if better >= sure:
-                return Ending.CHALLENGER_WON
-            if better <= 1 - sure:
-                return Ending.CHAMPION_WON
-            if _chance_within(challenger.clicks_posterior(), champion.clicks_posterior(), self.rules.same_margin) >= sure:
-                return Ending.SAME
-        if self.today - test.started >= self.rules.test_max_weeks * DAYS_PER_WEEK - 1e-9:
-            return Ending.LIMIT
-        return None
+        better = _chance_better(challenger.clicks_posterior(), champion.clicks_posterior())
+        if better >= sure:
+            return Ending.CHALLENGER_WON
+        if better <= 1 - sure:
+            return Ending.CHAMPION_WON
+        if _chance_within(challenger.clicks_posterior(), champion.clicks_posterior(), self.rules.same_margin) >= sure:
+            return Ending.SAME
+        return Ending.LIMIT
 
     def _end_test(self, test: _Test, ending: Ending) -> None:
         champion, challenger = test.champion, test.challenger
