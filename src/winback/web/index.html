@@ -460,7 +460,9 @@ function weekPlayer(seg, yourEmail) {
         c.sends ? h("span", { class: "block text-xs font-mono text-faint mt-1" }, `${num(c.sends)} sends · ${pct(c.clicks / c.sends)} clicked`) : h("span", { class: "block text-xs font-mono text-faint mt-1" }, "by " + c.by)))) : h("p", { class: "text-sm text-faint" }, "Nothing this week."));
     changes.replaceChildren(seg.segment === "idle"
       ? h("div", { class: "grid gap-4 md:grid-cols-2" }, list("Written this week", w.ai.written, "border-win/30"), list("Dropped this week", w.ai.dropped, "opacity-80 line-through decoration-faint"))
-      : h("p", { class: "text-sm text-soft" }, `${STAGES[seg.segment].label} keeps your words; the AI loop changes only the send time` + (seg.segment === "trialist" ? " and the offer." : ".")));
+      : h("p", { class: "text-sm text-soft" }, (changed
+          ? `This week ${STAGES[seg.segment].label} borrowed a change Idle proved, in its own words, with no test of its own.`
+          : `${STAGES[seg.segment].label} keeps its words until Idle proves a change to borrow`) + "; the AI loop also learns the send time" + (seg.segment === "trialist" ? " and the offer." : ".")));
   };
   weeks.forEach((w, i) => { const b = h("button", { type: "button", role: "tab", "aria-label": "Week " + w.week }, "W" + w.week); b.onclick = () => { index = i; stop(); render(); }; strip.append(b); });
   const stop = () => { if (playing) { clearInterval(playing); playing = null; play.textContent = "▶ Play"; } };
@@ -599,6 +601,14 @@ async function showRun(name) {
         h("p", { class: "text-soft mt-1" }, `The AI loop moved ${num(gains[best - 1])} more merchants than your email to "${STEPS[best].toLowerCase()}". A gain at an early step carries on down the journey, so later steps include it.`)) : null);
 
     // 3. What made the difference?
+    function borrowedMechanism(seg, loop, offer) {
+      const timingAndOffer = "the send time" + (offer ? ` and the offer (now favouring "${offer.label}")` : "");
+      const borrowed = (loop.segment_versions || []).filter(v => v.segment === seg.segment && v.borrowed_from_test != null);
+      if (!borrowed.length) return [`${seg.label} keeps your words, since no Idle test was won to borrow from; the AI loop changes only ${timingAndOffer}.`];
+      const last = borrowed[borrowed.length - 1];
+      return [h("strong", { class: "text-ink" }, `v${last.number}`), ` borrowed Idle test ${last.borrowed_from_test}'s new ${last.changed} in ${seg.label} words: ${last.hypothesis} `,
+        loop.carry_over === 0 ? "How much that helps here isn't simulated yet (carry-over 0), so the difference comes from " + timingAndOffer + "." : `It gets ${Math.round(loop.carry_over * 100)}% of the Idle change's edge (carry-over), assumed, not tested here; the AI loop also changes ${timingAndOffer}.`];
+    }
     const stageTabs = h("div", { class: "flex rounded border border-hair p-0.5 text-[12px] font-mono" }, start.segments.map((s, i) => {
       const b = h("button", { type: "button", class: "px-3 py-1.5 rounded " + (i === stageIndex ? "bg-indigo text-white" : "text-soft hover:text-ink") }, `STG-0${i + 1} ${s.label}`);
       b.onclick = () => { stageIndex = i; render(); };
@@ -613,7 +623,7 @@ async function showRun(name) {
       ? [h("strong", { class: "text-ink" }, `v${champion.number}`), ` changed the ${champion.changed}: ${champion.hypothesis} It won its test${champion.crowned_week ? ` in week ${champion.crowned_week}` : ""}.`]
       : seg.segment === "idle"
         ? ["No version beat your email clearly enough to replace it, so the AI loop kept sending your words; its edge, if any, comes from send time."]
-        : [`${seg.label} keeps your words; the AI loop changes only the send time` + (offer ? ` and the offer (now favouring "${offer.label}").` : ".")];
+        : borrowedMechanism(seg, loop, offer);
     const differencePanel = panel("Deep dive", "What made the difference?", "Your email against the email the AI loop ended up sending, with what changed highlighted.",
       h("div", { class: "flex justify-end -mt-2 mb-4" }, stageTabs),
       h("div", { class: "grid gap-4 md:grid-cols-2" },

@@ -232,19 +232,34 @@ def _loop_section(settings: Settings, loop: LoopReport) -> list[str]:
         ),
         *([] if loop.playbook else ["No test has ended yet."]),
         "",
-        f"Carry-over from Idle: {loop.carry_over:.0%}. Drafters and Trialists get their own first drafts, plus this share "
-        "of the edge the Idle champion has over your Idle first draft"
+        "#### Drafters and Trialists borrow what Idle proves",
+        "",
+        "They run no tests of their own (about 40 emails a week each is too few). When an Idle test is won, the writer "
+        "applies the same change to their emails in their own words, and that version replaces theirs with no test.",
+        "",
+        f"Carry-over from Idle: {loop.carry_over:.0%}. "
         + (
-            ", so any win over the hand-written email there comes from what the AI loop tests in that segment."
+            "How much a borrowed change helps them isn't simulated yet: at 0, a borrowed change gets no simulated boost, so their results are "
+            "the same as without it, and any win over the hand-written email there comes from timing (and Trialist offers). "
+            "The real effect waits for the judge rating the new words."
             if loop.carry_over == 0
-            else ". That edge is assumed, not tested on Drafters or Trialists."
+            else "A borrowed change gets this share of the edge the Idle part it came from has over your Idle first draft. "
+            "That edge is assumed, not tested on Drafters or Trialists."
         ),
         "",
-        "| Segment | Email | Sends | Human clicks |",
-        "|---|---|---|---|",
+        "| Segment | Version | Email | Where it came from | From week | Sends | Human clicks |",
+        "|---|---|---|---|---|---|---|",
         *(
-            f"| {SEGMENT_TEXT[segment].label} | {c.subject}: {c.body} **[{c.cta}]** | {c.sends:,} | {_share(c.clicks, c.sends)} |"
-            for segment, c in loop.segment_copy.items()
+            f"| {SEGMENT_TEXT[segment].label} | v{v.number} | {v.subject}: {v.body} **[{v.cta}]** | "
+            + (f"borrowed from Idle test {v.borrowed_from_test} (v{v.idle_version}, new {v.changed})" if v.borrowed_from_test is not None else "your first draft")
+            + f" | {week_of(v.day)} | {v.sends:,} | {_share(v.clicks, v.sends)} |"
+            for segment, versions in loop.segment_versions.items()
+            for v in versions
+        ),
+        *(
+            ["", *(f"- Idle test {n.test}'s change wasn't borrowed by {SEGMENT_TEXT[n.segment].label}s (week {week_of(n.day)}): the writer had no words for it "
+                   "there that passed the checks, or the spending cap stopped it, so they kept their email." for n in loop.not_borrowed)]
+            if loop.not_borrowed else []
         ),
         "",
         "Each segment learns timing from every merchant assigned it, judged when the horizon closes, "

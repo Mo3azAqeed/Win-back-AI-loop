@@ -2,94 +2,145 @@
 # the champion with one part changed: the next subject, then the next body, in turn (#34). Each comes
 # with its hypothesis: the one change it makes and why. Until the real writer arrives (#13).
 #
+# drafter and trialist are the same change in those segments' own words (with their buttons for a
+# body): when an Idle test crowns it, their emails borrow it (#36).
+#
 # quality is each one's hidden quality for Idle merchants, where 100 is your first draft:
 # 120 means 20% more reads (subject) or clicks (body). Every quality is a placeholder, made up
 # for the simulation; only real sends could measure it.
 
 [[subject]]
 text = "Start your store from one you already like"
+drafter = "You started {store_name} from a store you liked"
+trialist = "Keep the store you built from one you liked"
 hypothesis = "Leads with starting from a store they already like, because Idle merchants haven't pictured their own store yet."
 quality = { value = 110, placeholder = true }
 
 [[subject]]
 text = "Your store, a few minutes away"
+drafter = "{store_name} is a moment away from going live"
+trialist = "Keeping {store_name} live takes a moment"
 hypothesis = "Promises speed, because an empty store feels like hours of work."
 quality = { value = 90, placeholder = true }
 
 [[subject]]
 text = "Clone a store, then make it yours"
+drafter = "You cloned a store. Now put {store_name} live"
+trialist = "You cloned it and made it yours: keep {store_name}"
 hypothesis = "Names store cloning in the subject, because it is what sets the app apart."
 quality = { value = 120, placeholder = true }
 
 [[subject]]
 text = "{first_name}, your first draft is waiting to be started"
+drafter = "{first_name}, your draft is waiting to be published"
+trialist = "{first_name}, your trial ends on {trial_end_date}"
 hypothesis = "Uses their name and names the next step, because a small, personal task feels easier to start."
 quality = { value = 105, placeholder = true }
 
 [[subject]]
 text = "Skip the blank page"
+drafter = "Skip the wait: publish {store_name}"
+trialist = "Don't lose {store_name}"
 hypothesis = "Short, and names the pain, because the blank page is why Idle merchants stall."
 quality = { value = 130, placeholder = true }
 
 [[subject]]
 text = "Build every page with the section builder"
+drafter = "Finish every page with the section builder"
+trialist = "Keep the section builder after your trial"
 hypothesis = "Leads with the section builder, to see whether control over every page draws more interest than cloning."
 quality = { value = 85, placeholder = true }
 
 [[subject]]
 text = "Still thinking about your store?"
+drafter = "Still thinking about publishing {store_name}?"
+trialist = "Still deciding about {store_name}?"
 hypothesis = "Asks a soft question, to see whether a gentle nudge beats naming a feature."
 quality = { value = 95, placeholder = true }
 
 [[subject]]
 text = "One clone, then it's all yours"
+drafter = "{store_name} is all yours. Publish it"
+trialist = "{store_name} is all yours. Keep it"
 hypothesis = "Stresses that the store is theirs after cloning, because merchants may fear a clone won't feel like their own."
 quality = { value = 115, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, pick a store you like and clone it to start from. Then change every page with the section builder until it's yours."
 cta = "Clone a store"
+drafter = "Hi {first_name}, your draft of {store_name} is saved. Check every page with the section builder, then publish. Your 7-day free trial starts when you publish."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, {store_name} is live. To keep it that way, choose the plan before your trial ends on {trial_end_date}: $40/month, with the section builder."
+trialist_cta = "Keep my store live"
 hypothesis = "Walks through the two steps (clone, then edit), because a clear path makes starting feel small."
 quality = { value = 115, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, starting from a blank page is the slow way. Clone a store to start from and you'll have a first draft in minutes."
 cta = "Start my first draft"
+drafter = "Hi {first_name}, waiting is the slow way. {store_name} is saved, and publishing takes a moment and starts your 7-day free trial."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, keeping {store_name} takes a moment: choose the plan, $40/month, before your trial ends on {trial_end_date}."
+trialist_cta = "Keep my store live"
 hypothesis = "Contrasts the blank page with cloning and promises a first draft in minutes, because speed is the main draw."
 quality = { value = 125, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, clone a store to start from, make every page yours with the section builder, and publish when you're happy. Your 7-day free trial starts when you publish."
 cta = "Start my store"
+drafter = "Hi {first_name}, publish {store_name} when you're happy with it. Your 7-day free trial starts when you publish, and you won't pay anything until it ends."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, your free trial ends on {trial_end_date}. After that, {store_name} stays live for $40/month, and you won't pay anything before then."
+trialist_cta = "Keep my store live"
 hypothesis = "Adds the trial terms, to see whether knowing they won't pay yet helps them start."
 quality = { value = 95, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, the section builder lets you change any page of a cloned store. Start with one you like."
 cta = "Try the section builder"
+drafter = "Hi {first_name}, the section builder lets you change any page of {store_name} before you publish. Finish it and go live."
+drafter_cta = "Finish and publish"
+trialist = "Hi {first_name}, the section builder keeps working on {store_name} after your trial, for $40/month. Your trial ends on {trial_end_date}."
+trialist_cta = "Keep my store live"
 hypothesis = "Leads with the section builder, to see whether control beats speed in the body too."
 quality = { value = 90, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, you signed up but haven't started yet. It takes a few minutes: clone a store to start from, then make it yours."
 cta = "Start now"
+drafter = "Hi {first_name}, you saved a draft of {store_name} but haven't published yet. It takes a moment, and your 7-day free trial starts then."
+drafter_cta = "Publish now"
+trialist = "Hi {first_name}, you published {store_name} but haven't chosen a plan yet. Your trial ends on {trial_end_date}; it's $40/month after that."
+trialist_cta = "Choose my plan"
 hypothesis = "Reminds them they signed up and says it takes minutes, because a reminder plus low effort may restart them."
 quality = { value = 105, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, one plan, $40/month, and you won't pay anything until your 7-day trial ends. First, clone a store to start from."
 cta = "Clone a store"
+drafter = "Hi {first_name}, the plan is $40/month, and you won't pay anything until your 7-day trial ends. Publish {store_name} to start it."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, the plan is $40/month, with the section builder. Your trial ends on {trial_end_date}: choose it to keep {store_name} live."
+trialist_cta = "Keep my store live"
 hypothesis = "States the price and that nothing is paid until the trial ends, to see whether removing price doubt helps."
 quality = { value = 100, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, you don't have to start from nothing. Clone a store to start from, then use the section builder to make every page yours."
 cta = "Start my first draft"
+drafter = "Hi {first_name}, you don't have to start over: {store_name} is saved. Use the section builder to finish any page, then publish."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, you keep everything you built: {store_name} and the section builder stay yours for $40/month after {trial_end_date}."
+trialist_cta = "Keep my store live"
 hypothesis = "Reassures them they don't start from nothing, then names both features."
 quality = { value = 110, placeholder = true }
 
 [[body]]
 text = "Hi {first_name}, your store doesn't have to start empty. Clone a store you like and change what you need."
 cta = "Clone a store"
+drafter = "Hi {first_name}, {store_name} is saved and ready. Publish it, and change what you need later."
+drafter_cta = "Publish my store"
+trialist = "Hi {first_name}, {store_name} is live. Keep it for $40/month after {trial_end_date}."
+trialist_cta = "Keep my store live"
 hypothesis = "A shorter cloning pitch, to see whether fewer words get more clicks."
 quality = { value = 120, placeholder = true }

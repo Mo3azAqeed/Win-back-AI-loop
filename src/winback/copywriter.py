@@ -30,6 +30,11 @@ OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 DECISIONS = "https://openrouter.ai/api/alpha/decisions"
 STAND_IN = "stand-in writer"
 IDLE_MERCHANT = "A merchant who signed up to a Shopify app that clones a store to start from, but has not started a draft yet."
+READERS = {
+    "idle": IDLE_MERCHANT,
+    "drafter": "A merchant who cloned a store and saved a draft in a Shopify app, but has not published it yet. Publishing starts a 7-day free trial.",
+    "trialist": "A merchant who published their store and is in the 7-day free trial, but has not paid yet. The plan is $40/month.",
+}
 # The judge's scale, from 1 to 10.
 APPEAL_LEVELS = [
     "1: would ignore it",
@@ -54,6 +59,11 @@ class Copywriter(Protocol):
         """The nth new part for this slot ("subject" or "body") in this replay, written against this champion."""
         ...
 
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
+        """A change Idle proved (its new subject, or body with its button, and why), applied to this segment's
+        email in the segment's own words: the new part and its button (empty for a subject); None if there is none (#36)."""
+        ...
+
     def start_replay(self) -> None:
         """A new replay begins, so the copywriter can say how many replays made live calls."""
         ...
@@ -73,6 +83,10 @@ class StandIn:
     def challenger(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         waiting = self.settings.prewritten_subjects if slot == "subject" else self.settings.prewritten_bodies
         return waiting[nth] if nth < len(waiting) else None
+
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
+        written = self.settings.prewritten_subjects if slot == "subject" else self.settings.prewritten_bodies
+        return next((v.adaptation(segment) for v in written if (v.text, v.cta) == (text, cta)), None)
 
     def start_replay(self) -> None:
         pass
@@ -129,6 +143,10 @@ class Writer(Protocol):
         """A new subject (cta empty) or body with its button, and its hypothesis."""
         ...
 
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str, feedback: list[str]) -> tuple[str, str]:
+        """Idle's new subject or body applied to this segment's email, in its own words: the part and its button."""
+        ...
+
 
 class Judge(Protocol):
     @property
@@ -160,11 +178,13 @@ class AiCopywriter:
         # asks for it, and every replay reuses it: a run makes at most this many write-and-judge rounds whatever
         # its number of replays. A part changes one thing, so it still fits a later champion's other part.
         self.cache: dict[tuple[str, int], Variant | None] = {}
+        self.adapted: dict[tuple[str, str, str, str], tuple[str, str] | None] = {}  # each change, per segment, written once per run
         self.ratings: dict[tuple[str, str, str], float] = {}
         # The spending cap (#14): a warning once spend passes one limit, no live call once it reaches the other.
         self.warn = warn
         self.warning: str | None = None  # what was said when spend passed the warning limit
         self.skipped = 0  # challengers not written, or not judged, because spend had reached the stop limit
+        self.unborrowed = 0  # changes Idle proved that Drafters and Trialists didn't get, for the same reason
         self.replay_calls: list[int] = []  # calls made in each replay so far, the last one still running
         draft = settings.first_drafts["idle"]
         self.placeholders = {p for e in settings.first_drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body} {e.cta}")}
@@ -180,22 +200,46 @@ class AiCopywriter:
 
     def _write(self, slot: str, champion: Email, conclusions: list[str], nth: int) -> Variant | None:
         tried = [v.text for (s, _), v in self.cache.items() if v is not None and s == slot]
+        drafted = self._checked(slot, slot, lambda feedback: self.writer.write(slot, champion, conclusions, tried, feedback))
+        if drafted is None or (self.stopped and (slot, drafted[0], drafted[1]) not in self.ratings):
+            # Every draft failed a check (the loop tries the other part), or the cap left no call to write or judge
+            # it: an unjudged draft is never sent, and the loop keeps the variants already written and judged.
+            self.skipped += self.stopped
+            return None
+        text, cta, hypothesis = drafted
+        return Variant(text, cta, self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
+
+    def _checked(self, slot: str, label: str, draft: Callable[[list[str]], tuple[str, str, str]]) -> tuple[str, str, str] | None:
+        """The first draft that passes every check, with its button (empty for a subject) and what else the writer
+        said; a failing draft is rewritten with the reasons, and is never sent. None if every attempt failed, or
+        if spend had reached the stop limit before one passed."""
         feedback: list[str] = []
         for _ in range(self.settings.writer.max_attempts):
             if self.stopped:
-                self.skipped += 1
-                return None  # past the cap: no live call, so the loop keeps the variants already written and judged
-            text, cta, hypothesis = self.writer.write(slot, champion, conclusions, tried, feedback)
+                return None
+            text, cta, said = draft(feedback)
             self._record_call()
-            found = problems(slot, text, cta if slot == "body" else "", self.settings.fact_sheet, self.settings.writer, self.placeholders)
+            cta = cta if slot == "body" else ""
+            found = problems(slot, text, cta, self.settings.fact_sheet, self.settings.writer, self.placeholders)
             if not found:
-                if self.stopped and (slot, text, cta) not in self.ratings:
-                    self.skipped += 1
-                    return None  # written, but the cap leaves no call to judge it, and an unjudged draft is never sent
-                return Variant(text, cta if slot == "body" else "", self._quality(slot, text, cta), placeholder=True, hypothesis=hypothesis)
-            self.spend.rejected.append(f"{slot} “{text}”: {'; '.join(found)}")
+                return text, cta, said
+            self.spend.rejected.append(f"{label} “{text}”: {'; '.join(found)}")
             feedback = found
-        return None  # every draft failed a check, so nothing is sent; the loop tries the other part
+        return None
+
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
+        key = (segment, slot, text, cta)
+        if key not in self.adapted:
+            self.adapted[key] = self._adapt(segment, slot, own, text, cta, hypothesis)
+        return self.adapted[key]
+
+    def _adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str) -> tuple[str, str] | None:
+        """Through the same checks as a challenger; no judge, since how much it helps is the carry-over setting."""
+        drafted = self._checked(slot, f"{segment} {slot}", lambda feedback: (*self.writer.adapt(segment, slot, own, text, cta, hypothesis, feedback), ""))
+        if drafted is None:
+            self.unborrowed += self.stopped
+            return None
+        return drafted[0], drafted[1]
 
     def _rating(self, slot: str, text: str, cta: str) -> float:
         key = (slot, text, cta)
@@ -238,6 +282,7 @@ class AiCopywriter:
             *([f"- Spend reached the ${rules.spend_stop:,.2f} stop: no live calls after that (the call that crossed it was already made). "
                f"{self.skipped} challenger{'s' if self.skipped != 1 else ''} went unwritten, so the loop tested fewer; every replay finished on the variants already written and judged."]
               if self.stopped else []),
+            *([f"- {self.unborrowed} change{'s' if self.unborrowed != 1 else ''} Idle proved went unwritten for Drafters or Trialists, who kept their email."] if self.unborrowed else []),
             *(f"- Rejected and rewritten: {r}" for r in self.spend.rejected),
         ]
 
@@ -267,16 +312,6 @@ class OpenRouterWriter:
     post: Post = _post
 
     def write(self, slot: str, champion: Email, conclusions: list[str], tried: list[str], feedback: list[str]) -> tuple[str, str, str]:
-        facts, drafts = self.settings.fact_sheet, self.settings.first_drafts
-        placeholders = sorted({p for e in drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body}")})
-        rules = (
-            "You write win-back emails for a Shopify app that lets merchants clone a store to start from. "
-            "State only facts from this fact sheet, with numbers and prices exactly as written there, never any other:\n- " + "\n- ".join(facts.facts)
-            + "\nNever use these phrases: " + ", ".join(facts.banned_phrases)
-            + f". Never start a subject with Re: or Fwd:. Keep subjects under {self.settings.writer.subject_max_characters} characters. "
-            + "You may use these placeholders and no others: " + ", ".join(placeholders) + ". Offers (more trial days, a discount) are only for Trialists: never mention them here."
-            + "\nThe founder's own emails, for tone:\n" + "\n".join(f"- {stage}: {e.subject} / {e.body} [{e.cta}]" for stage, e in drafts.items())
-        )
         ask = (
             f"Reader: {IDLE_MERCHANT}\nCurrent best email (the champion):\nSubject: {champion.subject}\nBody: {champion.body}\nButton: {champion.cta}\n\n"
             f"Write a new {slot} that changes one thing about the champion's {slot}, and say what it changes and why (the hypothesis)."
@@ -284,22 +319,48 @@ class OpenRouterWriter:
             + ("\nAlready tried, so write something different:\n- " + "\n- ".join(tried) if tried else "")
             + ("\nYour last draft was rejected because: " + "; ".join(feedback) if feedback else "")
         )
+        answer = self._ask(ask + ("\nFor a subject, leave button empty." if slot == "subject" else ""), ["text", "button", "hypothesis"])
+        return answer["text"], answer["button"], answer["hypothesis"]
+
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str, feedback: list[str]) -> tuple[str, str]:
+        ask = (
+            f"An email to Idle merchants ({IDLE_MERCHANT}) won a test with this new {slot}:\n{text}" + (f"\nButton: {cta}" if cta else "")
+            + f"\nWhy it was tried: {hypothesis}\n\nReader now: {READERS[segment]}\nTheir current email:\nSubject: {own.subject}\nBody: {own.body}\nButton: {own.cta}\n\n"
+            f"Rewrite their {slot} to make the same change, in words that fit this reader and the step they are at; keep everything else."
+            + ("\nYour last draft was rejected because: " + "; ".join(feedback) if feedback else "")
+            + ("\nFor a subject, leave button empty." if slot == "subject" else "")
+        )
+        answer = self._ask(ask, ["text", "button"])
+        return answer["text"], answer["button"]
+
+    def _ask(self, ask: str, fields: list[str]) -> dict[str, str]:
+        """One chat call with the writer's rules, asking for JSON with these string fields."""
+        facts, drafts = self.settings.fact_sheet, self.settings.first_drafts
+        placeholders = sorted({p for e in drafts.values() for p in re.findall(r"\{[a-z_]+\}", f"{e.subject} {e.body}")})
+        rules = (
+            "You write win-back emails for a Shopify app that lets merchants clone a store to start from. "
+            "State only facts from this fact sheet, with numbers and prices exactly as written there, never any other:\n- " + "\n- ".join(facts.facts)
+            + "\nNever use these phrases: " + ", ".join(facts.banned_phrases)
+            + f". Never start a subject with Re: or Fwd:. Keep subjects under {self.settings.writer.subject_max_characters} characters. "
+            + "You may use these placeholders and no others: " + ", ".join(placeholders) + ". Never mention offers (more trial days, a discount): the app adds them to Trialist emails itself."
+            + "\nThe founder's own emails, for tone:\n" + "\n".join(f"- {stage}: {e.subject} / {e.body} [{e.cta}]" for stage, e in drafts.items())
+        )
         schema = {
             "type": "object",
-            "properties": {"text": {"type": "string"}, "button": {"type": "string"}, "hypothesis": {"type": "string"}},
-            "required": ["text", "button", "hypothesis"],
+            "properties": {name: {"type": "string"} for name in fields},
+            "required": fields,
             "additionalProperties": False,
         }
         reply = self.post(OPENROUTER, {
             "model": self.model,
-            "messages": [{"role": "system", "content": rules}, {"role": "user", "content": ask + ("\nFor a subject, leave button empty." if slot == "subject" else "")}],
+            "messages": [{"role": "system", "content": rules}, {"role": "user", "content": ask}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "variant", "strict": True, "schema": schema}},
             "usage": {"include": True},
         }, self.api_key)
         self.spend.cost += float(reply.get("usage", {}).get("cost") or 0.0)
         try:
             answer = json.loads(reply["choices"][0]["message"]["content"])
-            return str(answer["text"]).strip(), str(answer.get("button", "")).strip(), str(answer["hypothesis"]).strip()
+            return {name: str(answer[name]).strip() for name in fields}
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise RuntimeError(f"The writer's answer wasn't the JSON asked for: {str(reply)[:300]}") from error
 

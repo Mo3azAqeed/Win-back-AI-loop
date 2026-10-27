@@ -35,6 +35,14 @@ class FakeWriter:
             text, cta = fresh[0] if fresh else (f"{drafts[0][0]} Start today.", drafts[0][1])
         return text, cta, f"Hypothesis for draft {self.calls}."
 
+    def adapt(self, segment: str, slot: str, own: Email, text: str, cta: str, hypothesis: str, feedback: list[str]) -> tuple[str, str]:
+        """From the script, then the segment's own part with "today" added: words that pass every check."""
+        self.calls += 1
+        self.feedback.append(feedback)
+        if self.script:
+            return self.script.pop(0)
+        return (f"{own.subject} today", "") if slot == "subject" else (f"{own.body} Do it today.", own.cta)
+
 
 class FakeJudge:
     def __init__(self, rating: dict[str, float] | None = None, model: str = "fake/judge") -> None:

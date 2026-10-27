@@ -114,23 +114,24 @@ def test_an_early_email_held_back_by_the_48_hour_gap_is_read_as_when_it_really_a
     assert 0.3 < early.reached / early.assigned < 0.56
 
 
-def test_drafters_and_trialists_get_their_own_first_drafts_never_idle_words(run: RunResult) -> None:
+def test_drafters_and_trialists_start_from_their_own_first_drafts_and_never_send_idle_words(run: RunResult) -> None:
     settings = load_settings(SETTINGS)
     start = run.by_start[1000]
     idle_words = {v.text for v in (*start.loop.subjects, *start.loop.bodies)}
 
     for segment in (Segment.DRAFTER, Segment.TRIALIST):
-        copy, draft = start.loop.segment_copy[segment], settings.first_drafts[segment.value]
+        first, draft = start.loop.segment_versions[segment][0], settings.first_drafts[segment.value]
         sent = sum(s.segment is segment and s.email is EmailFate.SENT for j in start.journeys[Approach.AI_LOOP] for s in j.stays)
-        assert (copy.subject, copy.body, copy.cta) == (draft.subject, draft.body, draft.cta)
-        assert not {copy.subject, copy.body} & idle_words
-        assert copy.sends == sent > 0
+        assert (first.subject, first.body, first.cta) == (draft.subject, draft.body, draft.cta)
+        assert not {w for v in start.loop.segment_versions[segment] for w in (v.subject, v.body)} & idle_words
+        assert start.loop.segment_copy[segment].sends == sent > 0
 
 
 def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_first_drafts_whatever_idle_finds() -> None:
     # Idle soon finds a subject and a body far better than your first draft (hidden quality 400 and 300).
     # Timing doesn't change reading here, so every Drafter or Trialist email is read and clicked exactly as
-    # often as its first draft (read rate x click rate), unless some of Idle's edge carries over.
+    # often as its first draft (read rate x click rate), even after borrowing Idle's wins, unless some of Idle's
+    # edge carries over (carry-over 1 is tested in test_borrowing.py).
     settings = with_subjects(load_settings(SETTINGS), 400)
     settings = dataclasses.replace(only(settings, 1000), prewritten_bodies=(dataclasses.replace(settings.prewritten_bodies[0], quality=300), *settings.prewritten_bodies[1:]))
     for segment in (Segment.DRAFTER, Segment.TRIALIST):
@@ -139,12 +140,12 @@ def test_with_no_carry_over_drafter_and_trialist_emails_do_as_well_as_their_firs
     for segment in (Segment.DRAFTER, Segment.TRIALIST):
         behaviour = settings.segments[segment]
         expected = behaviour.read_rate * behaviour.click_rate
-        none = run_simulation(with_carry_over(settings, 0.0), seed=1).by_start[1000].loop.segment_copy[segment]
-        full = run_simulation(with_carry_over(settings, 1.0), seed=1).by_start[1000].loop.segment_copy[segment]
+        loop = run_simulation(with_carry_over(settings, 0.0), seed=1).by_start[1000].loop
+        none = loop.segment_copy[segment]
         margin = 3 * (expected * (1 - expected) / none.sends) ** 0.5
 
+        assert len(loop.segment_versions[segment]) > 1, segment  # Idle's wins were borrowed
         assert abs(none.clicks / none.sends - expected) < margin, segment
-        assert full.clicks / full.sends > expected + 2 * margin, segment
 
 
 def test_changing_the_carry_over_never_changes_idle_results() -> None:
@@ -181,5 +182,6 @@ def test_by_default_none_of_idles_edge_carries_over_and_the_report_shows_each_se
     assert start.loop.carry_over == 0
     assert "Carry-over from Idle: 0%" in from_1000
     for segment in (Segment.DRAFTER, Segment.TRIALIST):
-        copy = start.loop.segment_copy[segment]
-        assert f"| {segment.value.title()} | {copy.subject}: {copy.body} **[{copy.cta}]** | {copy.sends:,} |" in from_1000
+        for v in start.loop.segment_versions[segment]:
+            assert f"| {segment.value.title()} | v{v.number} | {v.subject}: {v.body} **[{v.cta}]** |" in from_1000
+        assert sum(v.sends for v in start.loop.segment_versions[segment]) == start.loop.segment_copy[segment].sends

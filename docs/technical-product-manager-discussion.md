@@ -331,6 +331,12 @@ Short versions, each with the situation, what I did and the result.
 - **Result:** the story became visible (versions, verdicts, a playbook), but the Idle win shrank: ahead of the hand-written email in 26 of 40 replays instead of 37. At ~125 emails per version a week, two weeks can't separate small differences, so most tests ended "too close to call" and threw better challengers away. I flagged it; the founder said to do whatever gives consistent wins. I tested six levers on the same 40 replays, kept the two that helped (the version ahead stays when a test is too close to call, recorded as "kept, not proven"; the challenger gets a third of the emails, so untried versions cost less), and confirmed on 40 fresh replays: ahead in 34 of 40 at 1,000 merchants and 37 of 40 at 1,500. Thompson sampling and longer tests didn't help, so they stayed out.
 - **Lesson:** explainability has a price at low volume. Measure the price, show it to the person who owns the decision, then tune with evidence and check on data you didn't tune on.
 
+**13. "A feature that would almost never fire."**
+- **Situation:** Drafters and Trialists get about 40 emails a week, too few to test their own words, so the founder decided they borrow what Idle's tests prove (#36).
+- **What I did:** built it to the letter (only a test won outright is borrowed, in each segment's own words, naming the Idle test), then counted how often it would actually happen before calling it done: over 20 runs with the default settings, Idle won a test outright in 1 run at 1,000 merchants and 10 at 1,500. Most changes take over as "kept, not proven" at a test's limit, and those aren't borrowed. I also made the honest effect explicit: at the founder's carry-over of 0, borrowing changes the words but not the simulated results, and the report says so.
+- **Result:** the feature works and is tested, and the founder saw the number with the build, plus the one option (also borrowing kept versions, labelled unproven) and why I wouldn't take it: borrowing a guess spreads it to two more segments.
+- **Lesson:** "done to spec" isn't the same as "useful". Check how often a feature fires with real settings, and hand the owner the number with the decision.
+
 ---
 
 ## 8. Vocabulary I use
@@ -355,6 +361,7 @@ Newest first. One line per ticket or decision, added as the work happens.
 
 | Date | What happened |
 |---|---|
+| 2026-10-26 | Built #36: Drafters and Trialists borrow Idle's playbook. When an Idle test is won, the writer rewrites the same change in their own words and that version replaces theirs, naming the Idle test it came from. With carry-over 0 their results are byte-for-byte the same, and the report says the effect isn't simulated yet; with carry-over 1 a truly better change raises their click rate. Found while building it: at 1,000 merchants Idle proves a change in only 1 run in 20 (most are kept at the limit, not proven), so borrowing is rare at our volume. |
 | 2026-10-26 | Built #14, the spending cap: every call's reported cost is summed per run; past $5 the run warns and keeps going, and at $10 it makes no more live calls and finishes the remaining replays on the variants already written and judged. The report states the spend and how many replays made live calls. Both limits are in settings. Tested with a fake writer and judge that charge $1 a call. The call that crosses $10 is still made, so a run can end a fraction of a cent above it; the report says so, and counts the challengers the cap left unwritten. |
 | 2026-10-26 | Merged the two AWS diagrams into one, at the founder's request: the simulation and web app as they run now, the real-email part drawn dashed as planned, and the services both use in between. The AWS docs no longer split the work into milestones. |
 | 2026-10-26 | Checked the six diagrams against the code after #34 and #13. All six were out of date (they still showed a scorer picking variants, no web app, no champion and challenger), so each was redrawn: the AI loop, the architecture, a merchant's path, the build order, and AWS for milestones 1 and 2. The README and the AWS page now describe the same loop the diagrams show. |

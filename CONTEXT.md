@@ -87,14 +87,14 @@ The founder's approved hand-written email for a segment. It is what the hand-wri
 _Avoid_: Template, baseline email
 
 **Carry-over**:
-The share (0 to 1) of the edge the Idle champion has over the Idle first draft that Drafter and Trialist emails are given in the simulation. Drafters and Trialists always send their own first drafts' words; at 0, the default, none of Idle's edge carries over, so any AI loop win there is earned in that segment. Real carry-over is meant to come from lessons (see ADR 0005).
+The share (0 to 1) of an Idle change's edge over the Idle first draft that a Drafter or Trialist version borrowing it is given in the simulation. Drafters and Trialists always send their own words; at 0, the default, a borrowed change gets no simulated boost, so any AI loop win there is earned in that segment. The real effect waits for the judge rating the new words (see ADR 0005, #36).
 _Avoid_: Transfer, spillover
 
 **Variant**:
 One candidate for a single part of an email (subject, body, timing or offer) that the loop can choose between. The body includes the call to action. The writer writes subject and body variants; in Idle they come together as versions.
 
 **Version**:
-A whole Idle email: a subject and a body with its button. Version 0 (v0) is the founder's first draft; each later version is numbered in the order the writer brought it, changes one part of the champion it was tested against, and carries a hypothesis. Send time is not part of a version (ADR 0007).
+A whole email: a subject and a body with its button. In Idle, version 0 (v0) is the founder's first draft; each later version is numbered in the order the writer brought it, changes one part of the champion it was tested against, and carries a hypothesis. Drafters and Trialists have versions too: v0 is their first draft, and each later one is a borrowed version. Send time is not part of a version (ADR 0007).
 _Avoid_: Variation, draft (a draft is the merchant's store)
 
 **Champion**:
@@ -109,6 +109,10 @@ What a challenger changes and why, written with it: "Names store cloning in the 
 **Test**:
 One champion against one challenger. It always ends, in one of four ways: the challenger won (crowned), the champion won (the challenger is sunset, including when it won clicks but clearly lost goal actions), the same (within 1 click point), or too close to call (at 2 weeks or 1,000 emails per version; the version ahead on clicks stays, kept but not proven). Verdicts on clicks are taken at week ends (ADR 0007).
 _Avoid_: Experiment, round
+
+**Borrowed version**:
+A Drafter or Trialist email that takes the change a won Idle test proved, written by the writer in that segment's own words. It replaces the segment's email on the day of the verdict, with no test of its own (about 40 emails a week is too few), and records the Idle test it came from. Versions kept at a test's limit (not proven) are not borrowed (#36).
+_Avoid_: Copied, inherited
 
 **Sunset**:
 A version that lost a test, or that was the champion when a challenger was crowned. It is no longer sent, and keeps its record.
