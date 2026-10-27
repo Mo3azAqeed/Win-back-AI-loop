@@ -33,3 +33,17 @@ Tuning, for consistent wins (founder: "do whatever's needed to have consistent w
 | ...or 3-week tests | +1.69 | 28 of 40 | +1.09 |
 
 The chosen setting held on 40 fresh replays: ahead in 34 of 40 at 1,000 merchants (+1.86 against +1.57) and 37 of 40 at 1,500, with the highest floor. With every version secretly identical none of these settings gains anything, as it should. The verdicts themselves are unchanged: "kept, not proven" is a decision to stop testing, not a claim of a winner, and the playbook says so. This supersedes ADR 0004 for Idle's words.
+
+Update (2026-10-27, after #36): each test is now judged once, at a planned size. Drafters and Trialists borrow only a crowned challenger, so a crowning has to mean something, and the founder asked for the playbook to feed them. Measured first:
+
+- Judged every week, as above, the loop rarely crowned anyone at 1,000 merchants (8 of 40 runs), and making tests longer to crown more mostly crowned luck: with every version secretly identical, 28% of tests named a winner. At 1,500 merchants the old rules already crowned a fake challenger in 8% of such tests. Each weekly check is another chance for luck to cross the bar.
+- Judged once, the bar alone sets the fake rate: at 90% sure about 1 test in 10 between equal emails crowns the challenger, at 95% about 1 in 20.
+
+So a test now gives the challenger half of Idle's emails and is judged once, when both versions have 250 emails or after 3 weeks, whichever comes first, at 95% sure. On the same 40 replays:
+
+| | 1,000 merchants: runs with a crowning / AI ahead / fake crownings | 1,500 merchants: same |
+|---|---|---|
+| Weekly checks, a third, 2 weeks, 90% (before) | 8 / 38 of 40 / 2% | 25 / 36 of 40 / 8% |
+| One verdict, half, 250 emails or 3 weeks, 95% (chosen) | 15 / 37 of 40 / 3.7% | 18 / 35 of 40 / 4.5% |
+
+At our volume real crownings double; at 1,500 the fake ones halve. Tests at 1,000 merchants usually reach 3 weeks before 250 emails each, so the size matters more as volume grows. The 90% bar was the founder's; 95% replaces it because, judged once, 90% would crown a fake challenger in 1 test in 10. min_sends and the 1,000-email limit are gone: the planned size replaces both.

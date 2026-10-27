@@ -220,17 +220,20 @@ def test_each_stage_has_a_week_by_week_story_of_what_was_sent_written_and_droppe
     written = [c for w in idle for c in w["ai"]["written"]]
     dropped = [c for w in idle for c in w["ai"]["dropped"]]
     assert dropped and len(written) == len(detail.loop.subjects) + len(detail.loop.bodies)
-    # A dropped email is never the one leading at the end of its week. It left after a verdict on enough
-    # sends, or when its test reached the limit as too close to call.
-    ended_at_limit = {e.ended for e in detail.loop.playbook if e.ending.value == "too close to call"}
+    # A dropped email is never the one leading at the end of its week. It left at its test's one verdict: once
+    # both versions had their planned emails, or when the test ran out of time.
+    out_of_time = {e.ended for e in detail.loop.playbook if e.ended - e.started >= settings.loop.test_max_weeks * 7 - 1e-9}
     for w in idle:
         for c in w["ai"]["dropped"]:
             assert c["text"] not in (w["ai"]["leading"]["subject"], w["ai"]["leading"]["body"])
-            assert c["sends"] >= settings.loop.min_sends or any(w["week"] * 7 - 7 < day <= w["week"] * 7 for day in ended_at_limit)
-    # Drafters and Trialists send their own first draft every week, and their words never change.
+            assert c["sends"] >= settings.loop.test_sends or any(w["week"] * 7 - 7 < day <= w["week"] * 7 for day in out_of_time)
+    # Drafters and Trialists start from their own first draft; their words change only by borrowing a won Idle
+    # change, and Idle's written and dropped lists are Idle's alone.
     for segment in ("drafter", "trialist"):
+        versions = [v for v in data["starts"][0]["loop"]["segment_versions"] if v["segment"] == segment]
+        assert segments[segment]["weeks"][0]["ai"]["leading"]["subject"] == settings.first_drafts[segment].subject
         for w in segments[segment]["weeks"]:
-            assert w["ai"]["leading"]["subject"] == settings.first_drafts[segment].subject
+            assert w["ai"]["leading"]["subject"] in {v["subject"] for v in versions}
             assert w["ai"]["written"] == w["ai"]["dropped"] == []
     # Only Trialist emails carry offers.
     assert any(w["ai"]["offers"] for w in segments["trialist"]["weeks"]) and not any(w["ai"]["offers"] for w in idle)

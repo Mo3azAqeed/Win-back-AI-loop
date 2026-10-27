@@ -70,7 +70,8 @@ def test_one_champion_and_one_challenger_at_a_time_and_every_test_ends_in_one_of
     for entry in loop.playbook:
         assert entry.ending in Ending
         assert entry.ended - entry.started <= limit
-        assert entry.champion_sends <= settings.loop.test_max_sends and entry.challenger_sends <= settings.loop.test_max_sends
+        # Judged once: when both versions reach their planned emails, or at the time limit.
+        assert min(entry.champion_sends, entry.challenger_sends) <= settings.loop.test_sends
         assert entry.conclusion
     tested = [e.challenger for e in loop.playbook]
     assert len(set(tested)) == len(tested)  # each challenger gets one test
@@ -114,23 +115,23 @@ def test_a_challenger_with_more_clicks_but_clearly_fewer_goal_actions_is_not_cro
         assert "fewer goal actions" in first.conclusion
 
 
-def test_with_every_version_secretly_identical_every_test_still_ends_and_few_claim_a_winner() -> None:
+def test_with_every_version_secretly_identical_every_test_still_ends_and_few_crown_a_challenger() -> None:
     settings = all_identical(load_settings(SETTINGS))
-    limit = settings.loop.test_max_weeks * DAYS_PER_WEEK
-    entries, seeds_claiming_a_winner = [], 0
-    for seed in range(1, 6):
+    limit, sure = settings.loop.test_max_weeks * DAYS_PER_WEEK, settings.loop.verdict_confidence
+    entries = []
+    for seed in range(1, 21):
         loop = loop_of(settings, seed)
         entries += loop.playbook
-        seeds_claiming_a_winner += any(e.ending in (Ending.CHALLENGER_WON, Ending.CHAMPION_WON) for e in loop.playbook)
         # A new challenger enters every time a test ends, until the writer runs out.
         assert len(loop.versions) == len(loop.playbook) + 1 + (loop.weekly_leaders[-1].challenger is not None), seed
-        assert all(e.ended - e.started <= limit for e in loop.playbook)
+        assert all(e.ended - e.started <= limit + 1e-9 for e in loop.playbook)
 
-    # In most seeds no entry claims a winner, and across them only a few tests do.
-    assert seeds_claiming_a_winner * 2 < 5
-    winners = [e for e in entries if e.ending in (Ending.CHALLENGER_WON, Ending.CHAMPION_WON)]
-    assert len(winners) <= 0.25 * len(entries)
-    assert all(e.ending in (Ending.SAME, Ending.LIMIT) or e.chance_better >= 0.9 or e.chance_better <= 0.1 for e in entries)
+    # Each test is judged once, so a fake crowning happens about as often as the bar allows (1 - sure, about 5%),
+    # not more: judging every week would let luck cross the bar sooner or later. These are what Drafters and
+    # Trialists would borrow.
+    crowned = [e for e in entries if e.ending is Ending.CHALLENGER_WON]
+    assert len(crowned) <= 1.4 * (1 - sure) * len(entries)
+    assert all(e.ending in (Ending.SAME, Ending.LIMIT) or e.chance_better >= sure or e.chance_better <= 1 - sure for e in entries)
 
 
 def test_the_report_lists_the_versions_and_the_playbook() -> None:
